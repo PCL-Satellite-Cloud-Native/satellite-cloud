@@ -1,8 +1,9 @@
 /**
  * 卫星数据 API 服务
+ * 默认使用相对路径 /api，与 K8s Ingress 同域（/api → 后端），无需 CORS。
+ * 本地开发时由 Vite 代理 /api 到后端；构建时无需再传 VITE_API_BASE_URL。
  */
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 /**
  * 获取场景列表

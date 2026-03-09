@@ -25,18 +25,22 @@ func NewScenarioHandler(db *gorm.DB, logger *zap.Logger) *ScenarioHandler {
 
 // List 获取场景列表
 func (h *ScenarioHandler) List(c *gin.Context) {
-	// 查询场景列表（不包含卫星详情）
 	var results []model.ScenarioListResponse
 	err := h.db.Model(&model.Scenario{}).
-		Select("scenarios.*, COUNT(satellites.id) as satellites_count").
+		Select(`scenarios.id, scenarios.name, scenarios.epoch, scenarios.start_time, scenarios.end_time,
+			scenarios.alt_km, scenarios.inc_deg, scenarios.n_planes, scenarios.n_sats_per_plane,
+			COUNT(satellites.id) AS satellites_count`).
 		Joins("LEFT JOIN satellites ON satellites.scenario_id = scenarios.id").
-		Group("scenarios.id").
+		Group("scenarios.id, scenarios.name, scenarios.epoch, scenarios.start_time, scenarios.end_time, scenarios.alt_km, scenarios.inc_deg, scenarios.n_planes, scenarios.n_sats_per_plane").
 		Order("scenarios.id DESC").
 		Scan(&results).Error
 
 	if err != nil {
 		h.logger.Error("Failed to list scenarios", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch scenarios"})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to fetch scenarios",
+			"detail":  err.Error(),
+		})
 		return
 	}
 

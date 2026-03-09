@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/spf13/viper"
+	"github.com/subosito/gotenv"
 )
 
 type Config struct {
@@ -35,13 +36,16 @@ type LogConfig struct {
 }
 
 func Load() *Config {
+	// 可选：加载 .env 到环境变量（本地开发用；K8s 下通常无此文件，由 ConfigMap/Secret 注入 env）
+	_ = gotenv.Load(".env")
+
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
 	viper.AddConfigPath("/etc/satellite")
 
-	// 环境变量
+	// 环境变量（优先级高于配置文件，K8s 部署时用 Secret/ConfigMap 注入）
 	viper.SetEnvPrefix("SATELLITE")
 	viper.AutomaticEnv()
 

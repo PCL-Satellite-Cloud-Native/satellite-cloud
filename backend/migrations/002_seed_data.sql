@@ -15,7 +15,9 @@ WITH s AS (
         inc_deg,
         n_planes,
         n_sats_per_plane,
-        sensor_config
+        sensor_config,
+        created_at,
+        updated_at
     )
     VALUES (
         'Scenario5',
@@ -26,7 +28,9 @@ WITH s AS (
         53.0,
         36,
         22,
-        '{"type": "SimpleConic", "coneHalfAngleDeg": 30.0}'::jsonb
+        '{"type": "SimpleConic", "coneHalfAngleDeg": 30.0}'::jsonb,
+        NOW(),
+        NOW()
     )
     RETURNING id
 )
@@ -44,7 +48,9 @@ INSERT INTO public.satellites (
     inc_deg,
     raan_deg,
     argp_deg,
-    ta_deg
+    ta_deg,
+    created_at,
+    updated_at
 )
 SELECT
     s.id AS scenario_id,
@@ -58,9 +64,11 @@ SELECT
     v.inc_deg,
     v.raan_deg,
     v.argp_deg,
-    v.ta_deg
+    v.ta_deg,
+    NOW(),
+    NOW()
 FROM s
-JOIN (
+CROSS JOIN (
     VALUES
         -- sat-1-1
         ('sat-1-1', 'Sat_1_1', 1, 1,

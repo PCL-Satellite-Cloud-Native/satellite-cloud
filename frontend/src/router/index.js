@@ -24,7 +24,7 @@ const routes = [
     // 卫星网络拓扑
     path: '/simulation/topology2D',
     name: 'Topology2D',
-    component: () => import('../components/SatelliteTopology.vue') 
+    component: () => import('../components/SatTopology2D.vue') 
   },
   {
     // 卫星网络拓扑

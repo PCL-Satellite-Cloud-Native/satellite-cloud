@@ -17,7 +17,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { getScenarioWithSatellites, getScenarios } from '../api/satellite.js'
+import { getScenarioWithSatellites } from '../api/satellite.js'
 
 window.CESIUM_BASE_URL = '/cesium'
 import * as Cesium from 'cesium'
@@ -25,7 +25,8 @@ import * as Cesium from 'cesium'
 const props = defineProps({
   scenarioId: {
     type: [Number, String],
-    default: null
+    required: true,
+    default: 1
   }
 })
 

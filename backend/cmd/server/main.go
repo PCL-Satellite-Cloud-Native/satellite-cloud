@@ -11,10 +11,14 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"go.uber.org/zap"
 
 	"satellite-cloud/backend/internal/config"
 	"satellite-cloud/backend/internal/api/handlers"
+	"satellite-cloud/backend/migrations"
 	"satellite-cloud/backend/pkg/database"
 	"satellite-cloud/backend/pkg/logger"
 )
@@ -31,6 +35,21 @@ func main() {
 	if err != nil {
 		zapLogger.Fatal("Failed to connect to database", zap.Error(err))
 	}
+
+	// 启动时自动执行未应用的迁移（与 K8s/本地环境保持一致）
+	sourceDriver, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		zapLogger.Fatal("Failed to create migration source", zap.Error(err))
+	}
+	m, err := migrate.NewWithSourceInstance("iofs", sourceDriver, cfg.Database.MigrateURL())
+	if err != nil {
+		zapLogger.Fatal("Failed to create migrator", zap.Error(err))
+	}
+	defer m.Close()
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		zapLogger.Fatal("Failed to run migrations", zap.Error(err))
+	}
+	zapLogger.Info("Migrations check done")
 
 	// 设置 Gin 模式
 	if cfg.Server.Mode == "production" {

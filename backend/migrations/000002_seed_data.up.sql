@@ -1,10 +1,8 @@
--- 002_seed_data.sql
--- 最小示例数据种子：基于 starlink_shell1_36x22.json 中的 Scenario5
--- 假设 001_init_schema.sql 已经执行，表结构存在
+-- 000002_seed_data.up.sql
+-- 最小示例数据种子：Scenario5 + plane 1 前三颗卫星
 
 BEGIN;
 
--- 插入一个场景（Scenario5）
 WITH s AS (
     INSERT INTO public.scenarios (
         name,
@@ -34,8 +32,6 @@ WITH s AS (
     )
     RETURNING id
 )
-
--- 插入少量卫星示例数据（plane 1 的前三个）
 INSERT INTO public.satellites (
     scenario_id,
     sat_id,
@@ -70,15 +66,9 @@ SELECT
 FROM s
 CROSS JOIN (
     VALUES
-        -- sat-1-1
-        ('sat-1-1', 'Sat_1_1', 1, 1,
-         550.0, 6928.137, 0.0, 53.0, 0.0, 0.0, 0.0),
-        -- sat-1-2
-        ('sat-1-2', 'Sat_1_2', 1, 2,
-         550.0, 6928.137, 0.0, 53.0, 0.0, 0.0, 16.363636363636363),
-        -- sat-1-3
-        ('sat-1-3', 'Sat_1_3', 1, 3,
-         550.0, 6928.137, 0.0, 53.0, 0.0, 0.0, 32.72727272727273)
+        ('sat-1-1', 'Sat_1_1', 1, 1, 550.0, 6928.137, 0.0, 53.0, 0.0, 0.0, 0.0),
+        ('sat-1-2', 'Sat_1_2', 1, 2, 550.0, 6928.137, 0.0, 53.0, 0.0, 0.0, 16.363636363636363),
+        ('sat-1-3', 'Sat_1_3', 1, 3, 550.0, 6928.137, 0.0, 53.0, 0.0, 0.0, 32.72727272727273)
 ) AS v(
     sat_id,
     stk_name,
@@ -94,4 +84,3 @@ CROSS JOIN (
 );
 
 COMMIT;
-

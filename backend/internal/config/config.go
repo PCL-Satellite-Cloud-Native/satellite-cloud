@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -124,8 +125,15 @@ func setDefaults() {
 	viper.SetDefault("log.output", "stdout")
 }
 
-// DSN 返回 PostgreSQL 连接字符串
+// DSN 返回 PostgreSQL 连接字符串（libpq 格式，供 GORM 等使用）
 func (d DatabaseConfig) DSN() string {
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		d.Host, d.Port, d.User, d.Password, d.DBName, d.SSLMode)
+}
+
+// MigrateURL 返回 golang-migrate 使用的 postgres:// URL
+func (d DatabaseConfig) MigrateURL() string {
+	password := url.QueryEscape(d.Password)
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		url.QueryEscape(d.User), password, d.Host, d.Port, d.DBName, d.SSLMode)
 }

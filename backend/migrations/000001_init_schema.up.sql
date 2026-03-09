@@ -1,6 +1,5 @@
--- 001_init_schema.sql
--- 初始化数据库表结构，等价于 Django 项目中的 Scenario / Satellite 模型
--- 适用于 PostgreSQL
+-- 000001_init_schema.up.sql（含软删除字段 deleted_at）
+-- 初始化数据库表结构，适用于 PostgreSQL
 
 BEGIN;
 
@@ -17,7 +16,8 @@ CREATE TABLE IF NOT EXISTS public.scenarios (
     n_sats_per_plane INTEGER NOT NULL,
     sensor_config   JSONB,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ
 );
 
 COMMENT ON TABLE public.scenarios IS '场景';
@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS public.satellites (
     argp_deg            DOUBLE PRECISION NOT NULL,
     ta_deg              DOUBLE PRECISION NOT NULL,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at          TIMESTAMPTZ
 );
 
 COMMENT ON TABLE public.satellites IS '卫星';
@@ -65,15 +66,21 @@ COMMENT ON COLUMN public.satellites.argp_deg IS '近地点幅角(度)';
 COMMENT ON COLUMN public.satellites.ta_deg IS '真近点角(度)';
 
 
--- 索引（对应 Django Meta.indexes）
+-- 索引
 CREATE INDEX IF NOT EXISTS idx_satellites_scenario_sat_id
     ON public.satellites (scenario_id, sat_id);
 
 CREATE INDEX IF NOT EXISTS idx_satellites_plane_sat_index
     ON public.satellites (plane_index, sat_index_in_plane);
 
+CREATE INDEX IF NOT EXISTS idx_scenarios_deleted_at
+    ON public.scenarios (deleted_at);
 
--- 触发器：保持 updated_at 自动更新时间（可选）
+CREATE INDEX IF NOT EXISTS idx_satellites_deleted_at
+    ON public.satellites (deleted_at);
+
+
+-- 触发器：保持 updated_at 自动更新时间
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -105,4 +112,3 @@ END;
 $$;
 
 COMMIT;
-

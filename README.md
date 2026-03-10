@@ -93,8 +93,10 @@ npm run dev
 # 构建后端镜像
 docker build -t satellite-backend ./backend
 
-# 构建前端镜像
+# 构建前端镜像（可选：传入 Grafana 地址后，主页「性能监控中台」在 K8s 中直跳 Grafana）
 docker build -t satellite-frontend ./frontend
+# 示例：K8s 部署时希望点击跳转 Grafana
+# docker build --build-arg VITE_GRAFANA_URL=https://grafana.example.com -t satellite-frontend ./frontend
 ```
 
 ### Kubernetes 部署

@@ -7,6 +7,10 @@ RUN npm ci || npm install
 
 COPY . .
 
+# 可选：K8s 部署时传入 Grafana 地址，主页「性能监控中台」将直跳 Grafana
+ARG VITE_GRAFANA_URL
+ENV VITE_GRAFANA_URL=$VITE_GRAFANA_URL
+
 # 构建静态文件
 RUN npm run build
 

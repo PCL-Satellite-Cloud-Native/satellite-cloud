@@ -48,7 +48,13 @@ build-frontend:
       fi
     - docker login "$HARBOR_URL" -u "$HARBOR_USER" -p "$HARBOR_PASSWORD"
     - cd frontend
-    - docker build -t "$FRONTEND_IMAGE" .
+    # 可选：在 GitLab CI/CD Variables 中配置 VITE_GRAFANA_URL，主页「性能监控中台」将直跳 Grafana
+    - |
+      BUILD_ARGS=""
+      if [ -n "${VITE_GRAFANA_URL:-}" ]; then
+        BUILD_ARGS="--build-arg VITE_GRAFANA_URL=$VITE_GRAFANA_URL"
+      fi
+      docker build $BUILD_ARGS -t "$FRONTEND_IMAGE" .
     - docker push "$FRONTEND_IMAGE"
   tags:
     - k8s-cluster-runner

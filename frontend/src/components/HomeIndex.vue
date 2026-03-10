@@ -35,7 +35,7 @@
 
     <section class="nav-section">
        <div class="nav-grid">
-         <div v-for="(item, index) in navItems" :key="index" class="nav-card" @click="handleNavigate(item.route)">
+         <div v-for="(item, index) in navItems" :key="index" class="nav-card" @click="handleNavigate(item)">
             <div class="card-image-wrapper">
                <img :src="item.imgUrl" :alt="item.title" class="card-img" />
             </div>
@@ -74,9 +74,10 @@ const navItems = ref([
   },
   { 
     title: '性能监控中台',
-    // 这是一个数据仪表盘示意图
     imgUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=400&auto=format&fit=crop', 
-    route: '/monitor'
+    route: '/monitor',
+    // K8s 构建时设置 VITE_GRAFANA_URL 则点击跳转 Grafana；本地不设置则走 /monitor 页面
+    externalLink: import.meta.env.VITE_GRAFANA_URL || undefined
   },
   { 
     title: '通信应用',
@@ -98,11 +99,15 @@ const navItems = ref([
   }
 ]);
 
-// 点击跳转逻辑
-const handleNavigate = (path) => {
-  // 如果路径存在，就跳转
-  if (path) {
-    router.push(path);
+// 点击跳转逻辑：支持站内路由或外链（如 K8s 下性能监控中台直跳 Grafana）
+const handleNavigate = (item) => {
+  if (!item) return;
+  if (item.externalLink) {
+    window.open(item.externalLink, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  if (item.route) {
+    router.push(item.route);
   } else {
     console.warn("未配置该模块的路由路径");
   }

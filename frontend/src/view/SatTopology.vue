@@ -57,7 +57,7 @@
         <div class="controls">
           <label class="control-item">
             <span class="label">中心节点 ID (独立查询)</span>
-            <input class="input" v-model.trim="selectedRouter" placeholder="例如：r001001" />
+            <input class="input" v-model.trim="selectedRouter" placeholder="例如：r001001 或 sat-1-1" />
           </label>
         </div>
 
@@ -86,8 +86,8 @@
         </div>
 
         <div class="small" style="margin-top: 10px;">
-          逻辑：读取 CSV 进行 BFS 搜索 (最大16跳)<br/>
-          布局：基于轨道编号的同心圆布局
+          数据来自服务端 API（DB 中 router_nodes / router_links）<br/>
+          BFS 最大 16 跳，节点展示名为 sat_id，同心圆布局
         </div>
       </div>
     </div>
@@ -112,14 +112,7 @@ const satIcon = '/satellite.svg'
 
 const routerStatus = ref('loading')
 const routerErrorMsg = ref('')
-const selectedRouter = ref('r001001') // 默认值
-const routerConnections = ref(new Map())
-
-const routers = [
-  'r001001', 'r001002', 'r001003', 'r001004', 'r001005',
-  'r002001', 'r002002', 'r002003', 'r002004', 'r002005',
-  'r003001', 'r003002', 'r003003', 'r003004', 'r003005'
-]
+const selectedRouter = ref('sat-1-1') // 默认中心节点，可填 r001001 或 sat-1-1
 
 const routerNodes = reactive({})
 const routerEdges = reactive({})
@@ -143,124 +136,34 @@ const graphConfigs = defineConfigs({
   },
 })
 
-/** 加载路由器连接数据 */
+/** 从服务端 API 加载路由拓扑（BFS + 布局由后端完成，节点展示名为 sat_id） */
 async function loadRouterData () {
   routerStatus.value = 'loading'
   routerErrorMsg.value = ''
+  const center = selectedRouter.value || 'r001001'
   try {
-    const connections = new Map()
-    for (const router of routers) {
-      const resp = await fetch(`/data/router/${router}_net_qos.csv`)
-      if (!resp.ok) continue
-      
-      const text = await resp.text()
-      const lines = text.split(/\r?\n/).filter(l => l.trim())
-      if (lines.length < 2) continue
-
-      const header = lines[0].split(',').map(s => s.trim())
-      const col = Object.fromEntries(header.map((h, i) => [h, i]))
-      
-      if (!connections.has(router)) connections.set(router, new Set())
-      
-      for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(',').map(s => s.trim())
-        const directNode = parts[col['直连节点']]
-        if (directNode && directNode !== router) {
-          connections.get(router).add(directNode)
-        }
-      }
+    const resp = await fetch(`/api/topology/router?center=${encodeURIComponent(center)}`)
+    if (!resp.ok) {
+      const t = await resp.text()
+      throw new Error(t || `HTTP ${resp.status}`)
     }
-    routerConnections.value = connections
-    updateRouterGraph()
+    const data = await resp.json() as { nodes: Record<string, { name: string }>; edges: Record<string, { source: string; target: string; label?: string }>; layouts: { nodes: Record<string, { x: number; y: number }> } }
+    // 原地更新以保持 v-network-graph 的响应式
+    for (const k of Object.keys(routerNodes)) delete (routerNodes as Record<string, unknown>)[k]
+    for (const [k, v] of Object.entries(data.nodes || {})) (routerNodes as Record<string, unknown>)[k] = v
+    for (const k of Object.keys(routerEdges)) delete (routerEdges as Record<string, unknown>)[k]
+    for (const [k, v] of Object.entries(data.edges || {})) (routerEdges as Record<string, unknown>)[k] = v
+    routerLayouts.nodes = (data.layouts && data.layouts.nodes) ? { ...data.layouts.nodes } : {}
     routerStatus.value = 'ready'
-  } catch (e: any) {
+  } catch (e: unknown) {
     routerStatus.value = 'error'
-    routerErrorMsg.value = e?.message ?? String(e)
+    routerErrorMsg.value = e instanceof Error ? e.message : String(e)
   }
 }
 
-/** 更新图形展示 */
-function updateRouterGraph () {
-  const connections = routerConnections.value
-  const startRouter = selectedRouter.value
-
-  Object.keys(routerNodes).forEach(k => delete routerNodes[k])
-  Object.keys(routerEdges).forEach(k => delete routerEdges[k])
-  routerLayouts.nodes = {}
-
-  if (!connections.has(startRouter)) return
-
-  const reachable = new Set()
-  const queue = [{ router: startRouter, hops: 0 }]
-  const visited = new Set([startRouter])
-
-  while (queue.length) {
-    const { router, hops } = queue.shift()!
-    reachable.add(router)
-    if (hops >= 16) continue
-    
-    const neighbors = connections.get(router) || new Set()
-    for (const n of neighbors) {
-      if (!visited.has(n)) {
-        visited.add(n)
-        queue.push({ router: n, hops: hops + 1 })
-      }
-    }
-  }
-
-  for (const router of reachable) {
-    // @ts-ignore
-    routerNodes[router] = { name: router }
-  }
-
-  const addedEdges = new Set()
-  let eid = 1
-  for (const s of reachable) {
-    const ts = connections.get(s) || new Set()
-    for (const t of ts) {
-      if (!reachable.has(t)) continue
-      const key = s < t ? `${s}-${t}` : `${t}-${s}`
-      if (!addedEdges.has(key)) {
-        addedEdges.add(key)
-        // @ts-ignore
-        routerEdges[`edge${eid++}`] = { source: s, target: t, label: 'Link' }
-      }
-    }
-  }
-
-  const orbitGroups: Record<string, string[]> = { '001': [], '002': [], '003': [] }
-  for (const r of reachable) {
-    // @ts-ignore
-    const o = r.substring(1, 4) 
-    if (orbitGroups[o]) orbitGroups[o].push(r as string)
-  }
-
-  const cx = 0, cy = 0
-  const cfg = { 
-    '001': { r: 250, off: 0 }, 
-    '002': { r: 180, off: Math.PI / 6 }, 
-    '003': { r: 110, off: Math.PI / 3 } 
-  }
-
-  for (const [o, arr] of Object.entries(orbitGroups)) {
-    if (!arr.length) continue
-    const step = (2 * Math.PI) / arr.length
-    // @ts-ignore
-    const config = cfg[o]
-    arr.forEach((r, i) => {
-      const a = i * step + config.off
-      // @ts-ignore
-      routerLayouts.nodes[r] = { 
-        x: cx + config.r * Math.cos(a), 
-        y: cy + config.r * Math.sin(a) 
-      }
-    })
-  }
-}
-
-// 监听输入变化 (仅响应手动输入)
+// 中心节点变化时重新请求 API
 watch(selectedRouter, () => {
-  if (routerStatus.value === 'ready') updateRouterGraph()
+  loadRouterData()
 })
 
 // ---------------------------------------------------------
@@ -335,13 +238,6 @@ const HIGHLIGHT_COLOR = 0xffcc66;
 const HIGHLIGHT_RADIUS = 0.02;
 const HIGHLIGHT_TUBULAR_SEG = 8;
 const HIGHLIGHT_RADIAL_SEG = 10;
-
-const CSV_FILES = [
-  "Sat_6_6_ephem_ext.csv", "Sat_6_7_ephem_ext.csv", "Sat_6_8_ephem_ext.csv", "Sat_6_9_ephem_ext.csv", "Sat_6_10_ephem_ext.csv",
-  "Sat_7_6_ephem_ext.csv", "Sat_7_7_ephem_ext.csv", "Sat_7_8_ephem_ext.csv", "Sat_7_9_ephem_ext.csv", "Sat_7_10_ephem_ext.csv",
-  "Sat_8_6_ephem_ext.csv", "Sat_8_7_ephem_ext.csv", "Sat_8_8_ephem_ext.csv", "Sat_8_9_ephem_ext.csv", "Sat_8_10_ephem_ext.csv",
-] as const;
-const BASE_URL = "/data/Xingli_xls_15/";
 
 // ---------------------------------------------------------
 // 工具函数
@@ -605,6 +501,7 @@ function animate() {
 }
 
 // ... Loading Data ...
+// 第一阶段：从后端 /api/topology/t0 获取 T0 状态，替代直接读取 15 个 CSV。
 async function loadT0() {
   loading.value = true;
   ready.value = false;
@@ -615,40 +512,57 @@ async function loadT0() {
   clearAllSats();
   selected.value = null;
   t0Label.value = "";
-  for (let i = 0; i < CSV_FILES.length; i++) {
-    const file = CSV_FILES[i];
-    loadProgress.value = `${i + 1}/${CSV_FILES.length} ${file}`;
-    try {
-      const res = await fetch(BASE_URL + file);
-      if (!res.ok) throw new Error(`Fetch failed: ${file}`);
-      const text = await res.text();
-      const rows = parseCsv(text);
-      if (rows.length < 2) continue;
-      const header = rows[0];
-      const col = getColIndexMap(header);
-      const r0 = rows[1];
-      const { orbit, slot } = parseOrbitSlotFromFilename(file);
-      const id = file.replace("_ephem_ext.csv", "");
+  try {
+    loadProgress.value = "fetching /api/topology/t0";
+    const res = await fetch("/api/topology/t0");
+    if (!res.ok) throw new Error(`Fetch failed: /api/topology/t0 (${res.status})`);
+    const data: Array<{
+      id: string;
+      orbit: number;
+      slot: number;
+      utc: string;
+      r: [number, number, number];
+      lla_Lat: number;
+      lla_Lon: number;
+      lla_Alt: number;
+      coe_SemiMajorAxis: number;
+      coe_Eccentricity: number;
+      coe_Inclination: number;
+      coe_RAAN: number;
+      coe_ArgPerigee: number;
+      coe_TrueAnomaly: number;
+    }> = await res.json();
+
+    for (const s of data) {
       const mesh = markRaw(makeNodeMesh());
-      (mesh.material as THREE.MeshStandardMaterial).color.setHex(colorForOrbit(orbit));
+      (mesh.material as THREE.MeshStandardMaterial).color.setHex(colorForOrbit(s.orbit));
       mesh.name = "Sat";
-      mesh.userData = { id };
-      const rx = numAt(r0, col.get("r_x") ?? -1);
-      const ry = numAt(r0, col.get("r_y") ?? -1);
-      const rz = numAt(r0, col.get("r_z") ?? -1);
+      mesh.userData = { id: s.id };
+      const [rx, ry, rz] = s.r;
       mesh.position.set(rx * KM_TO_UNITS, ry * KM_TO_UNITS, rz * KM_TO_UNITS);
-      addNodeLabel(mesh, id);
+      addNodeLabel(mesh, s.id);
       sats.value.push({
-        id, orbit, slot, utc: r0[col.get("UTCG") ?? -1], r: [rx, ry, rz],
-        lla_Lat: numAt(r0, col.get("lla_Lat") ?? -1), lla_Lon: numAt(r0, col.get("lla_Lon") ?? -1), lla_Alt: numAt(r0, col.get("lla_Alt") ?? -1),
-        coe_SemiMajorAxis: numAt(r0, col.get("coe_Semi-major_Axis") ?? -1), coe_Eccentricity: numAt(r0, col.get("coe_Eccentricity") ?? -1),
-        coe_Inclination: numAt(r0, col.get("coe_Inclination") ?? -1), coe_RAAN: numAt(r0, col.get("coe_RAAN") ?? -1),
-        coe_ArgPerigee: numAt(r0, col.get("coe_Arg_of_Perigee") ?? -1), coe_TrueAnomaly: numAt(r0, col.get("coe_True_Anomaly") ?? -1),
-        mesh
+        id: s.id,
+        orbit: s.orbit,
+        slot: s.slot,
+        utc: s.utc,
+        r: [rx, ry, rz],
+        lla_Lat: s.lla_Lat,
+        lla_Lon: s.lla_Lon,
+        lla_Alt: s.lla_Alt,
+        coe_SemiMajorAxis: s.coe_SemiMajorAxis,
+        coe_Eccentricity: s.coe_Eccentricity,
+        coe_Inclination: s.coe_Inclination,
+        coe_RAAN: s.coe_RAAN,
+        coe_ArgPerigee: s.coe_ArgPerigee,
+        coe_TrueAnomaly: s.coe_TrueAnomaly,
+        mesh,
       });
       scene?.add(mesh);
-      if (!t0Label.value) t0Label.value = r0[col.get("UTCG") ?? -1];
-    } catch (err) { console.error(err); }
+      if (!t0Label.value) t0Label.value = s.utc;
+    }
+  } catch (err) {
+    console.error(err);
   }
   loading.value = false;
   ready.value = sats.value.length > 0;
@@ -656,22 +570,9 @@ async function loadT0() {
 }
 async function loadDelayMatrix() {
   try {
-    const res = await fetch(DELAY_CSV);
+    const res = await fetch("/api/topology/delay");
     if (!res.ok) return;
-    const text = await res.text();
-    const rows = parseCsv(text);
-    if (rows.length < 2) return;
-    const header = rows[0].slice(1);
-    const edges: DelayEdge[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const rowName = rows[i][0];
-      for (let j = 1; j < rows[i].length; j++) {
-        const colName = header[j - 1];
-        const v = Number(rows[i][j]);
-        if (!Number.isFinite(v) || v === 0) continue;
-        if (rowName < colName) edges.push({ aId: rowName, bId: colName, delayS: v, distKm: v * C_KM_S });
-      }
-    }
+    const edges: DelayEdge[] = await res.json();
     delayEdges.value = edges;
   } catch (e) { console.error(e); }
 }

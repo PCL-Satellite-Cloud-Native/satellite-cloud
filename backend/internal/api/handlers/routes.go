@@ -19,4 +19,10 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	satelliteHandler := NewSatelliteHandler(db, logger)
 	router.GET("/satellites", satelliteHandler.List)
 	router.GET("/satellites/:id", satelliteHandler.Get)
+
+	// 拓扑（后端统一提供 API，底层数据逐步迁移到数据库）
+	topologyHandler := NewTopologyHandler(db, logger)
+	router.GET("/topology/t0", topologyHandler.TopologyT0Handler)
+	router.GET("/topology/delay", topologyHandler.TopologyDelayHandler)
+	router.GET("/topology/router", topologyHandler.TopologyRouterHandler)
 }

@@ -51,6 +51,21 @@ spec:
                   key: dbname
             - name: SATELLITE_LOG_LEVEL
               value: "info"
+            - name: SATELLITE_TOPOLOGY_AUTO_IMPORT
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-backend-env
+                  key: SATELLITE_TOPOLOGY_AUTO_IMPORT
+            - name: SATELLITE_TOPOLOGY_SCENARIO
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-backend-env
+                  key: SATELLITE_TOPOLOGY_SCENARIO
+            - name: SATELLITE_DELAY_CSV
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-backend-env
+                  key: SATELLITE_DELAY_CSV
           resources:
             requests:
               memory: "64Mi"

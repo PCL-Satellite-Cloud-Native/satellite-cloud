@@ -1,0 +1,90 @@
+# 拓扑数据导入 Job：在 K8s 集群内一次性将 CSV 导入 DB。
+#
+# 前置条件：
+# 1. 已存在与 deployment 相同的 DB Secret：satellite-db-secret（host, user, password, dbname）
+# 2. 拓扑 CSV 数据已放入 PVC topology-data，并挂载到 /data/topology，目录结构示例：
+#      /data/topology/
+#        delay_15x15.csv
+#        ephem_15/
+#          Sat_6_6_ephem_ext.csv
+#          ...
+#        router/
+#          r001001_net_qos.csv
+#          ...
+#
+# 用法：
+#   kubectl apply -f k8s/backend/import-topology-job.yaml
+#   kubectl logs -f job/import-topology -n gitlab-runner
+#
+# 只导入某一类数据时，可复制本文件并修改 command 为单一 mode，或 kubectl run 临时 Pod：
+#   kubectl run import-topology --rm -it --restart=Never \
+#     --image=192.168.10.238/satellite/backend:latest \
+#     -n gitlab-runner \
+#     --overrides='{"spec":{"containers":[{"name":"import","image":"192.168.10.238/satellite/backend:latest","command":["./import_topology","-mode=delay","-file","/data/topology/delay_15x15.csv"],"envFrom":[{"secretRef":{"name":"satellite-db-secret"}}],"volumeMounts":[{"name":"data","mountPath":"/data/topology"}]}],"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"topology-data"}}]}}' \
+#     --
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: import-topology
+  namespace: gitlab-runner
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: import
+          image: 192.168.10.238/satellite/backend:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              SCENARIO="${SATELLITE_TOPOLOGY_SCENARIO:-Scenario5_full_36x22}"
+              ./import_topology -scenario "$SCENARIO" -mode=delay -file /data/topology/delay_15x15.csv
+              ./import_topology -scenario "$SCENARIO" -mode=t0 -dir /data/topology/ephem_15
+              ./import_topology -scenario "$SCENARIO" -mode=router -dir /data/topology/router
+          env:
+            - name: SATELLITE_DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: host
+            - name: SATELLITE_DATABASE_PORT
+              value: "5432"
+            - name: SATELLITE_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: user
+            - name: SATELLITE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: password
+            - name: SATELLITE_DATABASE_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: dbname
+            - name: SATELLITE_TOPOLOGY_SCENARIO
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-backend-env
+                  key: SATELLITE_TOPOLOGY_SCENARIO
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: satellite-backend-env
+                optional: true
+          volumeMounts:
+            - name: topology-data
+              mountPath: /data/topology
+              readOnly: true
+      volumes:
+        - name: topology-data
+          persistentVolumeClaim:
+            claimName: topology-data

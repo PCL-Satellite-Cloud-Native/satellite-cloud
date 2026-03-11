@@ -210,7 +210,7 @@ const CSV_FILES = [
   "Sat_8_10_ephem_ext.csv",
 ] as const;
 
-const BASE_URL = "/data/Xingli_xls_15/";
+const BASE_URL = "/data/ephem_15/";
 
 // ---------------------------------------------------------
 // 工具函数

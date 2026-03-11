@@ -13,8 +13,9 @@ RUN go mod download
 # 复制源代码
 COPY . .
 
-# 构建应用
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/server ./cmd/server
+# 构建应用与导入工具
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/import_topology ./tools
 
 # 运行阶段
 FROM alpine:latest
@@ -24,8 +25,9 @@ ENV TZ=Asia/Shanghai
 
 WORKDIR /app
 
-# 从构建阶段复制二进制文件
+# 从构建阶段复制二进制文件（server + 拓扑导入 CLI）
 COPY --from=builder /build/bin/server .
+COPY --from=builder /build/bin/import_topology .
 
 # 创建非 root 用户
 RUN addgroup -g 1000 appuser && \

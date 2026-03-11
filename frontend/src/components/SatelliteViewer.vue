@@ -280,8 +280,9 @@ async function resolveScenarioWithSatellites(preferredScenarioId) {
   if (!scenarios.length) {
     throw new Error('未找到场景数据，请先在后端导入场景数据（可运行 backend/inser_data.py）')
   }
-
-  return getScenarioWithSatellites(scenarios[0].id)
+  // 优先选择我们导入的完整星座场景（Scenario5_full_36x22），否则退回第一个场景
+  const preferred = scenarios.find(s => s.name === 'Scenario5_full_36x22') || scenarios[0]
+  return getScenarioWithSatellites(preferred.id)
 }
 
 // --------------------------------------------------------------------

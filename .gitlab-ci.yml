@@ -1,6 +1,7 @@
 stages:
   - build
   - deploy
+  - topology-sync
 
 variables:
   HARBOR_URL: "192.168.10.238"
@@ -83,5 +84,50 @@ deploy:
   needs:
     - build-backend
     - build-frontend
+  only:
+    - main
+
+sync-topology-csv-to-nfs:
+  stage: topology-sync
+  image: alpine:3.19
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - deploy
+  script:
+    - apk add --no-cache openssh-client rsync
+    # 准备 SSH key
+    - mkdir -p ~/.ssh
+    - echo "$NFS_SSH_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -p "${NFS_SSH_PORT:-22}" "$NFS_SSH_HOST" >> ~/.ssh/known_hosts
+    # 同步 CSV 到 NFS 目录（覆盖更新）
+    - |
+      RSYNC_BASE="$NFS_SSH_USER@$NFS_SSH_HOST:/export/topology-data"
+      echo "同步 delay_15x15.csv 到 $RSYNC_BASE"
+      rsync -av --delete frontend/public/data/delay_15x15.csv "$RSYNC_BASE/"
+      echo "同步 ephem_15/ 到 $RSYNC_BASE/ephem_15/"
+      rsync -av --delete frontend/public/data/ephem_15/ "$RSYNC_BASE/ephem_15/"
+      echo "同步 router/ 到 $RSYNC_BASE/router/"
+      rsync -av --delete frontend/public/data/router/ "$RSYNC_BASE/router/"
+  only:
+    - main
+
+import-topology:
+  stage: topology-sync
+  image: bitnami/kubectl:latest
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - sync-topology-csv-to-nfs
+  script:
+    - echo "删除旧的导入 Job（若存在）"
+    - kubectl -n gitlab-runner delete job import-topology || true
+    - echo "应用新的导入 Job 清单"
+    - kubectl -n gitlab-runner apply -f k8s/backend/import-topology-job.yaml
+    - echo "等待导入 Job 完成..."
+    - kubectl -n gitlab-runner wait --for=condition=complete --timeout=600s job/import-topology
+    - echo "导入 Job 日志："
+    - kubectl -n gitlab-runner logs job/import-topology --tail=100
   only:
     - main

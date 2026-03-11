@@ -16,11 +16,12 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"go.uber.org/zap"
 
-	"satellite-cloud/backend/internal/config"
 	"satellite-cloud/backend/internal/api/handlers"
+	"satellite-cloud/backend/internal/config"
 	"satellite-cloud/backend/migrations"
 	"satellite-cloud/backend/pkg/database"
 	"satellite-cloud/backend/pkg/logger"
+	"satellite-cloud/backend/internal/topology"
 )
 
 func main() {
@@ -49,7 +50,51 @@ func main() {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		zapLogger.Fatal("Failed to run migrations", zap.Error(err))
 	}
-	zapLogger.Info("Migrations check done")
+	if err == nil {
+		zapLogger.Info("Migrations applied or already up to date")
+	}
+
+	// 可选：启动时自动从 CSV 导入拓扑相关数据（当前仅支持 delay 矩阵）
+	if os.Getenv("SATELLITE_TOPOLOGY_AUTO_IMPORT") == "true" {
+		scenarioName := os.Getenv("SATELLITE_TOPOLOGY_SCENARIO")
+		if scenarioName == "" {
+			scenarioName = "Scenario5_full_36x22"
+		}
+
+		if delayCSV := os.Getenv("SATELLITE_DELAY_CSV"); delayCSV != "" {
+			zapLogger.Info("Auto-importing delay edges from CSV",
+				zap.String("scenario", scenarioName),
+				zap.String("file", delayCSV),
+			)
+			if err := topology.ImportDelayFromCSV(db, scenarioName, delayCSV); err != nil {
+				zapLogger.Error("Failed to auto-import delay edges from CSV", zap.Error(err))
+			} else {
+				zapLogger.Info("Auto-import delay edges succeeded")
+			}
+		}
+		if t0Dir := os.Getenv("SATELLITE_T0_CSV_DIR"); t0Dir != "" {
+			zapLogger.Info("Auto-importing T0 satellite states from CSV dir",
+				zap.String("scenario", scenarioName),
+				zap.String("dir", t0Dir),
+			)
+			if err := topology.ImportSatStatesFromCSV(db, scenarioName, t0Dir); err != nil {
+				zapLogger.Error("Failed to auto-import T0 states from CSV", zap.Error(err))
+			} else {
+				zapLogger.Info("Auto-import T0 states succeeded")
+			}
+		}
+		if routerDir := os.Getenv("SATELLITE_ROUTER_CSV_DIR"); routerDir != "" {
+			zapLogger.Info("Auto-importing router topology from CSV dir",
+				zap.String("scenario", scenarioName),
+				zap.String("dir", routerDir),
+			)
+			if err := topology.ImportRouterFromCSV(db, scenarioName, routerDir); err != nil {
+				zapLogger.Error("Failed to auto-import router from CSV", zap.Error(err))
+			} else {
+				zapLogger.Info("Auto-import router topology succeeded")
+			}
+		}
+	}
 
 	// 设置 Gin 模式
 	if cfg.Server.Mode == "production" {
@@ -58,7 +103,7 @@ func main() {
 
 	// 创建 Gin 路由
 	router := gin.New()
-	
+
 	// 中间件
 	router.Use(gin.Recovery())
 	router.Use(logger.Middleware(zapLogger))

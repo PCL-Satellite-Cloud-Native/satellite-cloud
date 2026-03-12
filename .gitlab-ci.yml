@@ -28,6 +28,8 @@ build-backend:
     - cd backend
     - docker build -t "$BACKEND_IMAGE" .
     - docker push "$BACKEND_IMAGE"
+    - docker tag "$BACKEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
+    - docker push "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
   tags:
     - k8s-cluster-runner
   only:

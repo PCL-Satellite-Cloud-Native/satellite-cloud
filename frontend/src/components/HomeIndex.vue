@@ -89,7 +89,7 @@ const navItems = ref([
     title: '遥感应用',
     // 这是一个卫星图标风格
     imgUrl: 'https://cdn-icons-png.flaticon.com/512/4230/4230726.png', 
-    route: '/app/remote-sensing'
+    route: '/remote-sensing'
   },
   { 
     title: '批量服务引擎',

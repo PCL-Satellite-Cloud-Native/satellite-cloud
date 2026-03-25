@@ -10,6 +10,16 @@ spec:
   gateways:
     - satellite-gateway
   http:
+    # 遥感任务 SSE 长连接，显式关闭超时
+    - match:
+        - uri:
+            prefix: "/api/remote-sensing/tasks/"
+      timeout: 0s
+      route:
+        - destination:
+            host: satellite-backend.gitlab-runner.svc.cluster.local
+            port:
+              number: 8080
     # 后端 API 路由：/api 前缀
     - match:
         - uri:
@@ -28,4 +38,3 @@ spec:
             host: satellite-frontend.gitlab-runner.svc.cluster.local
             port:
               number: 80
-

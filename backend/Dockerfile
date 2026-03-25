@@ -1,45 +1,54 @@
-# 构建阶段
-FROM golang:1.25.7-alpine AS builder
+# 构建阶段：编译 Go 二进制
+FROM golang:1.25.7-bookworm AS builder
 
 WORKDIR /build
 
-# 安装构建依赖
-RUN apk add --no-cache git
-
-# 复制 go mod 文件
 COPY go.mod go.sum ./
 RUN go mod download
 
-# 复制源代码
 COPY . .
 
-# 构建应用与导入工具
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/server ./cmd/server && \
     CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/import_topology ./tools
 
-# 运行阶段
-FROM alpine:latest
+# 运行阶段：Go 服务 + Python 遥感运行时
+FROM python:3.11-slim-bookworm
 
-RUN apk --no-cache add ca-certificates tzdata
 ENV TZ=Asia/Shanghai
-
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tzdata \
+    curl \
+    gdal-bin \
+    libgdal-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # 从构建阶段复制二进制文件（server + 拓扑导入 CLI）
 COPY --from=builder /build/bin/server .
 COPY --from=builder /build/bin/import_topology .
 
-# 创建非 root 用户
-RUN addgroup -g 1000 appuser && \
-    adduser -D -u 1000 -G appuser appuser && \
-    chown -R appuser:appuser /app
+# 复制 GitLab CI 拉取的遥感项目源码
+COPY remote-sensing-src /opt/remote-sensing
+
+# 创建并安装遥感虚拟环境依赖
+RUN python3 -m venv /opt/remote-sensing/.venv && \
+    /opt/remote-sensing/.venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/remote-sensing/.venv/bin/pip install --no-cache-dir -r /opt/remote-sensing/requirements.txt && \
+    /opt/remote-sensing/.venv/bin/pip install --no-cache-dir "GDAL==$(gdal-config --version)"
+
+# 创建运行用户
+RUN groupadd -g 1000 appuser && \
+    useradd -m -u 1000 -g appuser appuser && \
+    chown -R appuser:appuser /app /opt/remote-sensing
 
 USER appuser
 
 EXPOSE 8080
 
-# 健康检查
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+  CMD curl -fsS http://localhost:8080/health || exit 1
 
 CMD ["./server"]

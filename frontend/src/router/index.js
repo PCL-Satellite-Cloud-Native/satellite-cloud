@@ -38,6 +38,11 @@ const routes = [
     name: 'MonitorDashboard',
     component: () => import('../view/MonitorDashboard.vue')
   },
+  {
+    path: '/remote-sensing',
+    name: 'RemoteSensing',
+    component: () => import('../view/RemoteSensing.vue')
+  },
   // 404 路由：匹配所有未定义的路径，重定向回主页
   {
     path: '/:pathMatch(.*)*',

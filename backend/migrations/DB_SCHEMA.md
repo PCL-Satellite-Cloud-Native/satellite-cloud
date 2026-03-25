@@ -231,6 +231,104 @@
 - `scenarios (1) ──< (N) router_links`
   - 每个场景维护一套独立的路由邻接关系
 
+## 表：`public.remote_sensing_tasks`
+
+**用途**：记录遥感预处理任务的整体状态，下一步拆分微服务时所有事件都围绕该表构建。
+
+### 字段
+
+| 字段名 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | `BIGSERIAL` | `PRIMARY KEY` | 任务主键 |
+| `name` | `VARCHAR(255)` | `NOT NULL` | 任务名称，如景号或自定义标题 |
+| `status` | `VARCHAR(32)` | `NOT NULL DEFAULT 'pending'` | `pending`/`running`/`completed`/`failed` |
+| `input_directory` | `TEXT` | `NOT NULL` | 上载数据所在目录 |
+| `file_prefix` | `VARCHAR(255)` | `NOT NULL` | 影像前缀（`GF2_PMS1...`） |
+| `sensor` | `VARCHAR(64)` |  | 可选传感器标签，方便多传感器任务 |
+| `current_stage` | `VARCHAR(64)` |  | 最近一次更新的阶段 |
+| `error_message` | `TEXT` |  | 失败时的错误摘要 |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | 创建时间 |
+| `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | 更新时间（触发器自动刷新） |
+| `started_at` | `TIMESTAMPTZ` |  | 首次开始执行时间 |
+| `finished_at` | `TIMESTAMPTZ` |  | 完成/失败时间 |
+
+### 索引
+
+| 索引名 | 列 | 说明 |
+|---|---|---|
+| `idx_remote_sensing_tasks_status` | `(status)` | 按状态筛选 |
+
+## 表：`public.remote_sensing_task_stages`
+
+**用途**：记录每个阶段（`tiff_to_envi_mss1`、`pan_rpc_warp_quarters` 等）的状态与耗时，前端用于绘制 timeline。
+
+### 字段
+
+| 字段名 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | `BIGSERIAL` | `PRIMARY KEY` | 主键 |
+| `task_id` | `BIGINT` | `NOT NULL` + FK | 关联任务 |
+| `name` | `VARCHAR(128)` | `NOT NULL` | 阶段代码 |
+| `title` | `VARCHAR(128)` |  | 可读标题 |
+| `stage_order` | `INTEGER` | `NOT NULL` | 执行顺序 |
+| `status` | `VARCHAR(32)` | `NOT NULL DEFAULT 'pending'` | pending/running/success/failed |
+| `output_path` | `TEXT` |  | 产出路径 |
+| `details` | `JSONB` | `DEFAULT '{}'` | 附加信息，如已完成的 areaidx/band |
+| `message` | `TEXT` |  | 简要说明 |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | 创建时间 |
+| `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | 更新时间（触发器自动更新） |
+| `started_at` | `TIMESTAMPTZ` |  | 阶段开始时间 |
+| `finished_at` | `TIMESTAMPTZ` |  | 阶段结束时间 |
+
+### 索引
+
+| 索引名 | 列 | 说明 |
+|---|---|---|
+| `idx_remote_sensing_task_stages_task` | `(task_id, stage_order)` | 任务/顺序查询 |
+
+## 表：`public.remote_sensing_task_artifacts`
+
+**用途**：记录处理产物（ENVI/预览 PNG/原始日志）供前端下载与预览。
+
+### 字段
+
+| 字段名 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | `BIGSERIAL` | `PRIMARY KEY` | 主键 |
+| `task_id` | `BIGINT` | `NOT NULL` + FK | 关联任务 |
+| `type` | `VARCHAR(64)` | `NOT NULL` | `raw`、`preview` 等 |
+| `label` | `VARCHAR(128)` |  | 描述性标签 |
+| `path` | `TEXT` | `NOT NULL` | 相对 `Satellite-Remote-Sensing` 根目录的文件路径 |
+| `metadata` | `JSONB` | `DEFAULT '{}'` | 额外信息 |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | 记录时间 |
+
+### 索引
+
+| 索引名 | 列 | 说明 |
+|---|---|---|
+| `idx_remote_sensing_task_artifacts_task` | `(task_id)` | 任务级别检索 |
+
+## 表：`public.remote_sensing_task_logs`
+
+**用途**：存储每个阶段的 stdout/stderr，API 可分页取出用于前端实时日志。
+
+### 字段
+
+| 字段名 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | `BIGSERIAL` | `PRIMARY KEY` | 主键 |
+| `task_id` | `BIGINT` | `NOT NULL` + FK | 关联任务 |
+| `stage_name` | `VARCHAR(128)` |  | 所属阶段 |
+| `level` | `VARCHAR(32)` | `NOT NULL` | `info` / `error` |
+| `content` | `TEXT` | `NOT NULL` | 日志内容 |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` | 记录时间 |
+
+### 索引
+
+| 索引名 | 列 | 说明 |
+|---|---|---|
+| `idx_remote_sensing_task_logs_task` | `(task_id)` | 任务级别日志 |
+
 ---
 
 ## 拓扑相关表的数据导入（两种使用方式）
@@ -244,5 +342,4 @@
 
 - **本地**：环境变量与 CLI 用法见 `backend/.env` 注释与 `backend/tools/import_topology.go` 文件头。
 - **K8s**：两种方式的详细步骤、PVC 准备与 Job 用法见 **k8s/backend/TOPOLOGY_IMPORT.md**。
-
 

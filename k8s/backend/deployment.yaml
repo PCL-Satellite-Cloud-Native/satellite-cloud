@@ -15,6 +15,19 @@ spec:
       labels:
         app: satellite-backend
     spec:
+      initContainers:
+        - name: init-remote-sensing-dirs
+          image: alpine:3.19
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mkdir -p /mnt/input /mnt/output_preprocessing
+              chmod -R 0777 /mnt/input /mnt/output_preprocessing
+          volumeMounts:
+            - name: remote-sensing-data
+              mountPath: /mnt
       containers:
         - name: satellite-backend
           image: 192.168.10.238/satellite/backend:latest
@@ -66,13 +79,24 @@ spec:
                 secretKeyRef:
                   name: satellite-backend-env
                   key: SATELLITE_DELAY_CSV
+            - name: SATELLITE_REMOTE_SENSING_ROOT
+              value: "/opt/remote-sensing"
+            - name: SATELLITE_REMOTE_SENSING_PYTHON
+              value: "/opt/remote-sensing/.venv/bin/python"
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "100m"
+              memory: "512Mi"
+              cpu: "300m"
             limits:
-              memory: "256Mi"
-              cpu: "500m"
+              memory: "2Gi"
+              cpu: "2000m"
+          volumeMounts:
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing/input
+              subPath: input
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing/output_preprocessing
+              subPath: output_preprocessing
           livenessProbe:
             httpGet:
               path: /health
@@ -87,6 +111,10 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
+      volumes:
+        - name: remote-sensing-data
+          persistentVolumeClaim:
+            claimName: remote-sensing-data
 
 ---
 apiVersion: v1
@@ -101,4 +129,3 @@ spec:
   ports:
     - port: 8080
       targetPort: 8080
-

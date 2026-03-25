@@ -11,6 +11,13 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
+        ws: true,
+        proxyTimeout: 0,
+        configure(proxy) {
+          proxy.on('error', (err) => {
+            console.warn('API proxy error', err)
+          })
+        },
       },
     },
   },

@@ -1,14 +1,16 @@
 package handlers
 
 import (
-	"gorm.io/gorm"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
+
+	"satellite-cloud/backend/internal/remotesensing"
 )
 
 // RegisterRoutes 注册所有 API 路由
-func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
+func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, remoteSvc *remotesensing.RemoteSensingService) {
 	// 场景处理器
 	scenarioHandler := NewScenarioHandler(db, logger)
 	router.GET("/scenarios", scenarioHandler.List)
@@ -25,4 +27,17 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger) {
 	router.GET("/topology/t0", topologyHandler.TopologyT0Handler)
 	router.GET("/topology/delay", topologyHandler.TopologyDelayHandler)
 	router.GET("/topology/router", topologyHandler.TopologyRouterHandler)
+
+	if remoteSvc != nil {
+		remoteHandler := NewRemoteSensingHandler(remoteSvc, logger)
+		remote := router.Group("/remote-sensing")
+		remote.POST("/tasks", remoteHandler.CreateTask)
+		remote.GET("/tasks", remoteHandler.ListTasks)
+		remote.GET("/tasks/:id", remoteHandler.GetTask)
+		remote.GET("/tasks/:id/stages", remoteHandler.ListStages)
+		remote.GET("/tasks/:id/logs", remoteHandler.ListLogs)
+		remote.GET("/tasks/:id/artifacts", remoteHandler.ListArtifacts)
+		remote.GET("/tasks/:id/artifacts/:artifactId", remoteHandler.DownloadArtifact)
+		remote.GET("/tasks/:id/events", remoteHandler.StreamEvents)
+	}
 }

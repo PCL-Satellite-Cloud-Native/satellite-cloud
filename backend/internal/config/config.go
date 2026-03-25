@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/spf13/viper"
@@ -11,9 +12,10 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Log      LogConfig
+	Server        ServerConfig
+	Database      DatabaseConfig
+	Log           LogConfig
+	RemoteSensing RemoteSensingConfig
 }
 
 type ServerConfig struct {
@@ -34,6 +36,11 @@ type DatabaseConfig struct {
 type LogConfig struct {
 	Level  string // debug, info, warn, error
 	Output string // stdout, file path
+}
+
+type RemoteSensingConfig struct {
+	RootPath  string
+	PythonBin string
 }
 
 func Load() *Config {
@@ -68,6 +75,7 @@ func Load() *Config {
 			Level:  viper.GetString("log.level"),
 			Output: viper.GetString("log.output"),
 		},
+		RemoteSensing: remoteSensingConfigFromEnvOrViper(),
 	}
 
 	return config
@@ -123,6 +131,53 @@ func setDefaults() {
 	// Log defaults
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.output", "stdout")
+
+	// Remote sensing defaults
+	viper.SetDefault("remote_sensing.root", "../Satellite-Remote-Sensing")
+	viper.SetDefault("remote_sensing.python", "python3")
+}
+
+func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
+	get := func(envKey, viperKey, defaultVal string) string {
+		if v := os.Getenv(envKey); v != "" {
+			return v
+		}
+		if v := viper.GetString(viperKey); v != "" {
+			return v
+		}
+		return defaultVal
+	}
+
+	rootPath := normalizePath(get("SATELLITE_REMOTE_SENSING_ROOT", "remote_sensing.root", "../Satellite-Remote-Sensing"))
+	pythonBin := get("SATELLITE_REMOTE_SENSING_PYTHON", "remote_sensing.python", "")
+	if pythonBin == "" {
+		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
+		venvPython := filepath.Join(rootPath, ".venv", "bin", "python")
+		if stat, err := os.Stat(venvPython); err == nil && !stat.IsDir() {
+			pythonBin = venvPython
+		} else {
+			pythonBin = "python3"
+		}
+	}
+
+	return RemoteSensingConfig{
+		RootPath:  rootPath,
+		PythonBin: pythonBin,
+	}
+}
+
+func normalizePath(pathStr string) string {
+	if pathStr == "" {
+		return pathStr
+	}
+	if filepath.IsAbs(pathStr) {
+		return filepath.Clean(pathStr)
+	}
+	abs, err := filepath.Abs(pathStr)
+	if err != nil {
+		return pathStr
+	}
+	return abs
 }
 
 // DSN 返回 PostgreSQL 连接字符串（libpq 格式，供 GORM 等使用）

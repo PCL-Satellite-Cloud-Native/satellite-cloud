@@ -1,0 +1,630 @@
+package remotesensing
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"go.uber.org/zap"
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+
+	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/model"
+)
+
+const (
+	TaskStatusPending   = "pending"
+	TaskStatusRunning   = "running"
+	TaskStatusCompleted = "completed"
+	TaskStatusFailed    = "failed"
+
+	StagePending = "pending"
+	StageRunning = "running"
+	StageSuccess = "success"
+	StageFailed  = "failed"
+
+	StageTiffToEnviMSS = "tiff_to_envi_mss"
+	StageTiffToEnviPAN = "tiff_to_envi_pan"
+	StagePanRadToa     = "pan_rad_toa"
+	StagePanRpcWarp    = "pan_rpc_warp_quarters"
+	StagePanMerge      = "pan_merge_warp_square"
+	StageMssRadQuac    = "mss_rad_quac_rpc"
+	StageCoregister    = "mss_coregister_to_pan"
+	StagePansharpen    = "pansharpen_fusion"
+	StageFusionStack   = "fusion_stack_envi"
+)
+
+type stageDefinition struct {
+	Name  string
+	Title string
+	Order int
+}
+
+var stageDefinitions = []stageDefinition{
+	{Name: StageTiffToEnviMSS, Title: "TIFF → ENVI（MSS）", Order: 1},
+	{Name: StageTiffToEnviPAN, Title: "TIFF → ENVI（PAN）", Order: 2},
+	{Name: StagePanRadToa, Title: "PAN 辐射定标", Order: 3},
+	{Name: StagePanRpcWarp, Title: "PAN RPC 分块", Order: 4},
+	{Name: StagePanMerge, Title: "PAN 拼接裁切", Order: 5},
+	{Name: StageMssRadQuac, Title: "MSS QUAC + RPC", Order: 6},
+	{Name: StageCoregister, Title: "多光谱与全色配准", Order: 7},
+	{Name: StagePansharpen, Title: "Pan-sharpen 融合", Order: 8},
+	{Name: StageFusionStack, Title: "融合堆栈 ENVI", Order: 9},
+}
+
+type RemoteSensingStageEvent struct {
+	TaskID     uint                   `json:"task_id"`
+	StageName  string                 `json:"stage_name,omitempty"`
+	Status     string                 `json:"status"`
+	Message    string                 `json:"message,omitempty"`
+	Details    map[string]interface{} `json:"details,omitempty"`
+	TaskStatus string                 `json:"task_status,omitempty"`
+	UpdatedAt  time.Time              `json:"updated_at"`
+}
+
+type CreateTaskRequest struct {
+	Name           string `json:"name"`
+	FilePrefix     string `json:"filePrefix"`
+	InputDirectory string `json:"inputDirectory"`
+	Sensor         string `json:"sensor"`
+}
+
+type stageExecutionResult struct {
+	Details    map[string]interface{}
+	OutputPath string
+	Message    string
+	Artifacts  []model.RemoteSensingTaskArtifact
+}
+
+type stageExecutor func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error)
+
+var stageExecutors = map[string]stageExecutor{
+	StageTiffToEnviMSS: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executeTiffToEnvi(ctx, taskID, req, "MSS1", StageTiffToEnviMSS)
+	},
+	StageTiffToEnviPAN: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executeTiffToEnvi(ctx, taskID, req, "PAN1", StageTiffToEnviPAN)
+	},
+	StagePanRadToa: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executePanRadToa(ctx, taskID, req)
+	},
+	StagePanRpcWarp: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executePanRpc(ctx, taskID, req)
+	},
+	StagePanMerge: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executePanMerge(ctx, taskID, req)
+	},
+	StageMssRadQuac: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executeMssRadQuac(ctx, taskID, req)
+	},
+	StageCoregister: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executeMssCoregister(ctx, taskID, req)
+	},
+	StagePansharpen: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executePansharpen(ctx, taskID, req)
+	},
+	StageFusionStack: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executeFusionStack(ctx, taskID, req)
+	},
+}
+
+type RemoteSensingService struct {
+	db          *gorm.DB
+	logger      *zap.Logger
+	cfg         config.RemoteSensingConfig
+	subsMu      sync.Mutex
+	subscribers map[uint][]chan RemoteSensingStageEvent
+}
+
+func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig) *RemoteSensingService {
+	return &RemoteSensingService{
+		db:          db,
+		logger:      logger,
+		cfg:         cfg,
+		subscribers: make(map[uint][]chan RemoteSensingStageEvent),
+	}
+}
+
+func (s *RemoteSensingService) CreateTask(ctx context.Context, req CreateTaskRequest) (*model.RemoteSensingTask, error) {
+	if strings.TrimSpace(req.FilePrefix) == "" || strings.TrimSpace(req.InputDirectory) == "" {
+		return nil, fmt.Errorf("filePrefix 和 inputDirectory 为必填项")
+	}
+	name := req.Name
+	if strings.TrimSpace(name) == "" {
+		name = req.FilePrefix
+	}
+	task := &model.RemoteSensingTask{
+		Name:           name,
+		Status:         TaskStatusPending,
+		InputDirectory: req.InputDirectory,
+		FilePrefix:     req.FilePrefix,
+		Sensor:         req.Sensor,
+	}
+	if err := s.db.WithContext(ctx).Create(task).Error; err != nil {
+		return nil, err
+	}
+	if err := s.createStagesForTask(ctx, task.ID); err != nil {
+		s.logger.Error("创建阶段失败", zap.Error(err))
+		s.db.Delete(task)
+		return nil, err
+	}
+	go s.runPipeline(context.Background(), task.ID, req)
+	return task, nil
+}
+
+func (s *RemoteSensingService) ListTasks(ctx context.Context) ([]model.RemoteSensingTask, error) {
+	var tasks []model.RemoteSensingTask
+	err := s.db.WithContext(ctx).Order("created_at DESC").Find(&tasks).Error
+	return tasks, err
+}
+
+func (s *RemoteSensingService) GetTask(ctx context.Context, id uint) (*model.RemoteSensingTask, error) {
+	var task model.RemoteSensingTask
+	if err := s.db.WithContext(ctx).First(&task, id).Error; err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+func (s *RemoteSensingService) ListStages(ctx context.Context, taskID uint) ([]model.RemoteSensingTaskStage, error) {
+	var stages []model.RemoteSensingTaskStage
+	err := s.db.WithContext(ctx).
+		Where("task_id = ?", taskID).
+		Order("stage_order ASC").
+		Find(&stages).Error
+	return stages, err
+}
+
+func (s *RemoteSensingService) ListLogs(ctx context.Context, taskID uint, limit int) ([]model.RemoteSensingTaskLog, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	var logs []model.RemoteSensingTaskLog
+	err := s.db.WithContext(ctx).
+		Where("task_id = ?", taskID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&logs).Error
+	return logs, err
+}
+
+func (s *RemoteSensingService) ListArtifacts(ctx context.Context, taskID uint) ([]model.RemoteSensingTaskArtifact, error) {
+	var artifacts []model.RemoteSensingTaskArtifact
+	err := s.db.WithContext(ctx).
+		Where("task_id = ?", taskID).
+		Order("created_at DESC").
+		Find(&artifacts).Error
+	return artifacts, err
+}
+
+func (s *RemoteSensingService) GetArtifact(ctx context.Context, taskID, artifactID uint) (*model.RemoteSensingTaskArtifact, error) {
+	var art model.RemoteSensingTaskArtifact
+	if err := s.db.WithContext(ctx).
+		Where("task_id = ? AND id = ?", taskID, artifactID).
+		First(&art).Error; err != nil {
+		return nil, err
+	}
+	return &art, nil
+}
+
+func (s *RemoteSensingService) Subscribe(taskID uint) (<-chan RemoteSensingStageEvent, func()) {
+	ch := make(chan RemoteSensingStageEvent, 8)
+	s.subsMu.Lock()
+	s.subscribers[taskID] = append(s.subscribers[taskID], ch)
+	s.subsMu.Unlock()
+	return ch, func() {
+		s.subsMu.Lock()
+		defer s.subsMu.Unlock()
+		subs := s.subscribers[taskID]
+		for i, c := range subs {
+			if c == ch {
+				subs = append(subs[:i], subs[i+1:]...)
+				break
+			}
+		}
+		if len(subs) == 0 {
+			delete(s.subscribers, taskID)
+		} else {
+			s.subscribers[taskID] = subs
+		}
+		close(ch)
+	}
+}
+
+func (s *RemoteSensingService) ArtifactAbsolutePath(artifact *model.RemoteSensingTaskArtifact) (string, error) {
+	rootAbs, err := filepath.Abs(s.cfg.RootPath)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Clean(filepath.Join(rootAbs, artifact.Path))
+	if !strings.HasPrefix(target, rootAbs) {
+		return "", fmt.Errorf("artifact path 越界")
+	}
+	return target, nil
+}
+
+func (s *RemoteSensingService) createStagesForTask(ctx context.Context, taskID uint) error {
+	for _, def := range stageDefinitions {
+		stage := model.RemoteSensingTaskStage{
+			TaskID: taskID,
+			Name:   def.Name,
+			Title:  def.Title,
+			Order:  def.Order,
+			Status: StagePending,
+		}
+		if err := s.db.WithContext(ctx).Create(&stage).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *RemoteSensingService) runPipeline(ctx context.Context, taskID uint, req CreateTaskRequest) {
+	start := time.Now().UTC()
+	if err := s.db.Model(&model.RemoteSensingTask{}).
+		Where("id = ?", taskID).
+		Updates(map[string]interface{}{
+			"status":        TaskStatusRunning,
+			"current_stage": "",
+			"started_at":    start,
+			"updated_at":    start,
+		}).Error; err != nil {
+		s.logger.Error("更新任务状态失败", zap.Error(err))
+	}
+	s.publishStageEvent(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusRunning, UpdatedAt: time.Now().UTC()})
+
+	for _, def := range stageDefinitions {
+		if err := s.runStage(ctx, taskID, def, req); err != nil {
+			s.finishTaskWithError(taskID, fmt.Sprintf("阶段 %s 失败: %v", def.Name, err))
+			return
+		}
+	}
+	s.finishTaskCompleted(taskID)
+}
+
+func (s *RemoteSensingService) runStage(ctx context.Context, taskID uint, def stageDefinition, req CreateTaskRequest) error {
+	executor, ok := stageExecutors[def.Name]
+	if !ok {
+		return fmt.Errorf("未注册的阶段: %s", def.Name)
+	}
+	if err := s.updateStageStatus(taskID, def.Name, StageRunning, nil, "", ""); err != nil {
+		return err
+	}
+	res, err := executor(ctx, s, taskID, req)
+	if err != nil {
+		s.updateStageStatus(taskID, def.Name, StageFailed, nil, "", err.Error())
+		return err
+	}
+	details := res.Details
+	message := res.Message
+	output := res.OutputPath
+	if err := s.updateStageStatus(taskID, def.Name, StageSuccess, details, output, message); err != nil {
+		return err
+	}
+	for _, art := range res.Artifacts {
+		art.TaskID = taskID
+		if err := s.createArtifact(ctx, art); err != nil {
+			s.logger.Warn("保存产物失败", zap.Error(err))
+		}
+	}
+	return nil
+}
+
+func (s *RemoteSensingService) updateStageStatus(taskID uint, stageName, status string, details map[string]interface{}, outputPath, message string) error {
+	updates := map[string]interface{}{
+		"status":     status,
+		"updated_at": time.Now().UTC(),
+	}
+	if details != nil {
+		updates["details"] = datatypes.JSONMap(details)
+	}
+	if outputPath != "" {
+		updates["output_path"] = outputPath
+	}
+	if message != "" {
+		updates["message"] = message
+	}
+	now := time.Now().UTC()
+	if status == StageRunning {
+		updates["started_at"] = now
+		updates["finished_at"] = nil
+	}
+	if status == StageSuccess || status == StageFailed {
+		updates["finished_at"] = now
+	}
+	if err := s.db.Model(&model.RemoteSensingTaskStage{}).
+		Where("task_id = ? AND name = ?", taskID, stageName).
+		Updates(updates).Error; err != nil {
+		return err
+	}
+	taskUpdates := map[string]interface{}{
+		"current_stage": stageName,
+		"updated_at":    time.Now().UTC(),
+	}
+	if status == StageFailed {
+		taskUpdates["status"] = TaskStatusFailed
+	}
+	if err := s.db.Model(&model.RemoteSensingTask{}).
+		Where("id = ?", taskID).
+		Updates(taskUpdates).Error; err != nil {
+		return err
+	}
+	event := RemoteSensingStageEvent{
+		TaskID:     taskID,
+		StageName:  stageName,
+		Status:     status,
+		Message:    message,
+		Details:    details,
+		TaskStatus: TaskStatusRunning,
+		UpdatedAt:  time.Now().UTC(),
+	}
+	if status == StageFailed {
+		event.TaskStatus = TaskStatusFailed
+	}
+	s.publishStageEvent(taskID, event)
+	return nil
+}
+
+func (s *RemoteSensingService) finishTaskWithError(taskID uint, reason string) {
+	now := time.Now().UTC()
+	if err := s.db.Model(&model.RemoteSensingTask{}).
+		Where("id = ?", taskID).
+		Updates(map[string]interface{}{
+			"status":        TaskStatusFailed,
+			"current_stage": "",
+			"error_message": reason,
+			"finished_at":   now,
+			"updated_at":    now,
+		}).Error; err != nil {
+		s.logger.Error("更新失败任务状态失败", zap.Error(err))
+	}
+	s.publishStageEvent(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusFailed, Message: reason, UpdatedAt: now})
+}
+
+func (s *RemoteSensingService) finishTaskCompleted(taskID uint) {
+	now := time.Now().UTC()
+	if err := s.db.Model(&model.RemoteSensingTask{}).
+		Where("id = ?", taskID).
+		Updates(map[string]interface{}{
+			"status":        TaskStatusCompleted,
+			"current_stage": "",
+			"finished_at":   now,
+			"updated_at":    now,
+		}).Error; err != nil {
+		s.logger.Error("更新完成任务状态失败", zap.Error(err))
+	}
+	s.publishStageEvent(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusCompleted, UpdatedAt: now})
+}
+
+func (s *RemoteSensingService) publishStageEvent(taskID uint, event RemoteSensingStageEvent) {
+	s.subsMu.Lock()
+	subs := append([]chan RemoteSensingStageEvent(nil), s.subscribers[taskID]...)
+	s.subsMu.Unlock()
+	for _, ch := range subs {
+		select {
+		case ch <- event:
+		default:
+			select {
+			case ch <- event:
+			case <-time.After(time.Second):
+			}
+		}
+	}
+}
+
+func (s *RemoteSensingService) createArtifact(ctx context.Context, artifact model.RemoteSensingTaskArtifact) error {
+	return s.db.WithContext(ctx).Create(&artifact).Error
+}
+
+func (s *RemoteSensingService) runPython(ctx context.Context, taskID uint, stageName, script string, args []string) (string, error) {
+	cmdArgs := append([]string{script}, args...)
+	cmd := exec.CommandContext(ctx, s.cfg.PythonBin, cmdArgs...)
+	cmd.Dir = s.cfg.RootPath
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	output := buf.String()
+	s.log(taskID, stageName, "info", fmt.Sprintf("执行 %s %v\n%s", script, args, output))
+	if err != nil {
+		s.log(taskID, stageName, "error", fmt.Sprintf("执行失败: %v", err))
+	}
+	return output, err
+}
+
+func (s *RemoteSensingService) runCommand(ctx context.Context, taskID uint, stageName string, binary string, args []string) (string, error) {
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Dir = s.cfg.RootPath
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	output := buf.String()
+	s.log(taskID, stageName, "info", fmt.Sprintf("执行 %s %v\n%s", binary, args, output))
+	if err != nil {
+		s.log(taskID, stageName, "error", fmt.Sprintf("执行失败: %v", err))
+	}
+	return output, err
+}
+
+func (s *RemoteSensingService) log(taskID uint, stageName, level, content string) {
+	s.db.Create(&model.RemoteSensingTaskLog{
+		TaskID:    taskID,
+		StageName: stageName,
+		Level:     level,
+		Content:   content,
+	})
+}
+
+func (s *RemoteSensingService) executeTiffToEnvi(ctx context.Context, taskID uint, req CreateTaskRequest, sensor, stageName string) (*stageExecutionResult, error) {
+	args := []string{
+		"--data_directory", req.InputDirectory,
+		"--file_prefix", req.FilePrefix,
+		"--sensor", sensor,
+		"--output_dir", filepath.Join("output_preprocessing", "tiff_to_envi"),
+	}
+	if _, err := s.runPython(ctx, taskID, stageName, "tiff_to_envi.py", args); err != nil {
+		return nil, err
+	}
+	return &stageExecutionResult{Details: map[string]interface{}{"sensor": sensor}, OutputPath: filepath.Join("output_preprocessing", "tiff_to_envi"), Message: fmt.Sprintf("%s 生成完成", sensor)}, nil
+}
+
+func (s *RemoteSensingService) executePanRadToa(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	args := []string{
+		"--file_prefix", req.FilePrefix,
+		"--input_dir", filepath.Join("output_preprocessing", "tiff_to_envi"),
+		"--output_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
+		"--radiance_unit_scale", "10000",
+	}
+	if _, err := s.runPython(ctx, taskID, StagePanRadToa, "pan_rad_toa.py", args); err != nil {
+		return nil, err
+	}
+	return &stageExecutionResult{OutputPath: filepath.Join("output_preprocessing", "pan_rad_toa"), Message: "全色辐射定标完成"}, nil
+}
+
+func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	outputDir := filepath.Join("output_preprocessing", "pan_warp_quarters")
+	details := map[string]interface{}{"area_indexes": []int{}, "total": 4}
+	for i := 1; i <= 4; i++ {
+		args := []string{
+			"--file_prefix", req.FilePrefix,
+			"--input_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
+			"--output_dir", outputDir,
+			"--areaidx", strconv.Itoa(i),
+		}
+		if _, err := s.runPython(ctx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
+			return nil, err
+		}
+		details["area_indexes"] = append(details["area_indexes"].([]int), i)
+	}
+	details["completed"] = 4
+	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "RPC 分块完成"}, nil
+}
+
+func (s *RemoteSensingService) executePanMerge(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	outputDir := filepath.Join("output_preprocessing", "pan_merge_warp_square")
+	args := []string{
+		"--file_prefix", req.FilePrefix,
+		"--input_dir", filepath.Join("output_preprocessing", "pan_warp_quarters"),
+		"--output_dir", outputDir,
+	}
+	if _, err := s.runPython(ctx, taskID, StagePanMerge, "pan_merge_warp_square.py", args); err != nil {
+		return nil, err
+	}
+	return &stageExecutionResult{OutputPath: outputDir, Message: "全色拼接完成"}, nil
+}
+
+func (s *RemoteSensingService) executeMssRadQuac(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	outputDir := filepath.Join("output_preprocessing", "mss_rad_quac_rpc")
+	args := []string{
+		"--file_prefix", req.FilePrefix,
+		"--input_dir", filepath.Join("output_preprocessing", "tiff_to_envi"),
+		"--output_dir", outputDir,
+		"--radiance_unit_scale", "1",
+		"--aero_profile", "Urban",
+	}
+	if _, err := s.runPython(ctx, taskID, StageMssRadQuac, "mss_rad_quac_rpc.py", args); err != nil {
+		return nil, err
+	}
+	return &stageExecutionResult{OutputPath: outputDir, Message: "多光谱 QUAC + RPC 完成"}, nil
+}
+
+func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	outputDir := filepath.Join("output_preprocessing", "mss_coregister_pan")
+	details := map[string]interface{}{"completed": 0, "total": 4}
+	for i := 1; i <= 4; i++ {
+		args := []string{
+			"--file_prefix", req.FilePrefix,
+			"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
+			"--input_dir_mss", filepath.Join("output_preprocessing", "mss_rad_quac_rpc"),
+			"--output_dir", outputDir,
+			"--bandidx", strconv.Itoa(i),
+		}
+		if _, err := s.runPython(ctx, taskID, StageCoregister, "mss_coregister_to_pan.py", args); err != nil {
+			return nil, err
+		}
+		details["completed"] = details["completed"].(int) + 1
+	}
+	details["message"] = "四个波段注册完成"
+	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "多光谱配准完成"}, nil
+}
+
+func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	outputDir := filepath.Join("output_preprocessing", "pansharpen")
+	details := map[string]interface{}{"completed": 0, "total": 3}
+	for i := 1; i <= 3; i++ {
+		args := []string{
+			"--file_prefix", req.FilePrefix,
+			"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
+			"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
+			"--output_dir", outputDir,
+			"--bandidx", strconv.Itoa(i),
+		}
+		if _, err := s.runPython(ctx, taskID, StagePansharpen, "pansharpen_fusion.py", args); err != nil {
+			return nil, err
+		}
+		details["completed"] = details["completed"].(int) + 1
+	}
+	details["message"] = "三波段融合完成"
+	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "融合完成"}, nil
+}
+
+func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	inputDir := filepath.Join("output_preprocessing", "pansharpen")
+	outputDir := filepath.Join("output_preprocessing", "fusion_envi")
+	args := []string{
+		"--file_prefix", req.FilePrefix,
+		"--input_dir", inputDir,
+		"--output_dir", outputDir,
+	}
+	if _, err := s.runPython(ctx, taskID, StageFusionStack, "fusion_stack_envi.py", args); err != nil {
+		return nil, err
+	}
+	finalDatName := fmt.Sprintf("%s-MSS1-fusion.dat", req.FilePrefix)
+	finalDat := filepath.Join(outputDir, finalDatName)
+	if _, err := os.Stat(filepath.Join(s.cfg.RootPath, finalDat)); err != nil {
+		return nil, fmt.Errorf("融合输出不存在: %s", finalDat)
+	}
+	previewDir := filepath.Join("output_preprocessing", "imgshow")
+	absolutePreviewDir := filepath.Join(s.cfg.RootPath, previewDir)
+	os.MkdirAll(absolutePreviewDir, 0o755)
+	previewPNG := filepath.Join(previewDir, fmt.Sprintf("%s-MSS1-fusion.png", req.FilePrefix))
+
+	// 预览图是融合步骤的标准输出之一：显式串联并校验产物存在。
+	previewCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	previewArgs := []string{
+		"--file_prefix", req.FilePrefix,
+		"--input_dir", outputDir,
+		"--output_dir", previewDir,
+	}
+	if _, err := s.runPython(previewCtx, taskID, StageFusionStack, "imgshow.py", previewArgs); err != nil {
+		return nil, fmt.Errorf("imgshow 预览生成失败: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(s.cfg.RootPath, previewPNG)); err != nil {
+		return nil, fmt.Errorf("imgshow 预览图未生成: %s", previewPNG)
+	}
+	artifacts := []model.RemoteSensingTaskArtifact{
+		{
+			Type:     "raw",
+			Label:    "融合 ENVI",
+			Path:     finalDat,
+			Metadata: datatypes.JSONMap{"stage": StageFusionStack, "sensor": req.Sensor},
+		},
+	}
+	artifacts = append(artifacts, model.RemoteSensingTaskArtifact{
+		Type:     "preview",
+		Label:    "融合预览图",
+		Path:     previewPNG,
+		Metadata: datatypes.JSONMap{"mime": "image/png", "generator": "imgshow.py"},
+	})
+	return &stageExecutionResult{OutputPath: outputDir, Message: "融合堆栈与预览图生成完成", Artifacts: artifacts}, nil
+}

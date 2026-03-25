@@ -18,10 +18,11 @@ import (
 
 	"satellite-cloud/backend/internal/api/handlers"
 	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/remotesensing"
+	"satellite-cloud/backend/internal/topology"
 	"satellite-cloud/backend/migrations"
 	"satellite-cloud/backend/pkg/database"
 	"satellite-cloud/backend/pkg/logger"
-	"satellite-cloud/backend/internal/topology"
 )
 
 func main() {
@@ -36,6 +37,10 @@ func main() {
 	if err != nil {
 		zapLogger.Fatal("Failed to connect to database", zap.Error(err))
 	}
+	zapLogger.Info("Remote sensing runtime configured",
+		zap.String("root_path", cfg.RemoteSensing.RootPath),
+		zap.String("python_bin", cfg.RemoteSensing.PythonBin),
+	)
 
 	// 启动时自动执行未应用的迁移（与 K8s/本地环境保持一致）
 	sourceDriver, err := iofs.New(migrations.FS, ".")
@@ -136,10 +141,12 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 
+	remoteSensingService := remotesensing.NewRemoteSensingService(db, zapLogger, cfg.RemoteSensing)
+
 	// API 路由
 	api := router.Group("/api")
 	{
-		handlers.RegisterRoutes(api, db, zapLogger)
+		handlers.RegisterRoutes(api, db, zapLogger, remoteSensingService)
 	}
 
 	// 创建 HTTP 服务器

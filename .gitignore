@@ -39,3 +39,6 @@ k8s/secrets/
 
 # Docker
 .dockerignore
+
+# Cursor
+.cursor/

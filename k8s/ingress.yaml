@@ -5,6 +5,11 @@ metadata:
   namespace: gitlab-runner
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
+    # SSE 场景需要禁用代理缓冲，否则前端会感知为“非实时”
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   rules:
   - host: satellite.example.com

@@ -10,6 +10,8 @@
 
 - **`000002_seed_data.up.sql`**
   - 插入一条场景（Scenario5）及 plane 1 前三颗卫星，用于前后端联调
+- **`000005_remote_sensing_tasks.up.sql`**
+  - 创建遥感任务、阶段、产物与日志表，支撑远程感知流水线 API
 
 - **`embed.go`**
   - 将 `*.up.sql` 打进二进制，供启动时通过 golang-migrate 执行

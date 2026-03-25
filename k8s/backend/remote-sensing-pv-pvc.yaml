@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: remote-sensing-data-pv
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: k8s-worker22
+    path: /export/remote-sensing-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: remote-sensing-data
+  namespace: gitlab-runner
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 200Gi
+  volumeName: remote-sensing-data-pv

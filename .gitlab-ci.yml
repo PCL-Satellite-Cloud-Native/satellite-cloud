@@ -23,13 +23,12 @@ variables:
 # 构建并推送后端镜像
 build-backend:
   stage: build
-  image:
-    name: "$CI_DOCKER_IMAGE"
-    entrypoint: [""]
+  image: "$CI_ALPINE_IMAGE"
   variables:
     # Runner 已挂载宿主机 docker.sock，避免再启 dind
     DOCKER_HOST: "unix:///var/run/docker.sock"
   script:
+    - apk add --no-cache docker-cli git
     - docker version
     - |
       if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASSWORD" ]; then
@@ -41,7 +40,6 @@ build-backend:
         echo "REMOTE_SENSING_REPO_URL 未配置，请先在内网 GitLab 建仓并配置该变量"
         exit 1
       fi
-    - apk add --no-cache git
     - |
       case "$REMOTE_SENSING_REPO_URL" in
         https://*)
@@ -72,13 +70,12 @@ build-backend:
 # 构建并推送前端镜像
 build-frontend:
   stage: build
-  image:
-    name: "$CI_DOCKER_IMAGE"
-    entrypoint: [""]
+  image: "$CI_ALPINE_IMAGE"
   variables:
     # Runner 已挂载宿主机 docker.sock，避免再启 dind
     DOCKER_HOST: "unix:///var/run/docker.sock"
   script:
+    - apk add --no-cache docker-cli git
     - docker version
     - |
       if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASSWORD" ]; then

@@ -1,4 +1,5 @@
-FROM node:22-alpine AS builder
+ARG BASE_IMAGE_REGISTRY=192.168.10.238/library
+FROM ${BASE_IMAGE_REGISTRY}/node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -15,7 +16,8 @@ ENV VITE_GRAFANA_URL=$VITE_GRAFANA_URL
 RUN npm run build
 
 # 运行阶段：使用 Nginx 提供静态文件
-FROM nginx:alpine
+ARG BASE_IMAGE_REGISTRY=192.168.10.238/library
+FROM ${BASE_IMAGE_REGISTRY}/nginx:alpine
 
 WORKDIR /usr/share/nginx/html
 
@@ -27,4 +29,3 @@ COPY --from=builder /app/dist/ .
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]
-

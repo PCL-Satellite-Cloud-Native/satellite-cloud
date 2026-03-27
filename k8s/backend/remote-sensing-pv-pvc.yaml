@@ -18,6 +18,7 @@ metadata:
   name: remote-sensing-data
   namespace: gitlab-runner
 spec:
+  storageClassName: ""
   accessModes:
     - ReadWriteMany
   resources:

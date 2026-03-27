@@ -1,5 +1,6 @@
 # 构建阶段：编译 Go 二进制
-FROM golang:1.25.7-bookworm AS builder
+ARG BASE_IMAGE_REGISTRY=192.168.10.238/library
+FROM ${BASE_IMAGE_REGISTRY}/golang:1.25.7-bookworm AS builder
 
 WORKDIR /build
 
@@ -12,7 +13,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/server ./cmd/
     CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/import_topology ./tools
 
 # 运行阶段：Go 服务 + Python 遥感运行时
-FROM python:3.11-slim-bookworm
+ARG BASE_IMAGE_REGISTRY=192.168.10.238/library
+FROM ${BASE_IMAGE_REGISTRY}/python:3.11-slim-bookworm
 
 ENV TZ=Asia/Shanghai
 WORKDIR /app

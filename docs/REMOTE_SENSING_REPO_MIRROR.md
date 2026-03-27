@@ -27,8 +27,8 @@
 ```bash
 cd /path/to/satellite-cloud
 export GITHUB_REPO_SSH='git@github.com:PCL-Satellite-Cloud-Native/Satellite-Remote-Sensing.git'
-export GITLAB_REPO_HTTPS='https://<gitlab-host>/<group>/Satellite-Remote-Sensing.git'
-export GITLAB_USERNAME='<gitlab-username>'
+export GITLAB_REPO_HTTPS='https://192.168.10.238:8444/root/satellite-remote-sensing.git'
+export GITLAB_USERNAME='root'
 export GITLAB_TOKEN='<gitlab-token>'
 ./scripts/sync_remote_sensing_repo.sh
 ```

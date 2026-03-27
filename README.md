@@ -132,6 +132,7 @@ kubectl apply -f k8s/ingress.yaml
 - [架构设计文档](./ARCHITECTURE.md)
 - [遥感模块 K8s 部署手册](./docs/REMOTE_SENSING_K8S_DEPLOYMENT.md)
 - [遥感仓库镜像与 CI 拉取](./docs/REMOTE_SENSING_REPO_MIRROR.md)
+- [Runner 镜像源内网化](./docs/GITLAB_RUNNER_IMAGE_MIRROR.md)
 - [API 文档](./docs/API.md) (待完善)
 - [部署指南](./docs/DEPLOYMENT.md) (待完善)
 

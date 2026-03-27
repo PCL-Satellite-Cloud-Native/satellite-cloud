@@ -6,9 +6,16 @@ stages:
 variables:
   HARBOR_URL: "192.168.10.238"
   HARBOR_PROJECT: "satellite"
+  HARBOR_PUBLIC_PROJECT: "library"
   BACKEND_IMAGE: "$HARBOR_URL/$HARBOR_PROJECT/backend:$CI_COMMIT_SHORT_SHA"
   FRONTEND_IMAGE: "$HARBOR_URL/$HARBOR_PROJECT/frontend:$CI_COMMIT_SHORT_SHA"
   DOCKER_DRIVER: overlay2
+  # CI 运行镜像统一走内网 Harbor，避免外网镜像拉取失败
+  CI_DOCKER_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/docker:25.0"
+  CI_DIND_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/docker:25.0-dind"
+  CI_KUBECTL_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/bitnami-kubectl:latest"
+  CI_ALPINE_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/alpine:3.19"
+  BASE_IMAGE_REGISTRY: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT"
   # 内网 GitLab 私有仓库地址（HTTPS），示例：
   # https://gitlab.example.local/your-group/Satellite-Remote-Sensing.git
   REMOTE_SENSING_REPO_URL: ""
@@ -17,9 +24,9 @@ variables:
 # 构建并推送后端镜像
 build-backend:
   stage: build
-  image: docker:25.0
+  image: "$CI_DOCKER_IMAGE"
   services:
-    - docker:25.0-dind
+    - name: "$CI_DIND_IMAGE"
   variables:
     DOCKER_TLS_CERTDIR: ""
   script:
@@ -52,7 +59,7 @@ build-backend:
     - git clone --depth 1 --branch "$REMOTE_SENSING_REPO_REF" "$AUTH_REMOTE_SENSING_REPO_URL" backend/remote-sensing-src
     - docker login "$HARBOR_URL" -u "$HARBOR_USER" -p "$HARBOR_PASSWORD"
     - cd backend
-    - docker build -t "$BACKEND_IMAGE" .
+    - docker build --build-arg BASE_IMAGE_REGISTRY="$BASE_IMAGE_REGISTRY" -t "$BACKEND_IMAGE" .
     - docker push "$BACKEND_IMAGE"
     - docker tag "$BACKEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
     - docker push "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
@@ -64,9 +71,9 @@ build-backend:
 # 构建并推送前端镜像
 build-frontend:
   stage: build
-  image: docker:25.0
+  image: "$CI_DOCKER_IMAGE"
   services:
-    - docker:25.0-dind
+    - name: "$CI_DIND_IMAGE"
   variables:
     DOCKER_TLS_CERTDIR: ""
   script:
@@ -83,7 +90,7 @@ build-frontend:
       if [ -n "${VITE_GRAFANA_URL:-}" ]; then
         BUILD_ARGS="--build-arg VITE_GRAFANA_URL=$VITE_GRAFANA_URL"
       fi
-      docker build $BUILD_ARGS -t "$FRONTEND_IMAGE" .
+      docker build --build-arg BASE_IMAGE_REGISTRY="$BASE_IMAGE_REGISTRY" $BUILD_ARGS -t "$FRONTEND_IMAGE" .
     - docker push "$FRONTEND_IMAGE"
   tags:
     - k8s-cluster-runner
@@ -92,7 +99,7 @@ build-frontend:
 
 deploy:
   stage: deploy
-  image: bitnami/kubectl:latest
+  image: "$CI_KUBECTL_IMAGE"
   script:
     - echo "部署到 namespace=gitlab-runner"
     - kubectl -n gitlab-runner apply -f k8s/backend/remote-sensing-pv-pvc.yaml
@@ -118,7 +125,7 @@ deploy:
 
 sync-topology-csv-to-nfs:
   stage: topology-sync
-  image: alpine:3.19
+  image: "$CI_ALPINE_IMAGE"
   tags:
     - k8s-cluster-runner
   needs:
@@ -144,7 +151,7 @@ sync-topology-csv-to-nfs:
 
 import-topology:
   stage: topology-sync
-  image: bitnami/kubectl:latest
+  image: "$CI_KUBECTL_IMAGE"
   tags:
     - k8s-cluster-runner
   needs:

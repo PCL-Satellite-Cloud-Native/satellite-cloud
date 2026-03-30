@@ -11,9 +11,9 @@ variables:
   FRONTEND_IMAGE: "$HARBOR_URL/$HARBOR_PROJECT/frontend:$CI_COMMIT_SHORT_SHA"
   DOCKER_DRIVER: overlay2
   # CI 运行镜像统一走内网 Harbor，避免外网镜像拉取失败
-  CI_DOCKER_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/docker:25.0"
-  CI_KUBECTL_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/bitnami-kubectl:latest"
-  CI_ALPINE_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/alpine:3.19"
+  CI_DOCKER_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/docker:25.0-amd64-r1"
+  CI_KUBECTL_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/bitnami-kubectl:latest-amd64-r1"
+  CI_ALPINE_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/alpine:3.19-amd64-r1"
   BASE_IMAGE_REGISTRY: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT"
   # 内网 GitLab 私有仓库地址（HTTPS），示例：
   # https://gitlab.example.local/your-group/Satellite-Remote-Sensing.git

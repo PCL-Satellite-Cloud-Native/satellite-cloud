@@ -1,5 +1,8 @@
 # Satellite-Cloud 遥感模块 K8s 部署手册（GitLab CI）
 
+> 若你是从“未集成遥感应用”的历史版本迁移，请优先阅读：
+> `docs/REMOTE_SENSING_BASELINE_MIGRATION_RUNBOOK.md`
+
 本文档只描述 **satellite-cloud 项目侧** 的部署与发布配置，目标是在其他集群上可复现。
 
 ## 1. 适用范围

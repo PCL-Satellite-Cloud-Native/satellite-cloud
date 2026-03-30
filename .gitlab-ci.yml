@@ -12,6 +12,7 @@ variables:
   DOCKER_DRIVER: overlay2
   # CI 运行镜像统一走内网 Harbor，避免外网镜像拉取失败
   CI_DOCKER_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/docker:25.0-amd64-r1"
+  CI_BUILD_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/ci-build:docker25-git-amd64-r1"
   CI_KUBECTL_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/bitnami-kubectl:latest-amd64-r1"
   CI_ALPINE_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/alpine:3.19-amd64-r1"
   BASE_IMAGE_REGISTRY: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT"
@@ -23,12 +24,11 @@ variables:
 # 构建并推送后端镜像
 build-backend:
   stage: build
-  image: "$CI_ALPINE_IMAGE"
+  image: "$CI_BUILD_IMAGE"
   variables:
     # Runner 已挂载宿主机 docker.sock，避免再启 dind
     DOCKER_HOST: "unix:///var/run/docker.sock"
   script:
-    - apk add --no-cache docker-cli git
     - docker version
     - |
       if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASSWORD" ]; then
@@ -70,12 +70,11 @@ build-backend:
 # 构建并推送前端镜像
 build-frontend:
   stage: build
-  image: "$CI_ALPINE_IMAGE"
+  image: "$CI_BUILD_IMAGE"
   variables:
     # Runner 已挂载宿主机 docker.sock，避免再启 dind
     DOCKER_HOST: "unix:///var/run/docker.sock"
   script:
-    - apk add --no-cache docker-cli git
     - docker version
     - |
       if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASSWORD" ]; then

@@ -173,6 +173,11 @@ kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=120
 
 - `python:3.11-slim-bookworm-gdal-amd64-r1`
 
+后端构建阶段建议固定：
+
+- `GOPROXY=https://goproxy.cn,direct`
+- `GOSUMDB=off`
+
 ---
 
 ## 9. 后端运行链路改造（遥感联动）
@@ -205,6 +210,20 @@ kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=120
 
 ---
 
+## 10.1 网络前置验收（跳板机转发场景）
+
+在任一 worker 节点执行：
+
+```bash
+curl -I --max-time 10 http://deb.debian.org/debian/dists/bookworm/InRelease
+curl -I --max-time 10 https://deb.debian.org/debian/dists/bookworm/InRelease
+curl -I --max-time 10 https://proxy.golang.org
+```
+
+若出现 `Empty reply` / `TLS EOF`，优先排查跳板机 iptables/CLASH 透明代理规则。
+
+---
+
 ## 11. 常见故障速查（本次实战结论）
 
 1. `container not found ("build")`：
@@ -221,6 +240,11 @@ kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=120
 6. 后端构建 `apt-get update` 失败：
    - `ping` 可达不代表 `apt` 可达（协议/端口/出口策略不同）
    - 推荐改为预构建 `python+gdal` 运行时镜像
+7. 后端构建 `go mod download` 卡住：
+   - 配置 `GOPROXY=https://goproxy.cn,direct` 与 `GOSUMDB=off`
+8. `curl/docker pull` 出现 EOF 但跳板机本机可用：
+   - 排查跳板机 `nat PREROUTING` 是否把集群网段重定向到 CLASH 端口
+   - 可临时加白名单：`iptables -t nat -I CLASH 1 -s <集群网段> -j RETURN`
 
 ---
 

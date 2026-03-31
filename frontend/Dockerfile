@@ -1,5 +1,5 @@
 ARG BASE_IMAGE_REGISTRY=192.168.10.238/library
-FROM ${BASE_IMAGE_REGISTRY}/node:22-alpine AS builder
+FROM ${BASE_IMAGE_REGISTRY}/node:22-alpine-amd64-r1 AS builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN npm run build
 
 # 运行阶段：使用 Nginx 提供静态文件
 ARG BASE_IMAGE_REGISTRY=192.168.10.238/library
-FROM ${BASE_IMAGE_REGISTRY}/nginx:alpine
+FROM ${BASE_IMAGE_REGISTRY}/nginx:alpine-amd64-r1
 
 WORKDIR /usr/share/nginx/html
 

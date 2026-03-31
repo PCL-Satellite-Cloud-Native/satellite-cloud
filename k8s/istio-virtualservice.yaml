@@ -14,7 +14,7 @@ spec:
     - match:
         - uri:
             prefix: "/api/remote-sensing/tasks/"
-      timeout: 0s
+      timeout: 24h
       route:
         - destination:
             host: satellite-backend.gitlab-runner.svc.cluster.local

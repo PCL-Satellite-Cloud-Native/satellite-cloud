@@ -7,19 +7,38 @@
 
 ## 1. 必须先镜像到 Harbor 的镜像
 
-至少包含：
+至少包含（建议全部使用 `-amd64-r1` 这类不可变标签）：
 
 - `gitlab-runner-helper:x86_64-v16.8.0`
 - `docker:25.0`
 - `docker:25.0-dind`
 - `bitnami-kubectl:latest`
 - `alpine:3.19`
-- `node:22-alpine`
-- `nginx:alpine`
-- `golang:1.25.7-bookworm`
-- `python:3.11-slim-bookworm`
+- `node:22-alpine-amd64-r1`
+- `nginx:alpine-amd64-r1`
+- `golang:1.25.7-bookworm-amd64-r1`
+- `python:3.11-slim-bookworm-amd64-r1`
 
 建议统一放在：`192.168.10.238/library/*`
+
+### 1.1 在外网机器按 amd64 拉取并推送 Harbor（示例）
+
+```bash
+docker pull --platform linux/amd64 node:22-alpine
+docker pull --platform linux/amd64 nginx:alpine
+docker pull --platform linux/amd64 golang:1.25.7-bookworm
+docker pull --platform linux/amd64 python:3.11-slim-bookworm
+
+docker tag node:22-alpine 192.168.10.238/library/node:22-alpine-amd64-r1
+docker tag nginx:alpine 192.168.10.238/library/nginx:alpine-amd64-r1
+docker tag golang:1.25.7-bookworm 192.168.10.238/library/golang:1.25.7-bookworm-amd64-r1
+docker tag python:3.11-slim-bookworm 192.168.10.238/library/python:3.11-slim-bookworm-amd64-r1
+
+docker push 192.168.10.238/library/node:22-alpine-amd64-r1
+docker push 192.168.10.238/library/nginx:alpine-amd64-r1
+docker push 192.168.10.238/library/golang:1.25.7-bookworm-amd64-r1
+docker push 192.168.10.238/library/python:3.11-slim-bookworm-amd64-r1
+```
 
 ## 2. Kubernetes Executor（config.toml）示例
 
@@ -107,4 +126,3 @@ kubectl -n gitlab-runner get pods -l app=gitlab-runner
 # 新跑一条 pipeline，确认不再卡在 prepare environment
 # 并在 build-backend/build-frontend 里不再出现外网镜像拉取 EOF
 ```
-

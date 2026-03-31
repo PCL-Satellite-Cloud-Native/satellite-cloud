@@ -87,10 +87,10 @@ spec:
               value: "/opt/remote-sensing-data/dem/GMTED2010.jp2"
           resources:
             requests:
-              memory: "512Mi"
+              memory: "1Gi"
               cpu: "300m"
             limits:
-              memory: "2Gi"
+              memory: "4Gi"
               cpu: "2000m"
           volumeMounts:
             - name: remote-sensing-data

@@ -41,10 +41,10 @@ COPY remote-sensing-src /opt/remote-sensing
 # 创建并安装遥感虚拟环境依赖
 RUN python3 -m venv /opt/remote-sensing/.venv && \
     /opt/remote-sensing/.venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/remote-sensing/.venv/bin/pip install --no-cache-dir numpy && \
+    /opt/remote-sensing/.venv/bin/pip install --no-cache-dir "numpy<2" && \
     /opt/remote-sensing/.venv/bin/pip install --no-cache-dir -r /opt/remote-sensing/requirements.txt && \
     CPLUS_INCLUDE_PATH=/usr/include/gdal C_INCLUDE_PATH=/usr/include/gdal \
-    /opt/remote-sensing/.venv/bin/pip install --no-cache-dir --no-binary=GDAL "GDAL==$(gdal-config --version)" && \
+    /opt/remote-sensing/.venv/bin/pip install --no-cache-dir --no-build-isolation --no-binary=GDAL "GDAL==$(gdal-config --version)" && \
     /opt/remote-sensing/.venv/bin/python -c "from osgeo import gdal, gdal_array; import numpy as np; print(gdal.__version__)"
 
 # 创建运行用户

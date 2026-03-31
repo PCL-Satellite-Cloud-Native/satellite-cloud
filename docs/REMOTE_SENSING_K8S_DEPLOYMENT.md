@@ -31,6 +31,9 @@
   - `/opt/remote-sensing`（遥感脚本）
   - `/opt/remote-sensing/.venv`（Python 虚拟环境）
   - GDAL + Matplotlib 等依赖
+  - Go 依赖下载使用：
+    - `GOPROXY=https://goproxy.cn,direct`
+    - `GOSUMDB=off`
 
 ### 2.3 新增遥感数据 PV/PVC
 
@@ -107,6 +110,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 docker buildx build --platform linux/amd64 -f backend/Dockerfile.runtime-base \
   -t 192.168.10.238/library/python:3.11-slim-bookworm-gdal-amd64-r1 --push .
 ```
+
+### 3.4 集群节点出网连通性（跳板机转发场景）
+
+若通过跳板机做 NAT/iptables 转发，建议在上线前做连通性验收：
+
+```bash
+# 在 worker 节点
+curl -I --max-time 10 http://deb.debian.org/debian/dists/bookworm/InRelease
+curl -I --max-time 10 https://deb.debian.org/debian/dists/bookworm/InRelease
+curl -I --max-time 10 https://proxy.golang.org
+```
+
+常见异常：
+
+- `Empty reply from server`
+- `unexpected eof while reading`
+- `docker pull ... EOF`
+
+这类问题通常不是应用代码故障，而是跳板机透明代理/NAT 规则导致。
 
 ## 4. 首次部署步骤（可复制）
 
@@ -210,6 +232,31 @@ kubectl -n gitlab-runner describe pod "$POD"
 现象：`Connection failed [IP ... 80]` 或 `Unable to locate package ...`。  
 原因：构建容器访问外网 Debian 源失败（`ping` 可达不等于 `apt` 可达）。  
 处理：采用预构建运行时镜像（如 `python:3.11-slim-bookworm-gdal-amd64-r1`），避免在 CI 构建阶段在线安装系统包。
+
+### 问题 5：`go mod download` 长时间卡住
+
+现象：后端构建长时间停留在 `RUN go mod download`。  
+处理：在 `backend/Dockerfile` 构建阶段设置：
+
+```dockerfile
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=off
+```
+
+说明：该设置已在当前代码中落地，可作为新集群默认配置。
+
+### 问题 6：跳板机 CLASH/iptables 导致 HTTP/HTTPS EOF
+
+现象：worker 上 `curl http/https` 出现空回复或 TLS EOF。  
+高频原因：跳板机 `nat PREROUTING` 将集群网段 TCP 重定向到本地代理端口（如 `CLASH -> REDIRECT 7892`）。
+
+临时修复示例（跳板机执行）：
+
+```bash
+sudo iptables -t nat -I CLASH 1 -s 192.168.10.0/24 -j RETURN
+```
+
+建议后续在跳板机侧做持久化配置，避免重启后规则丢失。
 
 ## 7. 回滚策略
 

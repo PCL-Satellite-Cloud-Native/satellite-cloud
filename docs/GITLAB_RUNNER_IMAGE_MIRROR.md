@@ -110,12 +110,21 @@ kubectl -n gitlab-runner create secret docker-registry harbor-registry \
 本仓库 `.gitlab-ci.yml` 已改为使用 Harbor 镜像：
 
 - `CI_DOCKER_IMAGE`
-- `CI_DIND_IMAGE`
+- `CI_BUILD_IMAGE`
 - `CI_KUBECTL_IMAGE`
 - `CI_ALPINE_IMAGE`
 - `BASE_IMAGE_REGISTRY`
 
 Dockerfile 也已支持 `BASE_IMAGE_REGISTRY` 参数，避免构建时访问外网镜像源。
+
+补充：
+
+- `CI_BUILD_IMAGE` 推荐：`192.168.10.238/library/ci-build:docker25-git-amd64-r3`
+- 该镜像需包含 `docker-cli + git + ca-certificates`，并内置内网 CA 证书
+- 否则 `git ls-remote https://<gitlab>/...` 可能报 `self-signed certificate`
+
+后端若在构建阶段执行 `apt-get update` 访问 Debian 外网源，也可能失败。  
+建议将 `python + gdal` 运行时依赖预构建为内网镜像（如 `python:3.11-slim-bookworm-gdal-amd64-r1`）。
 
 ## 6. 验收命令
 

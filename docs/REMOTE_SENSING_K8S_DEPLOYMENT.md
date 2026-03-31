@@ -69,11 +69,43 @@ sudo chmod -R 0777 /export/remote-sensing-data
 - `REMOTE_SENSING_REPO_URL`（内网 GitLab 仓库 HTTPS 地址）
   - 当前集群示例：`https://192.168.10.238:8444/root/satellite-remote-sensing.git`
 - （可选）`REMOTE_SENSING_REPO_REF`（默认 `main`）
+- `CI_BUILD_IMAGE`（推荐：`192.168.10.238/library/ci-build:docker25-git-amd64-r3`）
+
+说明：
+
+- `CI_BUILD_IMAGE` 需要预装 `docker-cli + git`，并内置内网 CA 证书，否则 `git ls-remote` 可能报 `self-signed certificate`。
 
 建议验证：
 
 ```bash
 # 在 GitLab CI 变量里配置 REMOTE_SENSING_REPO_URL 后，构建阶段会自动执行 git ls-remote 预检查
+```
+
+### 3.3 后端运行时基础镜像（建议预构建）
+
+现象：后端镜像构建时若执行 `apt-get update`，在受限网络下可能访问 `deb.debian.org` 失败。  
+建议在可联网环境预构建并推送基础镜像，再在后端 Dockerfile 直接引用。
+
+示例构建文件（建议放在 `backend/Dockerfile.runtime-base`）：
+
+```dockerfile
+FROM python:3.11-slim-bookworm
+ENV TZ=Asia/Shanghai
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tzdata \
+    curl \
+    gdal-bin \
+    libgdal-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+示例构建命令：
+
+```bash
+docker buildx build --platform linux/amd64 -f backend/Dockerfile.runtime-base \
+  -t 192.168.10.238/library/python:3.11-slim-bookworm-gdal-amd64-r1 --push .
 ```
 
 ## 4. 首次部署步骤（可复制）
@@ -152,6 +184,16 @@ kubectl -n gitlab-runner logs deploy/satellite-backend | rg "python_bin"
 
 定位：查看 `build-backend` job 日志里的 `git clone`。
 
+### 问题 2.1：`git ls-remote ... self-signed certificate`
+
+原因：`CI_BUILD_IMAGE` 未内置内网 CA，导致容器内 `git` 不信任 GitLab 证书。  
+定位命令：
+
+```bash
+docker run --rm 192.168.10.238/library/ci-build:docker25-git-amd64-r3 \
+  sh -lc 'ls -l /usr/local/share/ca-certificates/harbor.crt && git ls-remote https://192.168.10.238:8444/root/satellite-remote-sensing.git'
+```
+
 ### 问题 3：任务找不到输入/输出目录
 
 原因：PVC 未绑定或 NFS 目录不存在。
@@ -162,6 +204,12 @@ kubectl -n gitlab-runner logs deploy/satellite-backend | rg "python_bin"
 kubectl -n gitlab-runner get pvc remote-sensing-data
 kubectl -n gitlab-runner describe pod "$POD"
 ```
+
+### 问题 4：后端构建 `apt-get update` 连接失败
+
+现象：`Connection failed [IP ... 80]` 或 `Unable to locate package ...`。  
+原因：构建容器访问外网 Debian 源失败（`ping` 可达不等于 `apt` 可达）。  
+处理：采用预构建运行时镜像（如 `python:3.11-slim-bookworm-gdal-amd64-r1`），避免在 CI 构建阶段在线安装系统包。
 
 ## 7. 回滚策略
 

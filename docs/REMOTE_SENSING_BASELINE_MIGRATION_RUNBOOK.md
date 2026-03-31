@@ -165,9 +165,13 @@ kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=120
 
 当前关键变量建议：
 
-- `CI_BUILD_IMAGE=192.168.10.238/library/ci-build:docker25-git-amd64-r1`
+- `CI_BUILD_IMAGE=192.168.10.238/library/ci-build:docker25-git-amd64-r3`
 - `CI_KUBECTL_IMAGE=192.168.10.238/library/bitnami-kubectl:latest-amd64-r1`
 - `CI_ALPINE_IMAGE=192.168.10.238/library/alpine:3.19-amd64-r1`
+
+后端运行时建议使用预构建基础镜像（避免 CI 内执行 `apt-get`）：
+
+- `python:3.11-slim-bookworm-gdal-amd64-r1`
 
 ---
 
@@ -211,6 +215,12 @@ kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=120
    - 说明仍依赖外网源，改为内网预装工具镜像
 4. Runner rollout 卡在 `2 out of 3`：
    - 检查新 Pod 是否 CrashLoop / 镜像拉取失败 / 旧 RS 未切完
+5. `x509: certificate signed by unknown authority`：
+   - 先区分是 Docker daemon 拉 Harbor 失败，还是 CI 容器内 git 访问 GitLab 失败
+   - 若是后者，需在 `CI_BUILD_IMAGE` 中内置 CA 证书
+6. 后端构建 `apt-get update` 失败：
+   - `ping` 可达不代表 `apt` 可达（协议/端口/出口策略不同）
+   - 推荐改为预构建 `python+gdal` 运行时镜像
 
 ---
 
@@ -228,4 +238,3 @@ kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=120
 - `docs/GITLAB_RUNNER_IMAGE_MIRROR.md`
 
 > 建议：在新集群落地时，始终通过分支发布并保留“镜像 tag + 配置版本 + 验收记录”三元组，便于快速回滚与追溯。
-

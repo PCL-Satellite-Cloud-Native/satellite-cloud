@@ -3,6 +3,8 @@ ARG BASE_IMAGE_REGISTRY=192.168.10.238/library
 FROM ${BASE_IMAGE_REGISTRY}/golang:1.25.7-bookworm-amd64-r1 AS builder
 
 WORKDIR /build
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=off
 
 COPY go.mod go.sum ./
 RUN go mod download

@@ -41,6 +41,7 @@ type LogConfig struct {
 type RemoteSensingConfig struct {
 	RootPath  string
 	PythonBin string
+	DemFile   string
 }
 
 func Load() *Config {
@@ -135,6 +136,7 @@ func setDefaults() {
 	// Remote sensing defaults
 	viper.SetDefault("remote_sensing.root", "../Satellite-Remote-Sensing")
 	viper.SetDefault("remote_sensing.python", "python3")
+	viper.SetDefault("remote_sensing.dem_file", "")
 }
 
 func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
@@ -150,6 +152,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 
 	rootPath := normalizePath(get("SATELLITE_REMOTE_SENSING_ROOT", "remote_sensing.root", "../Satellite-Remote-Sensing"))
 	pythonBin := get("SATELLITE_REMOTE_SENSING_PYTHON", "remote_sensing.python", "")
+	demFile := normalizePath(get("SATELLITE_REMOTE_SENSING_DEM_FILE", "remote_sensing.dem_file", ""))
 	if pythonBin == "" {
 		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
 		venvPython := filepath.Join(rootPath, ".venv", "bin", "python")
@@ -159,10 +162,15 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 			pythonBin = "python3"
 		}
 	}
+	if demFile == "" {
+		// 兼容历史行为：未显式配置 DEM 时仍尝试使用脚本目录下默认文件。
+		demFile = filepath.Join(rootPath, "GMTED2010.jp2")
+	}
 
 	return RemoteSensingConfig{
 		RootPath:  rootPath,
 		PythonBin: pythonBin,
+		DemFile:   demFile,
 	}
 }
 

@@ -23,8 +23,8 @@ spec:
             - -c
             - |
               set -e
-              mkdir -p /mnt/input /mnt/output_preprocessing
-              chmod -R 0777 /mnt/input /mnt/output_preprocessing
+              mkdir -p /mnt/input /mnt/output_preprocessing /mnt/dem
+              chmod -R 0777 /mnt/input /mnt/output_preprocessing /mnt/dem
           volumeMounts:
             - name: remote-sensing-data
               mountPath: /mnt
@@ -83,6 +83,8 @@ spec:
               value: "/opt/remote-sensing"
             - name: SATELLITE_REMOTE_SENSING_PYTHON
               value: "/opt/remote-sensing/.venv/bin/python"
+            - name: SATELLITE_REMOTE_SENSING_DEM_FILE
+              value: "/opt/remote-sensing-data/dem/GMTED2010.jp2"
           resources:
             requests:
               memory: "512Mi"
@@ -97,6 +99,9 @@ spec:
             - name: remote-sensing-data
               mountPath: /opt/remote-sensing/output_preprocessing
               subPath: output_preprocessing
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing-data/dem
+              subPath: dem
           livenessProbe:
             httpGet:
               path: /health

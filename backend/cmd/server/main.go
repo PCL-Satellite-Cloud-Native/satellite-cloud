@@ -40,6 +40,7 @@ func main() {
 	zapLogger.Info("Remote sensing runtime configured",
 		zap.String("root_path", cfg.RemoteSensing.RootPath),
 		zap.String("python_bin", cfg.RemoteSensing.PythonBin),
+		zap.String("dem_file", cfg.RemoteSensing.DemFile),
 	)
 
 	// 启动时自动执行未应用的迁移（与 K8s/本地环境保持一致）

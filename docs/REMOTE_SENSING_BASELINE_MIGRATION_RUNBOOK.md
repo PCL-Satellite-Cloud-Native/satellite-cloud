@@ -92,7 +92,7 @@ sudo chmod -R 0777 /export/remote-sensing-data
 
 #在 `/etc/exports` 中增加一行（根据你集群网段调整）：
 
-/export/topology-data 192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
+/export/remote-sensing-data 192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
 
 # 使配置生效并验证：
 

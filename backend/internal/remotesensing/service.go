@@ -492,6 +492,10 @@ func (s *RemoteSensingService) executePanRadToa(ctx context.Context, taskID uint
 
 func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	outputDir := filepath.Join("output_preprocessing", "pan_warp_quarters")
+	demFile := s.cfg.DemFile
+	if _, err := os.Stat(demFile); err != nil {
+		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
+	}
 	details := map[string]interface{}{"area_indexes": []int{}, "total": 4}
 	for i := 1; i <= 4; i++ {
 		args := []string{
@@ -499,6 +503,7 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 			"--input_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
 			"--output_dir", outputDir,
 			"--areaidx", strconv.Itoa(i),
+			"--dem_file", demFile,
 		}
 		if _, err := s.runPython(ctx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
 			return nil, err
@@ -524,12 +529,17 @@ func (s *RemoteSensingService) executePanMerge(ctx context.Context, taskID uint,
 
 func (s *RemoteSensingService) executeMssRadQuac(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	outputDir := filepath.Join("output_preprocessing", "mss_rad_quac_rpc")
+	demFile := s.cfg.DemFile
+	if _, err := os.Stat(demFile); err != nil {
+		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
+	}
 	args := []string{
 		"--file_prefix", req.FilePrefix,
 		"--input_dir", filepath.Join("output_preprocessing", "tiff_to_envi"),
 		"--output_dir", outputDir,
 		"--radiance_unit_scale", "1",
 		"--aero_profile", "Urban",
+		"--dem_file", demFile,
 	}
 	if _, err := s.runPython(ctx, taskID, StageMssRadQuac, "mss_rad_quac_rpc.py", args); err != nil {
 		return nil, err

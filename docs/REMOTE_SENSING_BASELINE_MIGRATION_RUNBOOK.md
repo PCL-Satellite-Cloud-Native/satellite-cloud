@@ -88,6 +88,7 @@ kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" => "}{.status
 ```bash
 sudo mkdir -p /export/remote-sensing-data/input
 sudo mkdir -p /export/remote-sensing-data/output_preprocessing
+sudo mkdir -p /export/remote-sensing-data/dem
 sudo chmod -R 0777 /export/remote-sensing-data
 
 #在 `/etc/exports` 中增加一行（根据你集群网段调整）：
@@ -111,6 +112,22 @@ kubectl -n gitlab-runner get pvc remote-sensing-data
 
 验收：`PVC=Bound`。
 
+### 5.3 DEM 大文件放置策略（必须）
+
+`GMTED2010.jp2`、`GMTED2km.tif` 不进入 Git 仓库，统一走 NFS：
+
+1. 将 DEM 文件放到 NFS 的 `dem` 子目录
+2. 后端通过 PVC `subPath=dem` 挂载到 `/opt/remote-sensing-data/dem`
+3. 通过环境变量固定 DEM 路径：
+   - `SATELLITE_REMOTE_SENSING_DEM_FILE=/opt/remote-sensing-data/dem/GMTED2010.jp2`
+
+最小验收：
+
+```bash
+POD=$(kubectl -n gitlab-runner get pod -l app=satellite-backend -o jsonpath='{.items[0].metadata.name}')
+kubectl -n gitlab-runner exec "$POD" -- ls -l /opt/remote-sensing-data/dem
+```
+
 ---
 
 ## 6. 镜像链路（最容易踩坑）
@@ -133,8 +150,9 @@ kubectl -n gitlab-runner get pvc remote-sensing-data
 
 - `alpine:3.19-amd64-r1`
 - `docker:25.0-amd64-r1`
-- `gitlab-runner:alpine-v17.10.1-amd64`
-- `ci-build:docker25-git-amd64-r1`
+- `gitlab-runner:alpine-v17.10.1-amd64-r1`
+- `gitlab-runner-helper:x86_64-v17.10.1-amd64-r1`
+- `ci-build:docker25-git-amd64-r3`
 
 禁止继续覆盖单一通用 tag（如 `:latest` 或 `:3.19`）用于跨架构复用。
 
@@ -160,6 +178,7 @@ kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=120
 
 - `Running with gitlab-runner 17.10.1`
 - 不再出现 `container not found ("build")`
+- 不再出现 `exec format error`
 
 ---
 
@@ -187,6 +206,12 @@ kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=120
 - `GOPROXY=https://goproxy.cn,direct`
 - `GOSUMDB=off`
 
+同时建议在 `.gitlab-ci.yml` 中保持以下约束：
+
+1. `deploy` 阶段只检查 `kubectl -n gitlab-runner get pvc remote-sensing-data`
+2. 不在 CI 中重复 `apply` 集群级 PV（避免 RBAC Forbidden）
+3. Istio `VirtualService` 对遥感长任务使用 `timeout: 24h`（不要写 `0s`）
+
 ---
 
 ## 9. 后端运行链路改造（遥感联动）
@@ -212,10 +237,100 @@ kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=120
 2. 准备 Harbor 仓库与 imagePullSecret
 3. 一次性导入 amd64 镜像（Runner/helper/CI/业务基镜像）
 4. 安装或升级 Runner 到 17.10.1，并绑定 Harbor 镜像
-5. 创建 NFS 目录与 PV/PVC
-6. 配置 `satellite-cloud` CI 变量
-7. 推送 `main` 并触发 pipeline
-8. 按“构建成功 -> 部署成功 -> 遥感任务端到端成功”三层验收
+5. 创建 NFS 目录（含 `input`、`output_preprocessing`、`dem`）与 PV/PVC
+6. 在 NFS 放置 DEM 文件（`GMTED2010.jp2`）
+7. 配置 `satellite-cloud` CI 变量
+8. 推送 `main` 并触发 pipeline
+9. 按“构建成功 -> 部署成功 -> 遥感任务端到端成功”三层验收
+
+---
+
+## 10.2 新集群从零执行清单（可逐条打勾）
+
+### S0. 集群与基础组件
+
+```bash
+kubectl get nodes -o wide
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" => "}{.status.nodeInfo.architecture}{"\n"}{end}'
+```
+
+验收：目标节点为 `amd64`。
+
+### S1. Harbor 与证书
+
+1. Harbor 已导入 runner/helper/ci/base 全部 amd64 镜像
+2. `gitlab-runner` 命名空间已创建 `harbor-registry` secret
+
+```bash
+kubectl -n gitlab-runner get secret harbor-registry
+```
+
+### S2. Runner（17.10.1）
+
+```bash
+kubectl -n gitlab-runner get deploy gitlab-runner
+kubectl -n gitlab-runner logs deploy/gitlab-runner --tail=80
+```
+
+验收：日志含 `gitlab-runner 17.10.1`。
+
+### S3. 仓库与 CI_JOB_TOKEN
+
+1. 内网 GitLab 已有 `satellite-cloud` 与 `satellite-remote-sensing`
+2. 在 `satellite-remote-sensing` 中允许 `satellite-cloud` 的 CI_JOB_TOKEN `read_repository`
+
+### S4. 存储
+
+```bash
+kubectl apply -f k8s/backend/remote-sensing-pv-pvc.yaml
+kubectl -n gitlab-runner get pvc remote-sensing-data
+```
+
+验收：PVC 为 `Bound`。
+
+### S5. DEM 文件
+
+将 `GMTED2010.jp2` 上传到 NFS `dem` 子目录，随后校验：
+
+```bash
+kubectl -n gitlab-runner run dem-check --rm -it --restart=Never \
+  --image=192.168.10.238/library/alpine:3.19-amd64-r1 \
+  --overrides='{"spec":{"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"remote-sensing-data"}}],"containers":[{"name":"c","image":"192.168.10.238/library/alpine:3.19-amd64-r1","command":["sh","-lc","ls -l /mnt/dem"],"volumeMounts":[{"name":"d","mountPath":"/mnt"}]}]}}'
+```
+
+### S6. `satellite-cloud` CI 变量
+
+至少包含：
+
+- `HARBOR_USER`
+- `HARBOR_PASSWORD`
+- `REMOTE_SENSING_REPO_URL`
+- `REMOTE_SENSING_REPO_REF`（可选）
+
+### S7. 首次部署
+
+推送 `main`，观察 pipeline：
+
+1. `build-backend`
+2. `build-frontend`
+3. `deploy`
+4. `sync-topology-csv-to-nfs`
+5. `import-topology`
+
+### S8. 部署后验收
+
+```bash
+kubectl -n gitlab-runner rollout status deploy/satellite-backend
+kubectl -n gitlab-runner rollout status deploy/satellite-frontend
+kubectl -n istio-system get virtualservice satellite-virtualservice
+```
+
+### S9. 业务验收
+
+1. 访问入口可打开前端
+2. 点击“遥感应用”可进入页面
+3. 提交任务后，阶段推进到 `fusion_stack_envi` 后自动执行 `imgshow.py`
+4. 可在任务产物接口看到预览图
 
 ---
 
@@ -254,6 +369,13 @@ curl -I --max-time 10 https://proxy.golang.org
 8. `curl/docker pull` 出现 EOF 但跳板机本机可用：
    - 排查跳板机 `nat PREROUTING` 是否把集群网段重定向到 CLASH 端口
    - 可临时加白名单：`iptables -t nat -I CLASH 1 -s <集群网段> -j RETURN`
+9. `PAN RPC 分块` 卡住 + 前端 503：
+   - 优先检查后端 Pod 是否 `OOMKilled`
+   - 调高后端内存上限（当前建议 `limits.memory=4Gi`）
+   - 同时确认脚本已使用低内存参数（`warp_mem_mb=1024`, `cpu_threads=2`）
+10. `RuntimeError: 创建VRT失败` 且日志显示 DEM 不存在：
+   - 检查 `SATELLITE_REMOTE_SENSING_DEM_FILE` 指向路径
+   - 检查 PVC `dem` 子目录是否有 `GMTED2010.jp2`
 
 ---
 

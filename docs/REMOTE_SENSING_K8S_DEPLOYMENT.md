@@ -47,9 +47,15 @@
 - 新增环境变量：
   - `SATELLITE_REMOTE_SENSING_ROOT=/opt/remote-sensing`
   - `SATELLITE_REMOTE_SENSING_PYTHON=/opt/remote-sensing/.venv/bin/python`
+  - `SATELLITE_REMOTE_SENSING_DEM_FILE=/opt/remote-sensing-data/dem/GMTED2010.jp2`
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
   - `/opt/remote-sensing/output_preprocessing`（subPath=`output_preprocessing`）
+  - `/opt/remote-sensing-data/dem`（subPath=`dem`）
+- 资源建议：
+  - `requests.memory=1Gi`
+  - `limits.memory=4Gi`（避免 `PAN RPC` 阶段 OOMKilled）
+- `initContainer` 建议使用内网镜像（如 `192.168.10.238/library/alpine:3.19-amd64-r1`），避免受外网拉取影响
 
 ## 3. 上线前准备（一次性）
 
@@ -60,11 +66,12 @@
 ```bash
 sudo mkdir -p /export/remote-sensing-data/input
 sudo mkdir -p /export/remote-sensing-data/output_preprocessing
+sudo mkdir -p /export/remote-sensing-data/dem
 sudo chmod -R 0777 /export/remote-sensing-data
 
 #在 `/etc/exports` 中增加一行（根据你集群网段调整）：
 
-/export/topology-data 192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
+/export/remote-sensing-data 192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
 
 # 使配置生效并验证：
 
@@ -151,6 +158,16 @@ kubectl get pvc -n gitlab-runner remote-sensing-data
 
 验收：`PV/PVC` 状态均为 `Bound`。
 
+### 4.1.1 手工准备 DEM 数据（建议首轮手工）
+
+1. 将 `GMTED2010.jp2` 上传到 NFS：`/export/remote-sensing-data/dem/`
+2. 启动后端后确认容器可见该文件：
+
+```bash
+POD=$(kubectl -n gitlab-runner get pod -l app=satellite-backend -o jsonpath='{.items[0].metadata.name}')
+kubectl -n gitlab-runner exec "$POD" -- ls -l /opt/remote-sensing-data/dem
+```
+
 ### 4.2 触发 GitLab `main` 流水线
 
 流水线阶段：
@@ -159,6 +176,12 @@ kubectl get pvc -n gitlab-runner remote-sensing-data
 2. `build-frontend`
 3. `deploy`
 4. `topology-sync`
+
+首次部署前需要先手工执行（一次）：
+
+```bash
+kubectl apply -f k8s/istio-rbac-gitlab-runner.yaml
+```
 
 ## 5. 部署后验收（必须）
 
@@ -180,6 +203,7 @@ kubectl -n gitlab-runner logs deploy/satellite-backend | rg "Remote sensing runt
 
 - `root_path=/opt/remote-sensing`
 - `python_bin=/opt/remote-sensing/.venv/bin/python`
+- `dem_file=/opt/remote-sensing-data/dem/GMTED2010.jp2`
 
 ### 5.3 容器内依赖确认
 
@@ -258,6 +282,17 @@ ENV GOPROXY=https://goproxy.cn,direct \
 
 现象：worker 上 `curl http/https` 出现空回复或 TLS EOF。  
 高频原因：跳板机 `nat PREROUTING` 将集群网段 TCP 重定向到本地代理端口（如 `CLASH -> REDIRECT 7892`）。
+
+### 问题 7：`RuntimeError: 创建VRT失败` 或 `GMTED2010.jp2: No such file or directory`
+
+原因：DEM 文件不存在或后端未挂载 `dem` 子目录。
+
+定位：
+
+```bash
+kubectl -n gitlab-runner exec "$POD" -- ls -l /opt/remote-sensing-data/dem
+kubectl -n gitlab-runner get deploy satellite-backend -o yaml | rg "SATELLITE_REMOTE_SENSING_DEM_FILE|/opt/remote-sensing-data/dem|subPath: dem"
+```
 
 临时修复示例（跳板机执行）：
 

@@ -41,6 +41,7 @@ func main() {
 		zap.String("root_path", cfg.RemoteSensing.RootPath),
 		zap.String("python_bin", cfg.RemoteSensing.PythonBin),
 		zap.String("dem_file", cfg.RemoteSensing.DemFile),
+		zap.String("persist_output_dir", cfg.RemoteSensing.PersistOutputDir),
 	)
 
 	// 启动时自动执行未应用的迁移（与 K8s/本地环境保持一致）

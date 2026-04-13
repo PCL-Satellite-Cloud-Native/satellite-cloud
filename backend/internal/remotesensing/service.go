@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -622,19 +623,70 @@ func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID ui
 	if _, err := os.Stat(filepath.Join(s.cfg.RootPath, previewPNG)); err != nil {
 		return nil, fmt.Errorf("imgshow 预览图未生成: %s", previewPNG)
 	}
+
+	// 阶段1优化：中间产物走本地 scratch，最终产物持久化到 NFS 挂载目录。
+	persistBaseDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir)
+	persistFusionDir := filepath.Join(persistBaseDir, "fusion_envi")
+	persistPreviewDir := filepath.Join(persistBaseDir, "imgshow")
+	if err := os.MkdirAll(persistFusionDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建持久化目录失败: %w", err)
+	}
+	if err := os.MkdirAll(persistPreviewDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建持久化目录失败: %w", err)
+	}
+	finalDatAbs := filepath.Join(s.cfg.RootPath, finalDat)
+	persistFinalDatRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalDatName)
+	persistFinalDatAbs := filepath.Join(s.cfg.RootPath, persistFinalDatRel)
+	if err := copyFile(finalDatAbs, persistFinalDatAbs); err != nil {
+		return nil, fmt.Errorf("持久化融合 dat 失败: %w", err)
+	}
+	finalHdrName := fmt.Sprintf("%s-MSS1-fusion.hdr", req.FilePrefix)
+	finalHdrRel := filepath.Join(outputDir, finalHdrName)
+	finalHdrAbs := filepath.Join(s.cfg.RootPath, finalHdrRel)
+	if _, err := os.Stat(finalHdrAbs); err == nil {
+		persistFinalHdrAbs := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "fusion_envi", finalHdrName)
+		if err := copyFile(finalHdrAbs, persistFinalHdrAbs); err != nil {
+			return nil, fmt.Errorf("持久化融合 hdr 失败: %w", err)
+		}
+	}
+	persistPreviewRel := filepath.Join(s.cfg.PersistOutputDir, "imgshow", filepath.Base(previewPNG))
+	persistPreviewAbs := filepath.Join(s.cfg.RootPath, persistPreviewRel)
+	if err := copyFile(filepath.Join(s.cfg.RootPath, previewPNG), persistPreviewAbs); err != nil {
+		return nil, fmt.Errorf("持久化预览图失败: %w", err)
+	}
+
 	artifacts := []model.RemoteSensingTaskArtifact{
 		{
 			Type:     "raw",
 			Label:    "融合 ENVI",
-			Path:     finalDat,
+			Path:     persistFinalDatRel,
 			Metadata: datatypes.JSONMap{"stage": StageFusionStack, "sensor": req.Sensor},
 		},
 	}
 	artifacts = append(artifacts, model.RemoteSensingTaskArtifact{
 		Type:     "preview",
 		Label:    "融合预览图",
-		Path:     previewPNG,
+		Path:     persistPreviewRel,
 		Metadata: datatypes.JSONMap{"mime": "image/png", "generator": "imgshow.py"},
 	})
-	return &stageExecutionResult{OutputPath: outputDir, Message: "融合堆栈与预览图生成完成", Artifacts: artifacts}, nil
+	return &stageExecutionResult{OutputPath: filepath.Join(s.cfg.PersistOutputDir, "fusion_envi"), Message: "融合堆栈与预览图生成完成", Artifacts: artifacts}, nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = out.Close()
+	}()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }

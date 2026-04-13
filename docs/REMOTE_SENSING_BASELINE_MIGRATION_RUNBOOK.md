@@ -143,6 +143,7 @@ kubectl -n gitlab-runner exec "$POD" -- ls -l /opt/remote-sensing-data/dem
 参考文档：
 
 - `docs/GITLAB_RUNNER_IMAGE_MIRROR.md`
+- `docs/REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md`（低资源分钟级优化路线）
 
 ## 6.2 强约束：统一 amd64 + 不复用模糊 tag
 

@@ -39,9 +39,10 @@ type LogConfig struct {
 }
 
 type RemoteSensingConfig struct {
-	RootPath  string
-	PythonBin string
-	DemFile   string
+	RootPath         string
+	PythonBin        string
+	DemFile          string
+	PersistOutputDir string
 }
 
 func Load() *Config {
@@ -137,6 +138,7 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.root", "../Satellite-Remote-Sensing")
 	viper.SetDefault("remote_sensing.python", "python3")
 	viper.SetDefault("remote_sensing.dem_file", "")
+	viper.SetDefault("remote_sensing.persist_output_dir", "persist_output_preprocessing")
 }
 
 func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
@@ -153,6 +155,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	rootPath := normalizePath(get("SATELLITE_REMOTE_SENSING_ROOT", "remote_sensing.root", "../Satellite-Remote-Sensing"))
 	pythonBin := get("SATELLITE_REMOTE_SENSING_PYTHON", "remote_sensing.python", "")
 	demFile := normalizePath(get("SATELLITE_REMOTE_SENSING_DEM_FILE", "remote_sensing.dem_file", ""))
+	persistOutputDir := filepath.Clean(get("SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR", "remote_sensing.persist_output_dir", "persist_output_preprocessing"))
 	if pythonBin == "" {
 		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
 		venvPython := filepath.Join(rootPath, ".venv", "bin", "python")
@@ -168,9 +171,10 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	}
 
 	return RemoteSensingConfig{
-		RootPath:  rootPath,
-		PythonBin: pythonBin,
-		DemFile:   demFile,
+		RootPath:         rootPath,
+		PythonBin:        pythonBin,
+		DemFile:          demFile,
+		PersistOutputDir: persistOutputDir,
 	}
 }
 

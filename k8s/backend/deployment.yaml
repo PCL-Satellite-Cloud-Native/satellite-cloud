@@ -17,17 +17,19 @@ spec:
     spec:
       initContainers:
         - name: init-remote-sensing-dirs
-          image: alpine:3.19
+          image: 192.168.10.238/library/alpine:3.19-amd64-r1
           command:
             - /bin/sh
             - -c
             - |
               set -e
-              mkdir -p /mnt/input /mnt/output_preprocessing /mnt/dem
-              chmod -R 0777 /mnt/input /mnt/output_preprocessing /mnt/dem
+              mkdir -p /mnt/input /mnt/output_preprocessing /mnt/dem /scratch/output_preprocessing
+              chmod -R 0777 /mnt/input /mnt/output_preprocessing /mnt/dem /scratch/output_preprocessing
           volumeMounts:
             - name: remote-sensing-data
               mountPath: /mnt
+            - name: remote-sensing-scratch-output
+              mountPath: /scratch/output_preprocessing
       containers:
         - name: satellite-backend
           image: 192.168.10.238/satellite/backend:latest
@@ -85,6 +87,8 @@ spec:
               value: "/opt/remote-sensing/.venv/bin/python"
             - name: SATELLITE_REMOTE_SENSING_DEM_FILE
               value: "/opt/remote-sensing-data/dem/GMTED2010.jp2"
+            - name: SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR
+              value: "persist_output_preprocessing"
           resources:
             requests:
               memory: "1Gi"
@@ -96,8 +100,10 @@ spec:
             - name: remote-sensing-data
               mountPath: /opt/remote-sensing/input
               subPath: input
-            - name: remote-sensing-data
+            - name: remote-sensing-scratch-output
               mountPath: /opt/remote-sensing/output_preprocessing
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing/persist_output_preprocessing
               subPath: output_preprocessing
             - name: remote-sensing-data
               mountPath: /opt/remote-sensing-data/dem
@@ -120,6 +126,8 @@ spec:
         - name: remote-sensing-data
           persistentVolumeClaim:
             claimName: remote-sensing-data
+        - name: remote-sensing-scratch-output
+          emptyDir: {}
 
 ---
 apiVersion: v1

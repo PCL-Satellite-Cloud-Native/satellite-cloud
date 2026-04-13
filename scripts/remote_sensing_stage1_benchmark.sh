@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+用法:
+  scripts/remote_sensing_stage1_benchmark.sh pre  --run-id <id> [--namespace gitlab-runner] [--selector app=satellite-backend]
+  scripts/remote_sensing_stage1_benchmark.sh post --run-id <id> --task-id <id> [--namespace gitlab-runner] [--selector app=satellite-backend]
+
+说明:
+  1) pre: 采集任务开始前快照（CPU cgroup + NFS mountstats bytes）
+  2) post: 采集任务结束后快照，并输出 delta 报告与阶段耗时汇总
+EOF
+}
+
+MODE="${1:-}"
+if [[ -z "${MODE}" ]]; then
+  usage
+  exit 1
+fi
+shift || true
+
+NAMESPACE="gitlab-runner"
+SELECTOR="app=satellite-backend"
+RUN_ID=""
+TASK_ID=""
+BASE_DIR="artifacts/benchmarks"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --namespace)
+      NAMESPACE="$2"; shift 2 ;;
+    --selector)
+      SELECTOR="$2"; shift 2 ;;
+    --run-id)
+      RUN_ID="$2"; shift 2 ;;
+    --task-id)
+      TASK_ID="$2"; shift 2 ;;
+    *)
+      echo "未知参数: $1"
+      usage
+      exit 1 ;;
+  esac
+done
+
+if [[ -z "${RUN_ID}" ]]; then
+  echo "必须提供 --run-id"
+  exit 1
+fi
+
+RUN_DIR="${BASE_DIR}/${RUN_ID}"
+mkdir -p "${RUN_DIR}"
+
+POD="$(kubectl -n "${NAMESPACE}" get pod -l "${SELECTOR}" -o jsonpath='{.items[0].metadata.name}')"
+if [[ -z "${POD}" ]]; then
+  echo "未找到后端 Pod: namespace=${NAMESPACE}, selector=${SELECTOR}"
+  exit 1
+fi
+
+collect_cpu_stat() {
+  kubectl -n "${NAMESPACE}" exec "${POD}" -- sh -lc 'cat /sys/fs/cgroup/cpu.stat 2>/dev/null || cat /sys/fs/cgroup/cpu/cpu.stat'
+}
+
+collect_nfs_bytes() {
+  kubectl -n "${NAMESPACE}" exec "${POD}" -- sh -lc 'cat /proc/self/mountstats' | awk '
+    $1=="device" && $2 ~ /:\/export\/remote-sensing-data\/input$/ {section="input"; next}
+    $1=="device" && $2 ~ /:\/export\/remote-sensing-data\/output_preprocessing$/ {section="output"; next}
+    $1=="device" {section=""}
+    section!="" && $1=="bytes:" {print section":"$2","$3","$4","$5","$6","$7","$8","$9; section=""}
+  '
+}
+
+write_snapshot() {
+  local prefix="$1"
+  date '+%F %T %z' > "${RUN_DIR}/${prefix}_timestamp.txt"
+  date +%s > "${RUN_DIR}/${prefix}_epoch.txt"
+  collect_cpu_stat > "${RUN_DIR}/${prefix}_cpu.stat"
+  collect_nfs_bytes > "${RUN_DIR}/${prefix}_nfs.bytes"
+}
+
+if [[ "${MODE}" == "pre" ]]; then
+  write_snapshot "pre"
+  echo "已写入 pre 快照: ${RUN_DIR}"
+  exit 0
+fi
+
+if [[ "${MODE}" != "post" ]]; then
+  usage
+  exit 1
+fi
+
+if [[ -z "${TASK_ID}" ]]; then
+  echo "post 模式必须提供 --task-id"
+  exit 1
+fi
+
+if [[ ! -f "${RUN_DIR}/pre_epoch.txt" ]]; then
+  echo "缺少 pre 快照，请先执行 pre"
+  exit 1
+fi
+
+write_snapshot "post"
+
+PRE_EPOCH="$(cat "${RUN_DIR}/pre_epoch.txt")"
+NOW_EPOCH="$(date +%s)"
+SINCE_SEC=$((NOW_EPOCH - PRE_EPOCH + 30))
+if [[ "${SINCE_SEC}" -lt 60 ]]; then
+  SINCE_SEC=60
+fi
+
+calc_cpu_delta() {
+  awk '
+    FNR==NR {pre[$1]=$2; next}
+    {post[$1]=$2}
+    END {
+      if (("nr_throttled" in pre) && ("nr_throttled" in post)) {
+        printf("cpu.nr_throttled.delta=%d\n", post["nr_throttled"]-pre["nr_throttled"])
+      }
+      if (("throttled_usec" in pre) && ("throttled_usec" in post)) {
+        printf("cpu.throttled_usec.delta=%d\n", post["throttled_usec"]-pre["throttled_usec"])
+      }
+      if (("usage_usec" in pre) && ("usage_usec" in post)) {
+        printf("cpu.usage_usec.delta=%d\n", post["usage_usec"]-pre["usage_usec"])
+      }
+    }
+  ' "${RUN_DIR}/pre_cpu.stat" "${RUN_DIR}/post_cpu.stat"
+}
+
+calc_nfs_delta() {
+  awk -F'[: ,]+' '
+    FNR==NR {
+      if ($1=="input" || $1=="output") {
+        for(i=2;i<=9;i++) pre[$1,i]=$i
+      }
+      next
+    }
+    {
+      if ($1=="input" || $1=="output") {
+        for(i=2;i<=9;i++) post[$1,i]=$i
+      }
+    }
+    END {
+      labels[2]="normal_read"; labels[3]="normal_write";
+      labels[4]="direct_read"; labels[5]="direct_write";
+      labels[6]="server_read"; labels[7]="server_write";
+      labels[8]="read_pages"; labels[9]="write_pages";
+      for (m in post) { }
+      for (mount in mounts) { }
+      split("input output", ms, " ")
+      for (j in ms) {
+        mount=ms[j]
+        for(i=2;i<=9;i++){
+          if ((mount SUBSEP i) in pre && (mount SUBSEP i) in post) {
+            delta=post[mount,i]-pre[mount,i]
+            printf("nfs.%s.%s.delta=%d\n", mount, labels[i], delta)
+          }
+        }
+      }
+    }
+  ' "${RUN_DIR}/pre_nfs.bytes" "${RUN_DIR}/post_nfs.bytes"
+}
+
+collect_stage_times() {
+  kubectl -n "${NAMESPACE}" logs deploy/satellite-backend --since="${SINCE_SEC}s" \
+    | awk -v task="${TASK_ID}" '
+      index($0, "VALUES ("task",'\''") > 0 {
+        if (match($0, /VALUES \([0-9]+,'\''([^'\'']+)'\''/, stage) && match($0, /总时间: ([0-9.]+)/, sec)) {
+          print stage[1], sec[1]
+        }
+      }
+    ' \
+    | awk '
+      {sum[$1]+=$2; cnt[$1]+=1}
+      END {
+        for (k in sum) {
+          printf("stage.%s.total_seconds=%.3f count=%d\n", k, sum[k], cnt[k])
+        }
+      }
+    ' | sort
+}
+
+{
+  echo "run_id=${RUN_ID}"
+  echo "namespace=${NAMESPACE}"
+  echo "pod=${POD}"
+  echo "task_id=${TASK_ID}"
+  echo "pre_time=$(cat "${RUN_DIR}/pre_timestamp.txt")"
+  echo "post_time=$(cat "${RUN_DIR}/post_timestamp.txt")"
+  echo "since_seconds=${SINCE_SEC}"
+  echo "--- cpu_delta ---"
+  calc_cpu_delta
+  echo "--- nfs_delta ---"
+  calc_nfs_delta
+  echo "--- stage_time ---"
+  collect_stage_times
+} > "${RUN_DIR}/report.txt"
+
+echo "已生成报告: ${RUN_DIR}/report.txt"

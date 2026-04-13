@@ -48,9 +48,11 @@
   - `SATELLITE_REMOTE_SENSING_ROOT=/opt/remote-sensing`
   - `SATELLITE_REMOTE_SENSING_PYTHON=/opt/remote-sensing/.venv/bin/python`
   - `SATELLITE_REMOTE_SENSING_DEM_FILE=/opt/remote-sensing-data/dem/GMTED2010.jp2`
+  - `SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR=persist_output_preprocessing`
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
-  - `/opt/remote-sensing/output_preprocessing`（subPath=`output_preprocessing`）
+  - `/opt/remote-sensing/output_preprocessing`（`emptyDir` 本地 scratch，中间产物）
+  - `/opt/remote-sensing/persist_output_preprocessing`（subPath=`output_preprocessing`，最终产物持久化）
   - `/opt/remote-sensing-data/dem`（subPath=`dem`）
 - 资源建议：
   - `requests.memory=1Gi`
@@ -204,12 +206,20 @@ kubectl -n gitlab-runner logs deploy/satellite-backend | rg "Remote sensing runt
 - `root_path=/opt/remote-sensing`
 - `python_bin=/opt/remote-sensing/.venv/bin/python`
 - `dem_file=/opt/remote-sensing-data/dem/GMTED2010.jp2`
+- `persist_output_dir=persist_output_preprocessing`
 
 ### 5.3 容器内依赖确认
 
 ```bash
 POD=$(kubectl -n gitlab-runner get pod -l app=satellite-backend -o jsonpath='{.items[0].metadata.name}')
 kubectl -n gitlab-runner exec -it "$POD" -- /bin/sh -lc '/opt/remote-sensing/.venv/bin/python -c "from osgeo import gdal; import matplotlib; print(gdal.__version__)"'
+```
+
+### 5.3.1 Stage1 本地 scratch 挂载确认
+
+```bash
+POD=$(kubectl -n gitlab-runner get pod -l app=satellite-backend -o jsonpath='{.items[0].metadata.name}')
+kubectl -n gitlab-runner exec "$POD" -- sh -lc 'mount | grep -E "/opt/remote-sensing/output_preprocessing|/opt/remote-sensing/persist_output_preprocessing"'
 ```
 
 ### 5.4 业务联动确认
@@ -219,7 +229,20 @@ kubectl -n gitlab-runner exec -it "$POD" -- /bin/sh -lc '/opt/remote-sensing/.ve
 1. `fusion_stack_envi` 阶段完成
 2. 自动执行 `imgshow.py`
 3. 产物中有 `preview`，路径类似：
-   `output_preprocessing/imgshow/<prefix>-MSS1-fusion.png`
+   `persist_output_preprocessing/imgshow/<prefix>-MSS1-fusion.png`
+
+### 5.5 阶段1压测验收（推荐）
+
+```bash
+# 任务前
+./scripts/remote_sensing_stage1_benchmark.sh pre --run-id stage1-run-001
+
+# 任务后（task_id 按实际填写）
+./scripts/remote_sensing_stage1_benchmark.sh post --run-id stage1-run-001 --task-id 11
+
+# 查看报告
+cat artifacts/benchmarks/stage1-run-001/report.txt
+```
 
 ## 6. 常见问题与定位
 

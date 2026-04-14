@@ -83,6 +83,12 @@
 - `PAN RPC` 阶段耗时下降到 4 分钟以内
 - 无 OOM、无失败重试
 
+当前仓库已落地的阶段2-A实现：
+
+1. 后端 `executePanRpc` 使用并发度 `2` 执行 4 个 `areaidx`
+2. 每个分块使用独立临时目录 `output_preprocessing/pan_warp_quarters/workers/area{n}`，避免共享 `vrt` 文件冲突
+3. 每块完成后再复制 `wrap-part{n}.tif` 到主目录供后续拼接阶段使用
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑
@@ -185,7 +191,7 @@ cat artifacts/benchmarks/stage1-run-001/report.txt
 
 1. CPU throttle 增量
 2. NFS bytes 增量（input/output_preprocessing）
-3. 指定 task 的各阶段“总时间”汇总
+3. 指定 task 的各阶段耗时（通过 `/api/remote-sensing/tasks/<id>/stages` 计算）
 
 ---
 

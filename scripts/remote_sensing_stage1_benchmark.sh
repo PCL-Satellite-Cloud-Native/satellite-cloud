@@ -152,7 +152,7 @@ calc_nfs_delta() {
         for(i=2;i<=9;i++){
           if ((mount SUBSEP i) in pre && (mount SUBSEP i) in post) {
             delta=post[mount,i]-pre[mount,i]
-            printf("nfs.%s.%s.delta=%d\n", mount, labels[i], delta)
+            printf("nfs.%s.%s.delta=%.0f\n", mount, labels[i], delta)
           }
         }
       }
@@ -161,22 +161,29 @@ calc_nfs_delta() {
 }
 
 collect_stage_times() {
-  kubectl -n "${NAMESPACE}" logs deploy/satellite-backend --since="${SINCE_SEC}s" \
-    | awk -v task="${TASK_ID}" '
-      index($0, "VALUES ("task",'\''") > 0 {
-        if (match($0, /VALUES \([0-9]+,'\''([^'\'']+)'\''/, stage) && match($0, /总时间: ([0-9.]+)/, sec)) {
-          print stage[1], sec[1]
-        }
-      }
-    ' \
-    | awk '
-      {sum[$1]+=$2; cnt[$1]+=1}
-      END {
-        for (k in sum) {
-          printf("stage.%s.total_seconds=%.3f count=%d\n", k, sum[k], cnt[k])
-        }
-      }
-    ' | sort
+  kubectl -n "${NAMESPACE}" exec "${POD}" -- sh -lc "
+    curl -fsS http://127.0.0.1:8080/api/remote-sensing/tasks/${TASK_ID}/stages \
+    | /opt/remote-sensing/.venv/bin/python -c '
+import json,sys
+from datetime import datetime
+s=json.load(sys.stdin)
+for item in s:
+    st=item.get(\"started_at\")
+    ft=item.get(\"finished_at\")
+    name=item.get(\"name\")
+    if not st or not ft or not name:
+        continue
+    try:
+        a=datetime.fromisoformat(st.replace(\"Z\",\"+00:00\"))
+        b=datetime.fromisoformat(ft.replace(\"Z\",\"+00:00\"))
+    except Exception:
+        continue
+    sec=(b-a).total_seconds()
+    if sec < 0:
+        continue
+    print(f\"stage.{name}.elapsed_seconds={sec:.3f}\")
+'
+  " | sort
 }
 
 {

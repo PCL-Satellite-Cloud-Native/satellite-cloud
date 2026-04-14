@@ -497,21 +497,67 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 	if _, err := os.Stat(demFile); err != nil {
 		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
 	}
-	details := map[string]interface{}{"area_indexes": []int{}, "total": 4}
+	absoluteOutputDir := filepath.Join(s.cfg.RootPath, outputDir)
+	workerBaseDir := filepath.Join(absoluteOutputDir, "workers")
+	if err := os.MkdirAll(workerBaseDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建 PAN RPC 工作目录失败: %w", err)
+	}
+	stageCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	sem := make(chan struct{}, 2) // 阶段2-A：两路并发，兼顾低资源稳定性。
+	errCh := make(chan error, 4)
+	var wg sync.WaitGroup
 	for i := 1; i <= 4; i++ {
-		args := []string{
-			"--file_prefix", req.FilePrefix,
-			"--input_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
-			"--output_dir", outputDir,
-			"--areaidx", strconv.Itoa(i),
-			"--dem_file", demFile,
-		}
-		if _, err := s.runPython(ctx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-stageCtx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			workerOutputDir := filepath.Join(outputDir, "workers", fmt.Sprintf("area%d", i))
+			if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, workerOutputDir), 0o755); err != nil {
+				errCh <- fmt.Errorf("创建 area%d 目录失败: %w", i, err)
+				cancel()
+				return
+			}
+			args := []string{
+				"--file_prefix", req.FilePrefix,
+				"--input_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
+				"--output_dir", workerOutputDir,
+				"--areaidx", strconv.Itoa(i),
+				"--dem_file", demFile,
+			}
+			if _, err := s.runPython(stageCtx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
+				errCh <- err
+				cancel()
+				return
+			}
+			srcPart := filepath.Join(s.cfg.RootPath, workerOutputDir, fmt.Sprintf("%s-PAN1-wrap-part%d.tif", req.FilePrefix, i))
+			dstPart := filepath.Join(absoluteOutputDir, fmt.Sprintf("%s-PAN1-wrap-part%d.tif", req.FilePrefix, i))
+			if err := copyFile(srcPart, dstPart); err != nil {
+				errCh <- fmt.Errorf("复制 area%d 结果失败: %w", i, err)
+				cancel()
+				return
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
 			return nil, err
 		}
-		details["area_indexes"] = append(details["area_indexes"].([]int), i)
 	}
-	details["completed"] = 4
+	details := map[string]interface{}{
+		"area_indexes": []int{1, 2, 3, 4},
+		"completed":    4,
+		"total":        4,
+		"parallelism":  2,
+	}
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "RPC 分块完成"}, nil
 }
 

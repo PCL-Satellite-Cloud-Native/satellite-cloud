@@ -89,6 +89,12 @@
 2. 每个分块使用独立临时目录 `output_preprocessing/pan_warp_quarters/workers/area{n}`，避免共享 `vrt` 文件冲突
 3. 每块完成后再复制 `wrap-part{n}.tif` 到主目录供后续拼接阶段使用
 
+当前仓库已落地的阶段2-B实现：
+
+1. `pansharpen_fusion` 从串行改为并发度 `2`
+2. 每个波段使用独立临时目录 `output_preprocessing/pansharpen/workers/band{n}`
+3. 每个波段完成后复制 `*_fused_band{n}.dat/.hdr` 到主输出目录，兼容后续 `fusion_stack_envi`
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑

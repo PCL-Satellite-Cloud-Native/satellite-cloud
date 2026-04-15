@@ -616,20 +616,73 @@ func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID 
 
 func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	outputDir := filepath.Join("output_preprocessing", "pansharpen")
-	details := map[string]interface{}{"completed": 0, "total": 3}
+	absoluteOutputDir := filepath.Join(s.cfg.RootPath, outputDir)
+	workerBaseDir := filepath.Join(absoluteOutputDir, "workers")
+	if err := os.MkdirAll(workerBaseDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建 Pan-sharpen 工作目录失败: %w", err)
+	}
+	stageCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	sem := make(chan struct{}, 2) // 阶段2-B：两路并发，避免高并发抖动。
+	errCh := make(chan error, 3)
+	var wg sync.WaitGroup
 	for i := 1; i <= 3; i++ {
-		args := []string{
-			"--file_prefix", req.FilePrefix,
-			"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
-			"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
-			"--output_dir", outputDir,
-			"--bandidx", strconv.Itoa(i),
-		}
-		if _, err := s.runPython(ctx, taskID, StagePansharpen, "pansharpen_fusion.py", args); err != nil {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-stageCtx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			workerOutputDir := filepath.Join(outputDir, "workers", fmt.Sprintf("band%d", i))
+			if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, workerOutputDir), 0o755); err != nil {
+				errCh <- fmt.Errorf("创建 band%d 目录失败: %w", i, err)
+				cancel()
+				return
+			}
+			args := []string{
+				"--file_prefix", req.FilePrefix,
+				"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
+				"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
+				"--output_dir", workerOutputDir,
+				"--bandidx", strconv.Itoa(i),
+			}
+			if _, err := s.runPython(stageCtx, taskID, StagePansharpen, "pansharpen_fusion.py", args); err != nil {
+				errCh <- err
+				cancel()
+				return
+			}
+			bandDatName := fmt.Sprintf("%s-MSS1_fused_band%d.dat", req.FilePrefix, i)
+			srcBandDat := filepath.Join(s.cfg.RootPath, workerOutputDir, bandDatName)
+			dstBandDat := filepath.Join(absoluteOutputDir, bandDatName)
+			if err := copyFile(srcBandDat, dstBandDat); err != nil {
+				errCh <- fmt.Errorf("复制 band%d dat 失败: %w", i, err)
+				cancel()
+				return
+			}
+			bandHdrName := fmt.Sprintf("%s-MSS1_fused_band%d.hdr", req.FilePrefix, i)
+			srcBandHdr := filepath.Join(s.cfg.RootPath, workerOutputDir, bandHdrName)
+			if _, err := os.Stat(srcBandHdr); err == nil {
+				dstBandHdr := filepath.Join(absoluteOutputDir, bandHdrName)
+				if err := copyFile(srcBandHdr, dstBandHdr); err != nil {
+					errCh <- fmt.Errorf("复制 band%d hdr 失败: %w", i, err)
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
 			return nil, err
 		}
-		details["completed"] = details["completed"].(int) + 1
 	}
+	details := map[string]interface{}{"completed": 3, "total": 3, "parallelism": 2}
 	details["message"] = "三波段融合完成"
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "融合完成"}, nil
 }

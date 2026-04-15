@@ -690,14 +690,18 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	inputDir := filepath.Join("output_preprocessing", "pansharpen")
 	outputDir := filepath.Join("output_preprocessing", "fusion_envi")
+	s.log(taskID, StageFusionStack, "info", "开始执行 fusion_stack_envi")
 	args := []string{
 		"--file_prefix", req.FilePrefix,
 		"--input_dir", inputDir,
 		"--output_dir", outputDir,
 	}
-	if _, err := s.runPython(ctx, taskID, StageFusionStack, "fusion_stack_envi.py", args); err != nil {
+	fusionCtx, cancelFusion := context.WithTimeout(ctx, 20*time.Minute)
+	defer cancelFusion()
+	if _, err := s.runPython(fusionCtx, taskID, StageFusionStack, "fusion_stack_envi.py", args); err != nil {
 		return nil, err
 	}
+	s.log(taskID, StageFusionStack, "info", "fusion_stack_envi 执行完成")
 	finalDatName := fmt.Sprintf("%s-MSS1-fusion.dat", req.FilePrefix)
 	finalDat := filepath.Join(outputDir, finalDatName)
 	if _, err := os.Stat(filepath.Join(s.cfg.RootPath, finalDat)); err != nil {
@@ -716,9 +720,11 @@ func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID ui
 		"--input_dir", outputDir,
 		"--output_dir", previewDir,
 	}
+	s.log(taskID, StageFusionStack, "info", "开始执行 imgshow")
 	if _, err := s.runPython(previewCtx, taskID, StageFusionStack, "imgshow.py", previewArgs); err != nil {
 		return nil, fmt.Errorf("imgshow 预览生成失败: %w", err)
 	}
+	s.log(taskID, StageFusionStack, "info", "imgshow 执行完成")
 	if _, err := os.Stat(filepath.Join(s.cfg.RootPath, previewPNG)); err != nil {
 		return nil, fmt.Errorf("imgshow 预览图未生成: %s", previewPNG)
 	}
@@ -736,6 +742,7 @@ func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID ui
 	finalDatAbs := filepath.Join(s.cfg.RootPath, finalDat)
 	persistFinalDatRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalDatName)
 	persistFinalDatAbs := filepath.Join(s.cfg.RootPath, persistFinalDatRel)
+	s.log(taskID, StageFusionStack, "info", fmt.Sprintf("开始持久化融合数据: %s", persistFinalDatRel))
 	if err := copyFile(finalDatAbs, persistFinalDatAbs); err != nil {
 		return nil, fmt.Errorf("持久化融合 dat 失败: %w", err)
 	}
@@ -753,6 +760,7 @@ func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID ui
 	if err := copyFile(filepath.Join(s.cfg.RootPath, previewPNG), persistPreviewAbs); err != nil {
 		return nil, fmt.Errorf("持久化预览图失败: %w", err)
 	}
+	s.log(taskID, StageFusionStack, "info", "持久化产物完成")
 
 	artifacts := []model.RemoteSensingTaskArtifact{
 		{
@@ -787,5 +795,5 @@ func copyFile(src, dst string) error {
 	if _, err := io.Copy(out, in); err != nil {
 		return err
 	}
-	return out.Sync()
+	return out.Close()
 }

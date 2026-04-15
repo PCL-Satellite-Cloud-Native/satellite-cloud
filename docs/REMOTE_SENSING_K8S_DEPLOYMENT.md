@@ -317,6 +317,34 @@ kubectl -n gitlab-runner exec "$POD" -- ls -l /opt/remote-sensing-data/dem
 kubectl -n gitlab-runner get deploy satellite-backend -o yaml | rg "SATELLITE_REMOTE_SENSING_DEM_FILE|/opt/remote-sensing-data/dem|subPath: dem"
 ```
 
+### 问题 8：流程卡在 `fusion_stack_envi`，但 `fusion_envi/*.dat` 已出现
+
+现象：
+
+1. 阶段状态长期 `running`
+2. `output_preprocessing/fusion_envi` 已有融合结果
+3. `artifacts` 仍为空
+
+处理：
+
+1. 查看融合阶段关键日志（当前代码已增加）：
+
+```bash
+kubectl -n gitlab-runner logs deploy/satellite-backend | grep -E "fusion_stack_envi|imgshow|持久化"
+```
+
+2. 确认任务日志中是否有 `fusion_stack_envi` 和 `imgshow.py` 的执行记录：
+
+```sql
+select stage_name,level,created_at,content
+from remote_sensing_task_logs
+where task_id = <task_id>
+order by created_at desc
+limit 30;
+```
+
+3. 若长期无完成，确认后端镜像是否包含“融合超时+日志增强”版本。
+
 临时修复示例（跳板机执行）：
 
 ```bash

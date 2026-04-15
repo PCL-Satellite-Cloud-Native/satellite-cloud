@@ -95,6 +95,12 @@
 2. 每个波段使用独立临时目录 `output_preprocessing/pansharpen/workers/band{n}`
 3. 每个波段完成后复制 `*_fused_band{n}.dat/.hdr` 到主输出目录，兼容后续 `fusion_stack_envi`
 
+当前仓库已落地的阶段2-C实现（融合阶段止血）：
+
+1. `executeFusionStack` 为 `fusion_stack_envi.py` 增加 20 分钟超时，避免无限卡住
+2. 融合阶段新增关键日志点：`fusion start/end`、`imgshow start/end`、`persist start/end`
+3. 持久化复制去掉强制 `fsync`，减少 NFS 写回阻塞风险
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑

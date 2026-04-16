@@ -49,6 +49,8 @@
   - `SATELLITE_REMOTE_SENSING_PYTHON=/opt/remote-sensing/.venv/bin/python`
   - `SATELLITE_REMOTE_SENSING_DEM_FILE=/opt/remote-sensing-data/dem/GMTED2010.jp2`
   - `SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR=persist_output_preprocessing`
+  - `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM=2`
+  - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=2`
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
   - `/opt/remote-sensing/output_preprocessing`（`emptyDir` 本地 scratch，中间产物）
@@ -207,6 +209,8 @@ kubectl -n gitlab-runner logs deploy/satellite-backend | rg "Remote sensing runt
 - `python_bin=/opt/remote-sensing/.venv/bin/python`
 - `dem_file=/opt/remote-sensing-data/dem/GMTED2010.jp2`
 - `persist_output_dir=persist_output_preprocessing`
+- `pan_rpc_parallelism=<n>`
+- `pansharpen_parallelism=<n>`
 
 ### 5.3 容器内依赖确认
 
@@ -242,6 +246,24 @@ kubectl -n gitlab-runner exec "$POD" -- sh -lc 'mount | grep -E "/opt/remote-sen
 
 # 查看报告
 cat artifacts/benchmarks/stage1-run-001/report.txt
+```
+
+### 5.6 并发度 A/B 测试（阶段2）
+
+建议测试档位：
+
+1. `1/1`（保守）
+2. `2/2`（当前默认）
+3. `3/3`（激进）
+
+执行方式：
+
+```bash
+kubectl -n gitlab-runner set env deploy/satellite-backend \
+  SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM=2 \
+  SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=2
+kubectl -n gitlab-runner rollout restart deploy/satellite-backend
+kubectl -n gitlab-runner rollout status deploy/satellite-backend
 ```
 
 ## 6. 常见问题与定位

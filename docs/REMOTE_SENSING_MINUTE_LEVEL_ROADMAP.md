@@ -94,6 +94,9 @@
 1. `pansharpen_fusion` 从串行改为并发度 `2`
 2. 每个波段使用独立临时目录 `output_preprocessing/pansharpen/workers/band{n}`
 3. 每个波段完成后复制 `*_fused_band{n}.dat/.hdr` 到主输出目录，兼容后续 `fusion_stack_envi`
+4. 并发度支持环境变量：
+   - `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM`
+   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM`
 
 当前仓库已落地的阶段2-C实现（融合阶段止血）：
 

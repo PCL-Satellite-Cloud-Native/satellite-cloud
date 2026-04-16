@@ -42,6 +42,8 @@ func main() {
 		zap.String("python_bin", cfg.RemoteSensing.PythonBin),
 		zap.String("dem_file", cfg.RemoteSensing.DemFile),
 		zap.String("persist_output_dir", cfg.RemoteSensing.PersistOutputDir),
+		zap.Int("pan_rpc_parallelism", cfg.RemoteSensing.PanRPCParallel),
+		zap.Int("pansharpen_parallelism", cfg.RemoteSensing.PansharpenPar),
 	)
 
 	// 启动时自动执行未应用的迁移（与 K8s/本地环境保持一致）

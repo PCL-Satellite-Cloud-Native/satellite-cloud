@@ -43,6 +43,8 @@ type RemoteSensingConfig struct {
 	PythonBin        string
 	DemFile          string
 	PersistOutputDir string
+	PanRPCParallel   int
+	PansharpenPar    int
 }
 
 func Load() *Config {
@@ -139,6 +141,8 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.python", "python3")
 	viper.SetDefault("remote_sensing.dem_file", "")
 	viper.SetDefault("remote_sensing.persist_output_dir", "persist_output_preprocessing")
+	viper.SetDefault("remote_sensing.pan_rpc_parallelism", 2)
+	viper.SetDefault("remote_sensing.pansharpen_parallelism", 2)
 }
 
 func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
@@ -156,6 +160,8 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	pythonBin := get("SATELLITE_REMOTE_SENSING_PYTHON", "remote_sensing.python", "")
 	demFile := normalizePath(get("SATELLITE_REMOTE_SENSING_DEM_FILE", "remote_sensing.dem_file", ""))
 	persistOutputDir := filepath.Clean(get("SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR", "remote_sensing.persist_output_dir", "persist_output_preprocessing"))
+	panRPCParallel := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM", "remote_sensing.pan_rpc_parallelism", 2)
+	pansharpenParallel := getInt("SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM", "remote_sensing.pansharpen_parallelism", 2)
 	if pythonBin == "" {
 		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
 		venvPython := filepath.Join(rootPath, ".venv", "bin", "python")
@@ -175,7 +181,21 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		PythonBin:        pythonBin,
 		DemFile:          demFile,
 		PersistOutputDir: persistOutputDir,
+		PanRPCParallel:   panRPCParallel,
+		PansharpenPar:    pansharpenParallel,
 	}
+}
+
+func getInt(envKey, viperKey string, defaultVal int) int {
+	if v := os.Getenv(envKey); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
+	}
+	if v := viper.GetInt(viperKey); v != 0 || viper.IsSet(viperKey) {
+		return v
+	}
+	return defaultVal
 }
 
 func normalizePath(pathStr string) string {

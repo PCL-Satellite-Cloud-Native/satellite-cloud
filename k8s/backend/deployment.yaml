@@ -89,6 +89,10 @@ spec:
               value: "/opt/remote-sensing-data/dem/GMTED2010.jp2"
             - name: SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR
               value: "persist_output_preprocessing"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM
+              value: "2"
+            - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM
+              value: "2"
           resources:
             requests:
               memory: "1Gi"

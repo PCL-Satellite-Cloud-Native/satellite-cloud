@@ -507,7 +507,7 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 	}
 	stageCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	sem := make(chan struct{}, 2) // 阶段2-A：两路并发，兼顾低资源稳定性。
+	sem := make(chan struct{}, effectiveParallelism(s.cfg.PanRPCParallel, 1, 4))
 	errCh := make(chan error, 4)
 	var wg sync.WaitGroup
 	for i := 1; i <= 4; i++ {
@@ -559,7 +559,7 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 		"area_indexes": []int{1, 2, 3, 4},
 		"completed":    4,
 		"total":        4,
-		"parallelism":  2,
+		"parallelism":  effectiveParallelism(s.cfg.PanRPCParallel, 1, 4),
 	}
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "RPC 分块完成"}, nil
 }
@@ -626,7 +626,7 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 	}
 	stageCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	sem := make(chan struct{}, 2) // 阶段2-B：两路并发，避免高并发抖动。
+	sem := make(chan struct{}, effectiveParallelism(s.cfg.PansharpenPar, 1, 3))
 	errCh := make(chan error, 3)
 	var wg sync.WaitGroup
 	for i := 1; i <= 3; i++ {
@@ -685,7 +685,11 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 			return nil, err
 		}
 	}
-	details := map[string]interface{}{"completed": 3, "total": 3, "parallelism": 2}
+	details := map[string]interface{}{
+		"completed":   3,
+		"total":       3,
+		"parallelism": effectiveParallelism(s.cfg.PansharpenPar, 1, 3),
+	}
 	details["message"] = "三波段融合完成"
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "融合完成"}, nil
 }
@@ -824,4 +828,14 @@ func (s *RemoteSensingService) persistFusionArtifactsAsync(taskID uint, filePref
 
 		s.log(taskID, StageFusionStack, "info", "后台持久化完成")
 	}()
+}
+
+func effectiveParallelism(v, minV, maxV int) int {
+	if v < minV {
+		return minV
+	}
+	if v > maxV {
+		return maxV
+	}
+	return v
 }

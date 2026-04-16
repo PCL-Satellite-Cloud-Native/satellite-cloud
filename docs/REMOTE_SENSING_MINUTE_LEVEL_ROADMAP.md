@@ -100,6 +100,7 @@
 1. `executeFusionStack` 为 `fusion_stack_envi.py` 增加 20 分钟超时，避免无限卡住
 2. 融合阶段新增关键日志点：`fusion start/end`、`imgshow start/end`、`persist start/end`
 3. 持久化复制去掉强制 `fsync`，减少 NFS 写回阻塞风险
+4. 融合阶段改为“主流程先完成，持久化后台异步进行”，减少主任务阻塞
 
 回滚：
 

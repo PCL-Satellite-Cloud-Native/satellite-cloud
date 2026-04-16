@@ -333,6 +333,8 @@ kubectl -n gitlab-runner get deploy satellite-backend -o yaml | rg "SATELLITE_RE
 kubectl -n gitlab-runner logs deploy/satellite-backend | grep -E "fusion_stack_envi|imgshow|持久化"
 ```
 
+说明：当前融合阶段已采用“后台异步持久化”，任务可先完成，随后日志会出现“后台持久化完成”。
+
 2. 确认任务日志中是否有 `fusion_stack_envi` 和 `imgshow.py` 的执行记录：
 
 ```sql

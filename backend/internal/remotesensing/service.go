@@ -316,6 +316,9 @@ func (s *RemoteSensingService) runStage(ctx context.Context, taskID uint, def st
 			s.logger.Warn("保存产物失败", zap.Error(err))
 		}
 	}
+	if def.Name == StageFusionStack {
+		s.persistFusionArtifactsAsync(taskID, req.FilePrefix)
+	}
 	return nil
 }
 
@@ -729,54 +732,25 @@ func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID ui
 		return nil, fmt.Errorf("imgshow 预览图未生成: %s", previewPNG)
 	}
 
-	// 阶段1优化：中间产物走本地 scratch，最终产物持久化到 NFS 挂载目录。
-	persistBaseDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir)
-	persistFusionDir := filepath.Join(persistBaseDir, "fusion_envi")
-	persistPreviewDir := filepath.Join(persistBaseDir, "imgshow")
-	if err := os.MkdirAll(persistFusionDir, 0o755); err != nil {
-		return nil, fmt.Errorf("创建持久化目录失败: %w", err)
-	}
-	if err := os.MkdirAll(persistPreviewDir, 0o755); err != nil {
-		return nil, fmt.Errorf("创建持久化目录失败: %w", err)
-	}
-	finalDatAbs := filepath.Join(s.cfg.RootPath, finalDat)
-	persistFinalDatRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalDatName)
-	persistFinalDatAbs := filepath.Join(s.cfg.RootPath, persistFinalDatRel)
-	s.log(taskID, StageFusionStack, "info", fmt.Sprintf("开始持久化融合数据: %s", persistFinalDatRel))
-	if err := copyFile(finalDatAbs, persistFinalDatAbs); err != nil {
-		return nil, fmt.Errorf("持久化融合 dat 失败: %w", err)
-	}
-	finalHdrName := fmt.Sprintf("%s-MSS1-fusion.hdr", req.FilePrefix)
-	finalHdrRel := filepath.Join(outputDir, finalHdrName)
-	finalHdrAbs := filepath.Join(s.cfg.RootPath, finalHdrRel)
-	if _, err := os.Stat(finalHdrAbs); err == nil {
-		persistFinalHdrAbs := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "fusion_envi", finalHdrName)
-		if err := copyFile(finalHdrAbs, persistFinalHdrAbs); err != nil {
-			return nil, fmt.Errorf("持久化融合 hdr 失败: %w", err)
-		}
-	}
-	persistPreviewRel := filepath.Join(s.cfg.PersistOutputDir, "imgshow", filepath.Base(previewPNG))
-	persistPreviewAbs := filepath.Join(s.cfg.RootPath, persistPreviewRel)
-	if err := copyFile(filepath.Join(s.cfg.RootPath, previewPNG), persistPreviewAbs); err != nil {
-		return nil, fmt.Errorf("持久化预览图失败: %w", err)
-	}
-	s.log(taskID, StageFusionStack, "info", "持久化产物完成")
-
 	artifacts := []model.RemoteSensingTaskArtifact{
 		{
 			Type:     "raw",
 			Label:    "融合 ENVI",
-			Path:     persistFinalDatRel,
+			Path:     finalDat,
 			Metadata: datatypes.JSONMap{"stage": StageFusionStack, "sensor": req.Sensor},
 		},
 	}
 	artifacts = append(artifacts, model.RemoteSensingTaskArtifact{
 		Type:     "preview",
 		Label:    "融合预览图",
-		Path:     persistPreviewRel,
+		Path:     previewPNG,
 		Metadata: datatypes.JSONMap{"mime": "image/png", "generator": "imgshow.py"},
 	})
-	return &stageExecutionResult{OutputPath: filepath.Join(s.cfg.PersistOutputDir, "fusion_envi"), Message: "融合堆栈与预览图生成完成", Artifacts: artifacts}, nil
+	return &stageExecutionResult{
+		OutputPath: outputDir,
+		Message:    "融合堆栈与预览图生成完成（持久化后台进行）",
+		Artifacts:  artifacts,
+	}, nil
 }
 
 func copyFile(src, dst string) error {
@@ -796,4 +770,58 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+func (s *RemoteSensingService) persistFusionArtifactsAsync(taskID uint, filePrefix string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+
+		finalDatName := fmt.Sprintf("%s-MSS1-fusion.dat", filePrefix)
+		finalHdrName := fmt.Sprintf("%s-MSS1-fusion.hdr", filePrefix)
+		previewName := fmt.Sprintf("%s-MSS1-fusion.png", filePrefix)
+
+		scratchFinalDatRel := filepath.Join("output_preprocessing", "fusion_envi", finalDatName)
+		scratchFinalHdrRel := filepath.Join("output_preprocessing", "fusion_envi", finalHdrName)
+		scratchPreviewRel := filepath.Join("output_preprocessing", "imgshow", previewName)
+
+		persistFinalDatRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalDatName)
+		persistFinalHdrRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalHdrName)
+		persistPreviewRel := filepath.Join(s.cfg.PersistOutputDir, "imgshow", previewName)
+
+		persistFusionDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "fusion_envi")
+		persistPreviewDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "imgshow")
+		if err := os.MkdirAll(persistFusionDir, 0o755); err != nil {
+			s.log(taskID, StageFusionStack, "warn", fmt.Sprintf("持久化目录创建失败: %v", err))
+			return
+		}
+		if err := os.MkdirAll(persistPreviewDir, 0o755); err != nil {
+			s.log(taskID, StageFusionStack, "warn", fmt.Sprintf("持久化目录创建失败: %v", err))
+			return
+		}
+
+		s.log(taskID, StageFusionStack, "info", fmt.Sprintf("后台持久化开始: %s", persistFinalDatRel))
+		if err := copyFile(filepath.Join(s.cfg.RootPath, scratchFinalDatRel), filepath.Join(s.cfg.RootPath, persistFinalDatRel)); err != nil {
+			s.log(taskID, StageFusionStack, "warn", fmt.Sprintf("后台持久化 dat 失败: %v", err))
+			return
+		}
+		if _, err := os.Stat(filepath.Join(s.cfg.RootPath, scratchFinalHdrRel)); err == nil {
+			if err := copyFile(filepath.Join(s.cfg.RootPath, scratchFinalHdrRel), filepath.Join(s.cfg.RootPath, persistFinalHdrRel)); err != nil {
+				s.log(taskID, StageFusionStack, "warn", fmt.Sprintf("后台持久化 hdr 失败: %v", err))
+			}
+		}
+		if err := copyFile(filepath.Join(s.cfg.RootPath, scratchPreviewRel), filepath.Join(s.cfg.RootPath, persistPreviewRel)); err != nil {
+			s.log(taskID, StageFusionStack, "warn", fmt.Sprintf("后台持久化预览图失败: %v", err))
+			return
+		}
+
+		_ = s.db.WithContext(ctx).Model(&model.RemoteSensingTaskArtifact{}).
+			Where("task_id = ? AND path = ?", taskID, scratchFinalDatRel).
+			Update("path", persistFinalDatRel).Error
+		_ = s.db.WithContext(ctx).Model(&model.RemoteSensingTaskArtifact{}).
+			Where("task_id = ? AND path = ?", taskID, scratchPreviewRel).
+			Update("path", persistPreviewRel).Error
+
+		s.log(taskID, StageFusionStack, "info", "后台持久化完成")
+	}()
 }

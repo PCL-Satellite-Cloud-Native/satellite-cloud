@@ -207,7 +207,14 @@ cat artifacts/benchmarks/stage1-run-001/report.txt
 
 1. CPU throttle 增量
 2. NFS bytes 增量（input/output_preprocessing）
-3. 指定 task 的各阶段耗时（通过 `/api/remote-sensing/tasks/<id>/stages` 计算）
+3. 指定 task 的各阶段耗时（`stage_time`，通过 `/api/remote-sensing/tasks/<id>/stages` 计算）
+4. 脚本日志累计耗时（`stage_time_from_logs`，通过 `/api/remote-sensing/tasks/<id>/logs` 汇总 `xxx 总时间`）
+
+判读建议（A/B 结论优先级）：
+
+1. 先看 `stage_time_from_logs`（对并行子任务更稳健，例如 `pan_rpc_warp_quarters`、`pansharpen_fusion`）
+2. 再看 `stage_time` 作为交叉校验
+3. 如果两者差异明显，以日志累计耗时为准，并同时检查该 task 的 stage `started_at/finished_at` 是否异常
 
 ---
 

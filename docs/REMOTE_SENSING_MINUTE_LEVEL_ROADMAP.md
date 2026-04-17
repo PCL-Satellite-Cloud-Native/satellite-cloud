@@ -105,6 +105,12 @@
 3. 持久化复制去掉强制 `fsync`，减少 NFS 写回阻塞风险
 4. 融合阶段改为“主流程先完成，持久化后台异步进行”，减少主任务阻塞
 
+当前仓库已落地的阶段2-D实现（PAN RPC 降重）：
+
+1. `pan_rpc_warp_quarters.py` 支持 `--areaidx 0`，单次调用直接产出 4 个分块
+2. 后端 `executePanRpc` 改为单次调用脚本，避免 4 次独立调用带来的重复 VRT 计算
+3. `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM` 当前用于控制 PAN RPC 的 `cpu_threads`
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑

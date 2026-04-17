@@ -43,7 +43,9 @@ func main() {
 		zap.String("dem_file", cfg.RemoteSensing.DemFile),
 		zap.String("persist_output_dir", cfg.RemoteSensing.PersistOutputDir),
 		zap.Int("pan_rpc_parallelism", cfg.RemoteSensing.PanRPCParallel),
+		zap.Int("pan_rpc_cpu_threads", cfg.RemoteSensing.PanRPCCPUThreads),
 		zap.Int("pansharpen_parallelism", cfg.RemoteSensing.PansharpenPar),
+		zap.String("pansharpen_gdal_threads", cfg.RemoteSensing.PansharpenGDALThread),
 	)
 
 	// 启动时自动执行未应用的迁移（与 K8s/本地环境保持一致）

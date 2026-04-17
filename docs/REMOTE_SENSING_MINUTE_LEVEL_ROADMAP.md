@@ -109,7 +109,13 @@
 
 1. `pan_rpc_warp_quarters.py` 支持 `--areaidx 0`，单次调用直接产出 4 个分块
 2. 后端 `executePanRpc` 改为单次调用脚本，避免 4 次独立调用带来的重复 VRT 计算
-3. `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM` 当前用于控制 PAN RPC 的 `cpu_threads`
+3. `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM` 保留逻辑并发档位；线程数由 `SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS` 控制
+
+当前仓库已落地的阶段2-E实现（线程/并发协同限速）：
+
+1. 新增 PAN RPC 线程参数：`SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS`（默认 `1`）
+2. 新增 Pansharpen 线程参数：`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS`（默认 `1`）
+3. `pansharpen_fusion.py` 不再硬编码 `GDAL_NUM_THREADS=ALL_CPUS`，改为由参数控制
 
 回滚：
 

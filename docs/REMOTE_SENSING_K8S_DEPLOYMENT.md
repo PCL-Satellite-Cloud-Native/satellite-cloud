@@ -50,9 +50,12 @@
   - `SATELLITE_REMOTE_SENSING_DEM_FILE=/opt/remote-sensing-data/dem/GMTED2010.jp2`
   - `SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR=persist_output_preprocessing`
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM=2`
+  - `SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS=1`
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3`
+  - `SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS=1`
 - 说明：
-  - 当前实现中 `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM` 用于 PAN RPC 脚本 `cpu_threads`（单次调用处理四分块）
+  - 当前实现中 `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM` 为逻辑并发档位，`SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS` 为 PAN RPC 脚本线程数
+  - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM` 为波段并发度，`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS` 为每个波段进程的 GDAL 线程数
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
   - `/opt/remote-sensing/output_preprocessing`（`emptyDir` 本地 scratch，中间产物）
@@ -263,7 +266,9 @@ cat artifacts/benchmarks/stage1-run-001/report.txt
 ```bash
 kubectl -n gitlab-runner set env deploy/satellite-backend \
   SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM=2 \
-  SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3
+  SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS=1 \
+  SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3 \
+  SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS=1
 kubectl -n gitlab-runner rollout restart deploy/satellite-backend
 kubectl -n gitlab-runner rollout status deploy/satellite-backend
 ```

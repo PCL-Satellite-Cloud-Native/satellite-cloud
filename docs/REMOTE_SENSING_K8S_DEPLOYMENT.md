@@ -50,7 +50,7 @@
   - `SATELLITE_REMOTE_SENSING_DEM_FILE=/opt/remote-sensing-data/dem/GMTED2010.jp2`
   - `SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR=persist_output_preprocessing`
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM=2`
-  - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=2`
+  - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3`
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
   - `/opt/remote-sensing/output_preprocessing`（`emptyDir` 本地 scratch，中间产物）
@@ -253,15 +253,15 @@ cat artifacts/benchmarks/stage1-run-001/report.txt
 建议测试档位：
 
 1. `1/1`（保守）
-2. `2/2`（当前默认）
-3. `3/3`（激进）
+2. `2/3`（当前默认，推荐）
+3. `3/2`（反向对照）
 
 执行方式：
 
 ```bash
 kubectl -n gitlab-runner set env deploy/satellite-backend \
   SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM=2 \
-  SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=2
+  SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3
 kubectl -n gitlab-runner rollout restart deploy/satellite-backend
 kubectl -n gitlab-runner rollout status deploy/satellite-backend
 ```

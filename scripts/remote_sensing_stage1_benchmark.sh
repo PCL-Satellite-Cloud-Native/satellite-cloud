@@ -186,6 +186,49 @@ for item in s:
   " | sort
 }
 
+collect_stage_times_from_logs() {
+  kubectl -n "${NAMESPACE}" exec "${POD}" -- sh -lc "
+    curl -fsS 'http://127.0.0.1:8080/api/remote-sensing/tasks/${TASK_ID}/logs?limit=500' \
+    | /opt/remote-sensing/.venv/bin/python -c '
+import json,re,sys
+
+data=json.load(sys.stdin)
+
+# 脚本名到阶段名映射
+script_to_stage={
+    \"tiff_to_envi\":\"tiff_to_envi\",
+    \"pan_rad_toa\":\"pan_rad_toa\",
+    \"pan_rpc_warp_quarters\":\"pan_rpc_warp_quarters\",
+    \"pan_merge_warp_square\":\"pan_merge_warp_square\",
+    \"mss_rad_quac_rpc\":\"mss_rad_quac_rpc\",
+    \"mss_coregister_to_pan\":\"mss_coregister_to_pan\",
+    \"pansharpen_fusion\":\"pansharpen_fusion\",
+    \"fusion_stack_envi\":\"fusion_stack_envi\",
+    \"imgshow\":\"fusion_stack_envi\",
+}
+
+totals={}
+pat=re.compile(r\"([a-zA-Z0-9_]+) 总时间:\\s*([0-9]+(?:\\.[0-9]+)?)\")
+
+for item in data:
+    content=item.get(\"content\") or \"\"
+    for line in content.splitlines():
+        m=pat.search(line)
+        if not m:
+            continue
+        script_name=m.group(1)
+        sec=float(m.group(2))
+        stage=script_to_stage.get(script_name)
+        if not stage:
+            continue
+        totals[stage]=totals.get(stage,0.0)+sec
+
+for stage in sorted(totals.keys()):
+    print(f\"stage.{stage}.log_total_seconds={totals[stage]:.3f}\")
+'
+  " | sort
+}
+
 {
   echo "run_id=${RUN_ID}"
   echo "namespace=${NAMESPACE}"
@@ -200,6 +243,8 @@ for item in s:
   calc_nfs_delta
   echo "--- stage_time ---"
   collect_stage_times
+  echo "--- stage_time_from_logs ---"
+  collect_stage_times_from_logs
 } > "${RUN_DIR}/report.txt"
 
 echo "已生成报告: ${RUN_DIR}/report.txt"

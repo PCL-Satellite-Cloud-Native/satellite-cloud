@@ -497,7 +497,7 @@ func (s *RemoteSensingService) executePanRadToa(ctx context.Context, taskID uint
 func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	outputDir := filepath.Join("output_preprocessing", "pan_warp_quarters")
 	demFile := s.cfg.DemFile
-	cpuThreads := effectiveParallelism(s.cfg.PanRPCParallel, 1, 4)
+	cpuThreads := effectiveParallelism(s.cfg.PanRPCCPUThreads, 1, 4)
 	if _, err := os.Stat(demFile); err != nil {
 		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
 	}
@@ -525,7 +525,7 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 		"area_indexes": []int{1, 2, 3, 4},
 		"completed":    4,
 		"total":        4,
-		"parallelism":  cpuThreads,
+		"parallelism":  effectiveParallelism(s.cfg.PanRPCParallel, 1, 4),
 		"cpu_threads":  cpuThreads,
 		"mode":         "single_process_all_quarters",
 	}
@@ -620,6 +620,7 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 				"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
 				"--output_dir", workerOutputDir,
 				"--bandidx", strconv.Itoa(i),
+				"--gdal_num_threads", s.cfg.PansharpenGDALThread,
 			}
 			if _, err := s.runPython(stageCtx, taskID, StagePansharpen, "pansharpen_fusion.py", args); err != nil {
 				errCh <- err

@@ -91,8 +91,12 @@ spec:
               value: "persist_output_preprocessing"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM
               value: "2"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS
+              value: "1"
             - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM
               value: "3"
+            - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS
+              value: "1"
           resources:
             requests:
               memory: "1Gi"

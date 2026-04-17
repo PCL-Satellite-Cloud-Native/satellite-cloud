@@ -51,6 +51,8 @@
   - `SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR=persist_output_preprocessing`
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM=2`
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3`
+- 说明：
+  - 当前实现中 `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM` 用于 PAN RPC 脚本 `cpu_threads`（单次调用处理四分块）
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
   - `/opt/remote-sensing/output_preprocessing`（`emptyDir` 本地 scratch，中间产物）

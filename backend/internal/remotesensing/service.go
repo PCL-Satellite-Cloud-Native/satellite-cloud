@@ -497,69 +497,37 @@ func (s *RemoteSensingService) executePanRadToa(ctx context.Context, taskID uint
 func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	outputDir := filepath.Join("output_preprocessing", "pan_warp_quarters")
 	demFile := s.cfg.DemFile
+	cpuThreads := effectiveParallelism(s.cfg.PanRPCParallel, 1, 4)
 	if _, err := os.Stat(demFile); err != nil {
 		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
 	}
-	absoluteOutputDir := filepath.Join(s.cfg.RootPath, outputDir)
-	workerBaseDir := filepath.Join(absoluteOutputDir, "workers")
-	if err := os.MkdirAll(workerBaseDir, 0o755); err != nil {
-		return nil, fmt.Errorf("创建 PAN RPC 工作目录失败: %w", err)
+	args := []string{
+		"--file_prefix", req.FilePrefix,
+		"--input_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
+		"--output_dir", outputDir,
+		"--areaidx", "0",
+		"--dem_file", demFile,
+		"--cpu_threads", strconv.Itoa(cpuThreads),
+		"--warp_mem_mb", "1024",
 	}
-	stageCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	sem := make(chan struct{}, effectiveParallelism(s.cfg.PanRPCParallel, 1, 4))
-	errCh := make(chan error, 4)
-	var wg sync.WaitGroup
+	if _, err := s.runPython(ctx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
+		return nil, err
+	}
+
 	for i := 1; i <= 4; i++ {
-		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-			case <-stageCtx.Done():
-				return
-			}
-			defer func() { <-sem }()
-			workerOutputDir := filepath.Join(outputDir, "workers", fmt.Sprintf("area%d", i))
-			if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, workerOutputDir), 0o755); err != nil {
-				errCh <- fmt.Errorf("创建 area%d 目录失败: %w", i, err)
-				cancel()
-				return
-			}
-			args := []string{
-				"--file_prefix", req.FilePrefix,
-				"--input_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
-				"--output_dir", workerOutputDir,
-				"--areaidx", strconv.Itoa(i),
-				"--dem_file", demFile,
-			}
-			if _, err := s.runPython(stageCtx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
-				errCh <- err
-				cancel()
-				return
-			}
-			srcPart := filepath.Join(s.cfg.RootPath, workerOutputDir, fmt.Sprintf("%s-PAN1-wrap-part%d.tif", req.FilePrefix, i))
-			dstPart := filepath.Join(absoluteOutputDir, fmt.Sprintf("%s-PAN1-wrap-part%d.tif", req.FilePrefix, i))
-			if err := copyFile(srcPart, dstPart); err != nil {
-				errCh <- fmt.Errorf("复制 area%d 结果失败: %w", i, err)
-				cancel()
-				return
-			}
-		}()
-	}
-	wg.Wait()
-	close(errCh)
-	for err := range errCh {
-		if err != nil {
-			return nil, err
+		partPath := filepath.Join(s.cfg.RootPath, outputDir, fmt.Sprintf("%s-PAN1-wrap-part%d.tif", req.FilePrefix, i))
+		if _, err := os.Stat(partPath); err != nil {
+			return nil, fmt.Errorf("PAN RPC 输出缺失: %s", partPath)
 		}
 	}
+
 	details := map[string]interface{}{
 		"area_indexes": []int{1, 2, 3, 4},
 		"completed":    4,
 		"total":        4,
-		"parallelism":  effectiveParallelism(s.cfg.PanRPCParallel, 1, 4),
+		"parallelism":  cpuThreads,
+		"cpu_threads":  cpuThreads,
+		"mode":         "single_process_all_quarters",
 	}
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "RPC 分块完成"}, nil
 }

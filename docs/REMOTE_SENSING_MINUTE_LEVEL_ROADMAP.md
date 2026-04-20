@@ -117,6 +117,12 @@
 2. 新增 Pansharpen 线程参数：`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS`（默认 `1`）
 3. `pansharpen_fusion.py` 不再硬编码 `GDAL_NUM_THREADS=ALL_CPUS`，改为由参数控制
 
+当前仓库已落地的阶段2-F实现（PAN RPC 执行结构修正）：
+
+1. `PAN RPC` 从“单次串行处理4分块”改为“分组并行执行（默认 2 组）”
+2. 每组一次脚本调用，组内多个分块共享一次 VRT，减少重复准备计算
+3. 组结果回拷到主目录，保持下游 `pan_merge_warp_square` 输入兼容
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑

@@ -498,26 +498,80 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 	outputDir := filepath.Join("output_preprocessing", "pan_warp_quarters")
 	demFile := s.cfg.DemFile
 	cpuThreads := effectiveParallelism(s.cfg.PanRPCCPUThreads, 1, 4)
+	parallelism := effectiveParallelism(s.cfg.PanRPCParallel, 1, 4)
 	if _, err := os.Stat(demFile); err != nil {
 		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
 	}
-	args := []string{
-		"--file_prefix", req.FilePrefix,
-		"--input_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
-		"--output_dir", outputDir,
-		"--areaidx", "0",
-		"--dem_file", demFile,
-		"--cpu_threads", strconv.Itoa(cpuThreads),
-		"--warp_mem_mb", "1024",
-	}
-	if _, err := s.runPython(ctx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
-		return nil, err
+	// 分组执行：每组一次脚本调用（每次共享一次 VRT），在减少重复计算的同时保留并行能力。
+	areaGroups := chunkAreaIndexes([]int{1, 2, 3, 4}, parallelism)
+	absoluteOutputDir := filepath.Join(s.cfg.RootPath, outputDir)
+	if err := os.MkdirAll(absoluteOutputDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建 PAN RPC 输出目录失败: %w", err)
 	}
 
-	for i := 1; i <= 4; i++ {
-		partPath := filepath.Join(s.cfg.RootPath, outputDir, fmt.Sprintf("%s-PAN1-wrap-part%d.tif", req.FilePrefix, i))
-		if _, err := os.Stat(partPath); err != nil {
-			return nil, fmt.Errorf("PAN RPC 输出缺失: %s", partPath)
+	stageCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	sem := make(chan struct{}, parallelism)
+	errCh := make(chan error, len(areaGroups))
+	var wg sync.WaitGroup
+
+	for idx, group := range areaGroups {
+		group := group
+		groupID := idx + 1
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-stageCtx.Done():
+				return
+			}
+			defer func() { <-sem }()
+
+			workerOutputDir := filepath.Join(outputDir, "workers", fmt.Sprintf("group%d", groupID))
+			workerAbsDir := filepath.Join(s.cfg.RootPath, workerOutputDir)
+			if err := os.MkdirAll(workerAbsDir, 0o755); err != nil {
+				errCh <- fmt.Errorf("创建 PAN RPC group%d 目录失败: %w", groupID, err)
+				cancel()
+				return
+			}
+
+			groupTokens := make([]string, 0, len(group))
+			for _, area := range group {
+				groupTokens = append(groupTokens, strconv.Itoa(area))
+			}
+			args := []string{
+				"--file_prefix", req.FilePrefix,
+				"--input_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
+				"--output_dir", workerOutputDir,
+				"--area_indexes", strings.Join(groupTokens, ","),
+				"--dem_file", demFile,
+				"--cpu_threads", strconv.Itoa(cpuThreads),
+				"--warp_mem_mb", "1024",
+			}
+			if _, err := s.runPython(stageCtx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
+				errCh <- err
+				cancel()
+				return
+			}
+
+			for _, area := range group {
+				srcPart := filepath.Join(workerAbsDir, fmt.Sprintf("%s-PAN1-wrap-part%d.tif", req.FilePrefix, area))
+				dstPart := filepath.Join(absoluteOutputDir, fmt.Sprintf("%s-PAN1-wrap-part%d.tif", req.FilePrefix, area))
+				if err := copyFile(srcPart, dstPart); err != nil {
+					errCh <- fmt.Errorf("复制 PAN RPC area%d 结果失败: %w", area, err)
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -525,9 +579,10 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 		"area_indexes": []int{1, 2, 3, 4},
 		"completed":    4,
 		"total":        4,
-		"parallelism":  effectiveParallelism(s.cfg.PanRPCParallel, 1, 4),
+		"parallelism":  parallelism,
 		"cpu_threads":  cpuThreads,
-		"mode":         "single_process_all_quarters",
+		"group_count":  len(areaGroups),
+		"mode":         "grouped_parallel_shared_vrt",
 	}
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "RPC 分块完成"}, nil
 }
@@ -807,4 +862,28 @@ func effectiveParallelism(v, minV, maxV int) int {
 		return maxV
 	}
 	return v
+}
+
+func chunkAreaIndexes(areas []int, groups int) [][]int {
+	if len(areas) == 0 {
+		return nil
+	}
+	if groups <= 1 {
+		return [][]int{areas}
+	}
+	if groups > len(areas) {
+		groups = len(areas)
+	}
+	result := make([][]int, 0, groups)
+	chunkSize := (len(areas) + groups - 1) / groups
+	for i := 0; i < len(areas); i += chunkSize {
+		end := i + chunkSize
+		if end > len(areas) {
+			end = len(areas)
+		}
+		part := make([]int, end-i)
+		copy(part, areas[i:end])
+		result = append(result, part)
+	}
+	return result
 }

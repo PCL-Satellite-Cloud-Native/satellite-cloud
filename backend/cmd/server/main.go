@@ -179,11 +179,14 @@ func main() {
 
 	zapLogger.Info("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		zapLogger.Fatal("Server forced to shutdown", zap.Error(err))
+		zapLogger.Error("Graceful shutdown timeout, forcing close", zap.Error(err))
+		if closeErr := srv.Close(); closeErr != nil {
+			zapLogger.Error("Force close failed", zap.Error(closeErr))
+		}
 	}
 
 	zapLogger.Info("Server exited")

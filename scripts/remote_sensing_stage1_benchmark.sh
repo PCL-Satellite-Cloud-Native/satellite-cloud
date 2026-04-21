@@ -253,11 +253,11 @@ if task is None:
     print(\"task.status=not_found\")
     raise SystemExit(0)
 
-print(f\"task.status={task.get('status','')}\")
-print(f\"task.current_stage={task.get('current_stage','')}\")
-print(f\"task.created_at={task.get('created_at','')}\")
-print(f\"task.started_at={task.get('started_at','')}\")
-print(f\"task.finished_at={task.get('finished_at','')}\")
+print(\"task.status=%s\" % task.get(\"status\", \"\"))
+print(\"task.current_stage=%s\" % task.get(\"current_stage\", \"\"))
+print(\"task.created_at=%s\" % task.get(\"created_at\", \"\"))
+print(\"task.started_at=%s\" % task.get(\"started_at\", \"\"))
+print(\"task.finished_at=%s\" % task.get(\"finished_at\", \"\"))
 
 st=task.get(\"started_at\")
 ft=task.get(\"finished_at\")
@@ -267,7 +267,7 @@ if st and ft:
         b=datetime.fromisoformat(ft.replace(\"Z\",\"+00:00\"))
         sec=(b-a).total_seconds()
         if sec >= 0:
-            print(f\"task.elapsed_seconds={sec:.3f}\")
+            print(\"task.elapsed_seconds=%.3f\" % sec)
     except Exception:
         pass
 '

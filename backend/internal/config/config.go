@@ -47,6 +47,7 @@ type RemoteSensingConfig struct {
 	PansharpenPar        int
 	PanRPCCPUThreads     int
 	PanRPCWarpMemMB      int
+	PanRPCMaxTotalWarpMB int
 	PanRPCResampleAlg    string
 	PansharpenGDALThread string
 }
@@ -149,6 +150,7 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.pansharpen_parallelism", 3)
 	viper.SetDefault("remote_sensing.pan_rpc_cpu_threads", 1)
 	viper.SetDefault("remote_sensing.pan_rpc_warp_mem_mb", 1024)
+	viper.SetDefault("remote_sensing.pan_rpc_max_total_warp_mem_mb", 2048)
 	viper.SetDefault("remote_sensing.pan_rpc_resample_alg", "bilinear")
 	viper.SetDefault("remote_sensing.pansharpen_gdal_threads", "1")
 }
@@ -172,6 +174,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	pansharpenParallel := getInt("SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM", "remote_sensing.pansharpen_parallelism", 3)
 	panRPCCPUThreads := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS", "remote_sensing.pan_rpc_cpu_threads", 1)
 	panRPCWarpMemMB := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB", "remote_sensing.pan_rpc_warp_mem_mb", 1024)
+	panRPCMaxTotalWarpMB := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB", "remote_sensing.pan_rpc_max_total_warp_mem_mb", 2048)
 	panRPCResampleAlg := get("SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG", "remote_sensing.pan_rpc_resample_alg", "bilinear")
 	pansharpenGDALThreads := get("SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS", "remote_sensing.pansharpen_gdal_threads", "1")
 	if pythonBin == "" {
@@ -197,6 +200,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		PansharpenPar:        pansharpenParallel,
 		PanRPCCPUThreads:     panRPCCPUThreads,
 		PanRPCWarpMemMB:      panRPCWarpMemMB,
+		PanRPCMaxTotalWarpMB: panRPCMaxTotalWarpMB,
 		PanRPCResampleAlg:    panRPCResampleAlg,
 		PansharpenGDALThread: pansharpenGDALThreads,
 	}

@@ -547,7 +547,8 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 				"--area_indexes", strings.Join(groupTokens, ","),
 				"--dem_file", demFile,
 				"--cpu_threads", strconv.Itoa(cpuThreads),
-				"--warp_mem_mb", "1024",
+				"--warp_mem_mb", strconv.Itoa(s.cfg.PanRPCWarpMemMB),
+				"--resample_alg", s.cfg.PanRPCResampleAlg,
 			}
 			if _, err := s.runPython(stageCtx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
 				errCh <- err
@@ -581,6 +582,8 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 		"total":        4,
 		"parallelism":  parallelism,
 		"cpu_threads":  cpuThreads,
+		"warp_mem_mb":  s.cfg.PanRPCWarpMemMB,
+		"resample_alg": s.cfg.PanRPCResampleAlg,
 		"group_count":  len(areaGroups),
 		"mode":         "grouped_parallel_shared_vrt",
 	}

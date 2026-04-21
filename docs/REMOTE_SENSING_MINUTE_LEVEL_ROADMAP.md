@@ -123,6 +123,12 @@
 2. 每组一次脚本调用，组内多个分块共享一次 VRT，减少重复准备计算
 3. 组结果回拷到主目录，保持下游 `pan_merge_warp_square` 输入兼容
 
+当前仓库已落地的阶段2-G实现（PAN RPC 参数A/B入口）：
+
+1. 新增 `SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB`（默认 `1024`）
+2. 新增 `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG`（默认 `bilinear`）
+3. 后端执行 PAN RPC 时透传 `warp_mem_mb` 与 `resample_alg`
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑
@@ -223,10 +229,12 @@ cat artifacts/benchmarks/stage1-run-001/report.txt
 
 报告包含：
 
-1. CPU throttle 增量
-2. NFS bytes 增量（input/output_preprocessing）
-3. 指定 task 的各阶段耗时（`stage_time`，通过 `/api/remote-sensing/tasks/<id>/stages` 计算）
-4. 脚本日志累计耗时（`stage_time_from_logs`，通过 `/api/remote-sensing/tasks/<id>/logs` 汇总 `xxx 总时间`）
+1. 运行参数快照（`runtime_config`，用于复现实验）
+2. 任务汇总（`task_summary`，含状态/起止时间/总耗时）
+3. CPU throttle 增量
+4. NFS bytes 增量（input/output_preprocessing）
+5. 指定 task 的各阶段耗时（`stage_time`，通过 `/api/remote-sensing/tasks/<id>/stages` 计算）
+6. 脚本日志累计耗时（`stage_time_from_logs`，通过 `/api/remote-sensing/tasks/<id>/logs` 汇总 `xxx 总时间`）
 
 判读建议（A/B 结论优先级）：
 

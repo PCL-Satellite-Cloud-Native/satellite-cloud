@@ -93,6 +93,10 @@ spec:
               value: "2"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS
               value: "1"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB
+              value: "1024"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG
+              value: "bilinear"
             - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM
               value: "3"
             - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS

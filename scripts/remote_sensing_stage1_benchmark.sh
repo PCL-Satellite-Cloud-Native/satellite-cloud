@@ -70,6 +70,12 @@ collect_nfs_bytes() {
   '
 }
 
+collect_runtime_config() {
+  kubectl -n "${NAMESPACE}" exec "${POD}" -- sh -lc '
+    env | grep -E "^SATELLITE_REMOTE_SENSING_(PAN_RPC|PANSHARPEN|DEM_FILE|PERSIST_OUTPUT_DIR)" | sort
+  '
+}
+
 write_snapshot() {
   local prefix="$1"
   date '+%F %T %z' > "${RUN_DIR}/${prefix}_timestamp.txt"
@@ -229,6 +235,45 @@ for stage in sorted(totals.keys()):
   " | sort
 }
 
+collect_task_summary() {
+  kubectl -n "${NAMESPACE}" exec "${POD}" -- sh -lc "
+    curl -fsS 'http://127.0.0.1:8080/api/remote-sensing/tasks' \
+    | /opt/remote-sensing/.venv/bin/python -c '
+import json,sys
+from datetime import datetime
+
+target=int(\"${TASK_ID}\")
+tasks=json.load(sys.stdin)
+task=None
+for item in tasks:
+    if int(item.get(\"id\", -1)) == target:
+        task=item
+        break
+if task is None:
+    print(\"task.status=not_found\")
+    raise SystemExit(0)
+
+print(f\"task.status={task.get('status','')}\")
+print(f\"task.current_stage={task.get('current_stage','')}\")
+print(f\"task.created_at={task.get('created_at','')}\")
+print(f\"task.started_at={task.get('started_at','')}\")
+print(f\"task.finished_at={task.get('finished_at','')}\")
+
+st=task.get(\"started_at\")
+ft=task.get(\"finished_at\")
+if st and ft:
+    try:
+        a=datetime.fromisoformat(st.replace(\"Z\",\"+00:00\"))
+        b=datetime.fromisoformat(ft.replace(\"Z\",\"+00:00\"))
+        sec=(b-a).total_seconds()
+        if sec >= 0:
+            print(f\"task.elapsed_seconds={sec:.3f}\")
+    except Exception:
+        pass
+'
+  "
+}
+
 {
   echo "run_id=${RUN_ID}"
   echo "namespace=${NAMESPACE}"
@@ -237,6 +282,10 @@ for stage in sorted(totals.keys()):
   echo "pre_time=$(cat "${RUN_DIR}/pre_timestamp.txt")"
   echo "post_time=$(cat "${RUN_DIR}/post_timestamp.txt")"
   echo "since_seconds=${SINCE_SEC}"
+  echo "--- runtime_config ---"
+  collect_runtime_config
+  echo "--- task_summary ---"
+  collect_task_summary
   echo "--- cpu_delta ---"
   calc_cpu_delta
   echo "--- nfs_delta ---"

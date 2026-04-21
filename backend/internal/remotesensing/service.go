@@ -499,6 +499,25 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 	demFile := s.cfg.DemFile
 	cpuThreads := effectiveParallelism(s.cfg.PanRPCCPUThreads, 1, 4)
 	parallelism := effectiveParallelism(s.cfg.PanRPCParallel, 1, 4)
+	warpMemMB := s.cfg.PanRPCWarpMemMB
+	maxTotalWarpMemMB := s.cfg.PanRPCMaxTotalWarpMB
+	if warpMemMB <= 0 {
+		warpMemMB = 1024
+	}
+	if maxTotalWarpMemMB <= 0 {
+		maxTotalWarpMemMB = 2048
+	}
+	maxByMem := maxTotalWarpMemMB / warpMemMB
+	if maxByMem < 1 {
+		maxByMem = 1
+	}
+	if parallelism > maxByMem {
+		s.log(taskID, StagePanRpcWarp, "warn", fmt.Sprintf(
+			"PAN RPC 并行度按内存预算下调: parallelism=%d -> %d (warp_mem_mb=%d, max_total_warp_mem_mb=%d)",
+			parallelism, maxByMem, warpMemMB, maxTotalWarpMemMB,
+		))
+		parallelism = maxByMem
+	}
 	if _, err := os.Stat(demFile); err != nil {
 		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
 	}
@@ -547,7 +566,7 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 				"--area_indexes", strings.Join(groupTokens, ","),
 				"--dem_file", demFile,
 				"--cpu_threads", strconv.Itoa(cpuThreads),
-				"--warp_mem_mb", strconv.Itoa(s.cfg.PanRPCWarpMemMB),
+				"--warp_mem_mb", strconv.Itoa(warpMemMB),
 				"--resample_alg", s.cfg.PanRPCResampleAlg,
 			}
 			if _, err := s.runPython(stageCtx, taskID, StagePanRpcWarp, "pan_rpc_warp_quarters.py", args); err != nil {
@@ -577,15 +596,16 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 	}
 
 	details := map[string]interface{}{
-		"area_indexes": []int{1, 2, 3, 4},
-		"completed":    4,
-		"total":        4,
-		"parallelism":  parallelism,
-		"cpu_threads":  cpuThreads,
-		"warp_mem_mb":  s.cfg.PanRPCWarpMemMB,
-		"resample_alg": s.cfg.PanRPCResampleAlg,
-		"group_count":  len(areaGroups),
-		"mode":         "grouped_parallel_shared_vrt",
+		"area_indexes":          []int{1, 2, 3, 4},
+		"completed":             4,
+		"total":                 4,
+		"parallelism":           parallelism,
+		"cpu_threads":           cpuThreads,
+		"warp_mem_mb":           warpMemMB,
+		"max_total_warp_mem_mb": maxTotalWarpMemMB,
+		"resample_alg":          s.cfg.PanRPCResampleAlg,
+		"group_count":           len(areaGroups),
+		"mode":                  "grouped_parallel_shared_vrt",
 	}
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "RPC 分块完成"}, nil
 }

@@ -127,7 +127,8 @@
 
 1. 新增 `SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB`（默认 `1024`）
 2. 新增 `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG`（默认 `bilinear`）
-3. 后端执行 PAN RPC 时透传 `warp_mem_mb` 与 `resample_alg`
+3. 新增 `SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB`（默认 `2048`，用于防 OOM）
+4. 后端执行 PAN RPC 时透传 `warp_mem_mb` 与 `resample_alg`，并按总内存预算自动下调并行度
 
 回滚：
 

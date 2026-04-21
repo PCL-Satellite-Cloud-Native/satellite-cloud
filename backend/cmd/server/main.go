@@ -45,6 +45,7 @@ func main() {
 		zap.Int("pan_rpc_parallelism", cfg.RemoteSensing.PanRPCParallel),
 		zap.Int("pan_rpc_cpu_threads", cfg.RemoteSensing.PanRPCCPUThreads),
 		zap.Int("pan_rpc_warp_mem_mb", cfg.RemoteSensing.PanRPCWarpMemMB),
+		zap.Int("pan_rpc_max_total_warp_mem_mb", cfg.RemoteSensing.PanRPCMaxTotalWarpMB),
 		zap.String("pan_rpc_resample_alg", cfg.RemoteSensing.PanRPCResampleAlg),
 		zap.Int("pansharpen_parallelism", cfg.RemoteSensing.PansharpenPar),
 		zap.String("pansharpen_gdal_threads", cfg.RemoteSensing.PansharpenGDALThread),

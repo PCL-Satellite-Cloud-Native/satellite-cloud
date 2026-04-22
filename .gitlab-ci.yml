@@ -101,6 +101,7 @@ deploy:
   image: "$CI_KUBECTL_IMAGE"
   script:
     - echo "部署到 namespace=gitlab-runner"
+    - sh scripts/remote_sensing_preflight.sh --namespace gitlab-runner --deployment satellite-backend --pvc remote-sensing-data
     # - kubectl -n gitlab-runner apply -f k8s/backend/remote-sensing-pv-pvc.yaml
     - kubectl -n gitlab-runner get pvc remote-sensing-data
     # 应用/更新后端 Deployment + Service

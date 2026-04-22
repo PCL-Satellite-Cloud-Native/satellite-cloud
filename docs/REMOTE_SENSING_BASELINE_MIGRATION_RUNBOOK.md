@@ -314,7 +314,7 @@ kubectl -n gitlab-runner run dem-check --rm -it --restart=Never \
 
 1. `build-backend`
 2. `build-frontend`
-3. `deploy`
+3. `deploy`（先执行 `scripts/remote_sensing_preflight.sh`）
 4. `sync-topology-csv-to-nfs`
 5. `import-topology`
 

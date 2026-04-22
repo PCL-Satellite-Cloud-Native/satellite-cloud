@@ -79,6 +79,9 @@
 - 资源建议：
   - `requests.memory=1Gi`
   - `limits.memory=4Gi`（避免 `PAN RPC` 阶段 OOMKilled）
+  - `requests.ephemeral-storage=8Gi`
+  - `limits.ephemeral-storage=24Gi`
+  - `emptyDir.sizeLimit=20Gi`（避免单 Pod scratch 放大挤爆节点根盘）
 - `initContainer` 建议使用内网镜像（如 `192.168.10.238/library/alpine:3.19-amd64-r1`），避免受外网拉取影响
 
 ## 3. 上线前准备（一次性）
@@ -200,6 +203,16 @@ kubectl -n gitlab-runner exec "$POD" -- ls -l /opt/remote-sensing-data/dem
 2. `build-frontend`
 3. `deploy`
 4. `topology-sync`
+
+`deploy` 阶段会先执行部署前置检查脚本：
+
+- `scripts/remote_sensing_preflight.sh`
+- 硬性检查（失败则阻断部署）：
+  - `PVC(remote-sensing-data)` 必须是 `Bound`
+  - `satellite-backend` 必须声明 `resources.requests.ephemeral-storage`
+  - Ready 节点不能出现 `DiskPressure=True`
+- 告警检查（仅输出 `WARN`）：
+  - namespace 内若存在 `Evicted` 的 `satellite-backend` Pod，会提示先清理节点磁盘再发起长任务
 
 首次部署前需要先手工执行（一次）：
 

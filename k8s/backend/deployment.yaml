@@ -98,7 +98,7 @@ spec:
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB
               value: "2048"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG
-              value: "bilinear"
+              value: "near"
             - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM
               value: "3"
             - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS

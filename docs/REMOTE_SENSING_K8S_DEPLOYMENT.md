@@ -53,7 +53,7 @@
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS=1`
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB=1024`
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB=2048`
-  - `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG=bilinear`
+  - `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG=near`
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3`
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS=1`
 - 说明：
@@ -61,7 +61,7 @@
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS` 为每个 PAN RPC 脚本进程内 GDAL 线程数
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB` 为 PAN RPC 的 `warpMemoryLimit`（MB）
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB` 为 PAN RPC 总内存预算（MB），用于自动下调分组并行度，避免 OOM 重启
-  - `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG` 为 PAN RPC 重采样算法（如 `bilinear`、`near`）
+  - `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG` 为 PAN RPC 重采样算法（推荐默认 `near`；质量优先可切换为 `bilinear`）
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM` 为波段并发度，`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS` 为每个波段进程的 GDAL 线程数
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
@@ -276,12 +276,18 @@ kubectl -n gitlab-runner set env deploy/satellite-backend \
   SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS=1 \
   SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB=1024 \
   SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB=2048 \
-  SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG=bilinear \
+  SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG=near \
   SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3 \
   SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS=1
 kubectl -n gitlab-runner rollout restart deploy/satellite-backend
 kubectl -n gitlab-runner rollout status deploy/satellite-backend
 ```
+
+阶段 2 实测结论（A/B/C 三组各两次）：
+
+1. C 组（`warp_mem=1024`, `resample=near`）PAN RPC 耗时最低，当前作为部署默认档位
+2. A 组（`warp_mem=1024`, `resample=bilinear`）次优，可作为质量优先对照档位
+3. B 组（`warp_mem=1536`, `resample=bilinear`）明显变慢，不推荐作为默认
 
 ## 6. 常见问题与定位
 

@@ -130,6 +130,14 @@
 3. 新增 `SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB`（默认 `2048`，用于防 OOM）
 4. 后端执行 PAN RPC 时透传 `warp_mem_mb` 与 `resample_alg`，并按总内存预算自动下调并行度
 
+当前仓库已落地的阶段2-H实现（稳定性收口）：
+
+1. 新增通用阶段超时：`SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS`（默认 `1800`）
+2. 新增融合阶段专用超时：`SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS`（默认 `1500`）
+3. 新增阶段重试次数：`SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES`（默认 `1`，仅重试当前阶段）
+4. 新增子进程心跳日志：`SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS`（默认 `60`）
+5. 运行中下载尚未生成的产物时，后端降级为 `info/warn`，避免误导性错误告警
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑

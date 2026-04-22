@@ -89,6 +89,14 @@ spec:
               value: "/opt/remote-sensing-data/dem/GMTED2010.jp2"
             - name: SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR
               value: "persist_output_preprocessing"
+            - name: SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS
+              value: "1800"
+            - name: SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS
+              value: "1500"
+            - name: SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS
+              value: "60"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM
               value: "2"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS

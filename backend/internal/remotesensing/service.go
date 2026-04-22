@@ -3,6 +3,7 @@ package remotesensing
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -299,8 +300,30 @@ func (s *RemoteSensingService) runStage(ctx context.Context, taskID uint, def st
 	if err := s.updateStageStatus(taskID, def.Name, StageRunning, nil, "", ""); err != nil {
 		return err
 	}
-	res, err := executor(ctx, s, taskID, req)
-	if err != nil {
+	maxRetries := s.cfg.StageMaxRetries
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	maxAttempts := maxRetries + 1
+	var (
+		res *stageExecutionResult
+		err error
+	)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		stageTimeout := s.stageTimeoutFor(def.Name)
+		stageCtx, cancel := context.WithTimeout(ctx, stageTimeout)
+		res, err = executor(stageCtx, s, taskID, req)
+		cancel()
+		if err == nil {
+			break
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(stageCtx.Err(), context.DeadlineExceeded) {
+			err = fmt.Errorf("阶段超时（%s）: %w", stageTimeout, err)
+		}
+		if attempt < maxAttempts {
+			s.log(taskID, def.Name, "warn", fmt.Sprintf("阶段失败，准备重试（%d/%d）: %v", attempt, maxRetries, err))
+			continue
+		}
 		s.updateStageStatus(taskID, def.Name, StageFailed, nil, "", err.Error())
 		return err
 	}
@@ -320,6 +343,17 @@ func (s *RemoteSensingService) runStage(ctx context.Context, taskID uint, def st
 		s.persistFusionArtifactsAsync(taskID, req.FilePrefix)
 	}
 	return nil
+}
+
+func (s *RemoteSensingService) stageTimeoutFor(stageName string) time.Duration {
+	seconds := s.cfg.StageTimeoutSec
+	if stageName == StageFusionStack {
+		seconds = s.cfg.FusionStageTimeoutSec
+	}
+	if seconds <= 0 {
+		seconds = 1800
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (s *RemoteSensingService) updateStageStatus(taskID uint, stageName, status string, details map[string]interface{}, outputPath, message string) error {
@@ -430,29 +464,57 @@ func (s *RemoteSensingService) createArtifact(ctx context.Context, artifact mode
 
 func (s *RemoteSensingService) runPython(ctx context.Context, taskID uint, stageName, script string, args []string) (string, error) {
 	cmdArgs := append([]string{script}, args...)
-	cmd := exec.CommandContext(ctx, s.cfg.PythonBin, cmdArgs...)
-	cmd.Dir = s.cfg.RootPath
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	err := cmd.Run()
-	output := buf.String()
-	s.log(taskID, stageName, "info", fmt.Sprintf("执行 %s %v\n%s", script, args, output))
-	if err != nil {
-		s.log(taskID, stageName, "error", fmt.Sprintf("执行失败: %v", err))
-	}
-	return output, err
+	return s.runBinaryWithHeartbeat(ctx, taskID, stageName, s.cfg.PythonBin, script, cmdArgs, args)
 }
 
 func (s *RemoteSensingService) runCommand(ctx context.Context, taskID uint, stageName string, binary string, args []string) (string, error) {
-	cmd := exec.CommandContext(ctx, binary, args...)
+	return s.runBinaryWithHeartbeat(ctx, taskID, stageName, binary, binary, args, args)
+}
+
+func (s *RemoteSensingService) runBinaryWithHeartbeat(
+	ctx context.Context,
+	taskID uint,
+	stageName string,
+	binary string,
+	displayName string,
+	cmdArgs []string,
+	logArgs []string,
+) (string, error) {
+	cmd := exec.CommandContext(ctx, binary, cmdArgs...)
 	cmd.Dir = s.cfg.RootPath
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		s.log(taskID, stageName, "error", fmt.Sprintf("启动失败: %v", err))
+		return "", err
+	}
+	doneCh := make(chan error, 1)
+	go func() {
+		doneCh <- cmd.Wait()
+	}()
+	start := time.Now()
+	heartbeatSec := s.cfg.CommandHeartbeatSec
+	if heartbeatSec <= 0 {
+		heartbeatSec = 60
+	}
+	ticker := time.NewTicker(time.Duration(heartbeatSec) * time.Second)
+	defer ticker.Stop()
+	var err error
+waitLoop:
+	for {
+		select {
+		case err = <-doneCh:
+			break waitLoop
+		case <-ticker.C:
+			s.log(taskID, stageName, "info", fmt.Sprintf("心跳: %s 仍在运行（已耗时 %s）", displayName, time.Since(start).Round(time.Second)))
+		case <-ctx.Done():
+			err = <-doneCh
+			break waitLoop
+		}
+	}
 	output := buf.String()
-	s.log(taskID, stageName, "info", fmt.Sprintf("执行 %s %v\n%s", binary, args, output))
+	s.log(taskID, stageName, "info", fmt.Sprintf("执行 %s %v\n%s", displayName, logArgs, output))
 	if err != nil {
 		s.log(taskID, stageName, "error", fmt.Sprintf("执行失败: %v", err))
 	}

@@ -39,17 +39,21 @@ type LogConfig struct {
 }
 
 type RemoteSensingConfig struct {
-	RootPath             string
-	PythonBin            string
-	DemFile              string
-	PersistOutputDir     string
-	PanRPCParallel       int
-	PansharpenPar        int
-	PanRPCCPUThreads     int
-	PanRPCWarpMemMB      int
-	PanRPCMaxTotalWarpMB int
-	PanRPCResampleAlg    string
-	PansharpenGDALThread string
+	RootPath              string
+	PythonBin             string
+	DemFile               string
+	PersistOutputDir      string
+	StageTimeoutSec       int
+	FusionStageTimeoutSec int
+	StageMaxRetries       int
+	CommandHeartbeatSec   int
+	PanRPCParallel        int
+	PansharpenPar         int
+	PanRPCCPUThreads      int
+	PanRPCWarpMemMB       int
+	PanRPCMaxTotalWarpMB  int
+	PanRPCResampleAlg     string
+	PansharpenGDALThread  string
 }
 
 func Load() *Config {
@@ -146,12 +150,16 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.python", "python3")
 	viper.SetDefault("remote_sensing.dem_file", "")
 	viper.SetDefault("remote_sensing.persist_output_dir", "persist_output_preprocessing")
+	viper.SetDefault("remote_sensing.stage_timeout_seconds", 1800)
+	viper.SetDefault("remote_sensing.fusion_stage_timeout_seconds", 1500)
+	viper.SetDefault("remote_sensing.stage_max_retries", 1)
+	viper.SetDefault("remote_sensing.command_heartbeat_seconds", 60)
 	viper.SetDefault("remote_sensing.pan_rpc_parallelism", 2)
 	viper.SetDefault("remote_sensing.pansharpen_parallelism", 3)
 	viper.SetDefault("remote_sensing.pan_rpc_cpu_threads", 1)
 	viper.SetDefault("remote_sensing.pan_rpc_warp_mem_mb", 1024)
 	viper.SetDefault("remote_sensing.pan_rpc_max_total_warp_mem_mb", 2048)
-	viper.SetDefault("remote_sensing.pan_rpc_resample_alg", "bilinear")
+	viper.SetDefault("remote_sensing.pan_rpc_resample_alg", "near")
 	viper.SetDefault("remote_sensing.pansharpen_gdal_threads", "1")
 }
 
@@ -170,12 +178,16 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	pythonBin := get("SATELLITE_REMOTE_SENSING_PYTHON", "remote_sensing.python", "")
 	demFile := normalizePath(get("SATELLITE_REMOTE_SENSING_DEM_FILE", "remote_sensing.dem_file", ""))
 	persistOutputDir := filepath.Clean(get("SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR", "remote_sensing.persist_output_dir", "persist_output_preprocessing"))
+	stageTimeoutSec := getInt("SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS", "remote_sensing.stage_timeout_seconds", 1800)
+	fusionStageTimeoutSec := getInt("SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS", "remote_sensing.fusion_stage_timeout_seconds", 1500)
+	stageMaxRetries := getInt("SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES", "remote_sensing.stage_max_retries", 1)
+	commandHeartbeatSec := getInt("SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS", "remote_sensing.command_heartbeat_seconds", 60)
 	panRPCParallel := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM", "remote_sensing.pan_rpc_parallelism", 2)
 	pansharpenParallel := getInt("SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM", "remote_sensing.pansharpen_parallelism", 3)
 	panRPCCPUThreads := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS", "remote_sensing.pan_rpc_cpu_threads", 1)
 	panRPCWarpMemMB := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB", "remote_sensing.pan_rpc_warp_mem_mb", 1024)
 	panRPCMaxTotalWarpMB := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB", "remote_sensing.pan_rpc_max_total_warp_mem_mb", 2048)
-	panRPCResampleAlg := get("SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG", "remote_sensing.pan_rpc_resample_alg", "bilinear")
+	panRPCResampleAlg := get("SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG", "remote_sensing.pan_rpc_resample_alg", "near")
 	pansharpenGDALThreads := get("SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS", "remote_sensing.pansharpen_gdal_threads", "1")
 	if pythonBin == "" {
 		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
@@ -192,17 +204,21 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	}
 
 	return RemoteSensingConfig{
-		RootPath:             rootPath,
-		PythonBin:            pythonBin,
-		DemFile:              demFile,
-		PersistOutputDir:     persistOutputDir,
-		PanRPCParallel:       panRPCParallel,
-		PansharpenPar:        pansharpenParallel,
-		PanRPCCPUThreads:     panRPCCPUThreads,
-		PanRPCWarpMemMB:      panRPCWarpMemMB,
-		PanRPCMaxTotalWarpMB: panRPCMaxTotalWarpMB,
-		PanRPCResampleAlg:    panRPCResampleAlg,
-		PansharpenGDALThread: pansharpenGDALThreads,
+		RootPath:              rootPath,
+		PythonBin:             pythonBin,
+		DemFile:               demFile,
+		PersistOutputDir:      persistOutputDir,
+		StageTimeoutSec:       stageTimeoutSec,
+		FusionStageTimeoutSec: fusionStageTimeoutSec,
+		StageMaxRetries:       stageMaxRetries,
+		CommandHeartbeatSec:   commandHeartbeatSec,
+		PanRPCParallel:        panRPCParallel,
+		PansharpenPar:         pansharpenParallel,
+		PanRPCCPUThreads:      panRPCCPUThreads,
+		PanRPCWarpMemMB:       panRPCWarpMemMB,
+		PanRPCMaxTotalWarpMB:  panRPCMaxTotalWarpMB,
+		PanRPCResampleAlg:     panRPCResampleAlg,
+		PansharpenGDALThread:  pansharpenGDALThreads,
 	}
 }
 

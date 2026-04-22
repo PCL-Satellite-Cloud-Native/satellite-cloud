@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"satellite-cloud/backend/internal/remotesensing"
 )
@@ -154,7 +155,16 @@ func (h *RemoteSensingHandler) DownloadArtifact(c *gin.Context) {
 	}
 	artifact, err := h.svc.GetArtifact(c.Request.Context(), taskID, artifactID)
 	if err != nil {
-		h.logger.Error("查询产物失败", zap.Error(err))
+		if err == gorm.ErrRecordNotFound {
+			task, taskErr := h.svc.GetTask(c.Request.Context(), taskID)
+			if taskErr == nil && task.Status == remotesensing.TaskStatusRunning {
+				h.logger.Info("产物尚未生成（任务运行中）", zap.Uint("task_id", taskID), zap.Uint("artifact_id", artifactID))
+			} else {
+				h.logger.Warn("查询产物失败", zap.Error(err))
+			}
+		} else {
+			h.logger.Error("查询产物失败", zap.Error(err))
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "artifact not found"})
 		return
 	}

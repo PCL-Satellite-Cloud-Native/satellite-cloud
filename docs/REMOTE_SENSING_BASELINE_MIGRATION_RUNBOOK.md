@@ -335,6 +335,36 @@ kubectl -n istio-system get virtualservice satellite-virtualservice
 
 ---
 
+## 10.3 遥感性能默认基线（2026-04 A/B/C 结论）
+
+新集群建议默认采用 C 组参数：
+
+1. `SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM=2`
+2. `SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS=1`
+3. `SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB=1024`
+4. `SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB=2048`
+5. `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG=near`
+6. `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3`
+7. `SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS=1`
+8. `SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS=1800`
+9. `SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS=1500`
+10. `SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES=1`
+11. `SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS=60`
+
+说明：
+
+1. C 组在三组各两次测试中整体最快
+2. `PAN RPC` 典型耗时约 374-376s
+3. 若质量评估需要，可将 `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG` 临时切回 `bilinear` 做对照
+
+部署后快速验收：
+
+```bash
+kubectl -n gitlab-runner logs deploy/satellite-backend --tail=120 | rg "Remote sensing runtime configured|pan_rpc_resample_alg|pan_rpc_warp_mem_mb|pan_rpc_parallelism"
+```
+
+---
+
 ## 10.1 网络前置验收（跳板机转发场景）
 
 在任一 worker 节点执行：

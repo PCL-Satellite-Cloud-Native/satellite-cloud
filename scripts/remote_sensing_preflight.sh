@@ -7,13 +7,14 @@ usage() {
   遥感部署前置检查，避免因节点磁盘压力导致 satellite-backend 被 Evicted。
 
 用法：
-  scripts/remote_sensing_preflight.sh [--namespace gitlab-runner] [--deployment satellite-backend] [--pvc remote-sensing-data]
+  scripts/remote_sensing_preflight.sh [--namespace gitlab-runner] [--deployment satellite-backend] [--pvc remote-sensing-data] [--deployment-manifest k8s/backend/deployment.yaml]
 EOF
 }
 
 NAMESPACE="gitlab-runner"
 DEPLOYMENT="satellite-backend"
 PVC_NAME="remote-sensing-data"
+DEPLOYMENT_MANIFEST="k8s/backend/deployment.yaml"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -27,6 +28,10 @@ while [ $# -gt 0 ]; do
       ;;
     --pvc)
       PVC_NAME="${2:-}"
+      shift 2
+      ;;
+    --deployment-manifest)
+      DEPLOYMENT_MANIFEST="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -51,13 +56,16 @@ if [ "${PVC_PHASE}" != "Bound" ]; then
 fi
 echo "[preflight][OK] PVC Bound"
 
-echo "[preflight] 2/4 检查 deployment 是否声明 ephemeral-storage request..."
-EPHEMERAL_REQ="$(kubectl -n "${NAMESPACE}" get deploy "${DEPLOYMENT}" -o jsonpath='{.spec.template.spec.containers[?(@.name=="satellite-backend")].resources.requests.ephemeral-storage}' 2>/dev/null || true)"
-if [ -z "${EPHEMERAL_REQ}" ]; then
-  echo "[preflight][FAIL] ${DEPLOYMENT} 未配置 resources.requests.ephemeral-storage"
+echo "[preflight] 2/4 检查部署清单是否声明 ephemeral-storage request..."
+if [ ! -f "${DEPLOYMENT_MANIFEST}" ]; then
+  echo "[preflight][FAIL] 未找到部署清单: ${DEPLOYMENT_MANIFEST}"
   exit 1
 fi
-echo "[preflight][OK] ephemeral-storage request=${EPHEMERAL_REQ}"
+if ! grep -Eq 'ephemeral-storage:[[:space:]]*"[0-9]+Gi"' "${DEPLOYMENT_MANIFEST}"; then
+  echo "[preflight][FAIL] ${DEPLOYMENT_MANIFEST} 未配置 resources.requests/limits.ephemeral-storage"
+  exit 1
+fi
+echo "[preflight][OK] manifest 已声明 ephemeral-storage 资源约束"
 
 echo "[preflight] 3/4 检查 Ready 节点是否存在 DiskPressure=True..."
 READY_NODES="$(kubectl get nodes --no-headers 2>/dev/null | awk '$2 ~ /Ready/ {print $1}')"

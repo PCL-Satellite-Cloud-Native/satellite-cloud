@@ -68,25 +68,35 @@ fi
 echo "[preflight][OK] manifest 已声明 ephemeral-storage 资源约束"
 
 echo "[preflight] 3/4 检查 Ready 节点是否存在 DiskPressure=True..."
-READY_NODES="$(kubectl get nodes --no-headers 2>/dev/null | awk '$2 ~ /Ready/ {print $1}')"
-if [ -z "${READY_NODES}" ]; then
-  echo "[preflight][FAIL] 未发现 Ready 节点"
-  exit 1
+NODES_OUTPUT="$(kubectl get nodes --no-headers 2>&1 || true)"
+if echo "${NODES_OUTPUT}" | grep -Eq 'Forbidden|forbidden|cannot list resource "nodes"|Unauthorized|unauthorized'; then
+  echo "[preflight][WARN] 当前 CI 账号无 nodes 读取权限，跳过 DiskPressure 节点级检查"
+  READY_NODES=""
+else
+  READY_NODES="$(printf '%s\n' "${NODES_OUTPUT}" | awk '$2 ~ /Ready/ {print $1}')"
+  if [ -z "${READY_NODES}" ]; then
+    echo "[preflight][FAIL] 未发现 Ready 节点"
+    exit 1
+  fi
 fi
 
 DISK_PRESSURE_NODES=""
-for node in ${READY_NODES}; do
-  disk_pressure="$(kubectl get node "${node}" -o jsonpath='{.status.conditions[?(@.type=="DiskPressure")].status}' 2>/dev/null || true)"
-  if [ "${disk_pressure}" = "True" ]; then
-    DISK_PRESSURE_NODES="${DISK_PRESSURE_NODES} ${node}"
-  fi
-done
+if [ -n "${READY_NODES}" ]; then
+  for node in ${READY_NODES}; do
+    disk_pressure="$(kubectl get node "${node}" -o jsonpath='{.status.conditions[?(@.type=="DiskPressure")].status}' 2>/dev/null || true)"
+    if [ "${disk_pressure}" = "True" ]; then
+      DISK_PRESSURE_NODES="${DISK_PRESSURE_NODES} ${node}"
+    fi
+  done
 
-if [ -n "${DISK_PRESSURE_NODES}" ]; then
-  echo "[preflight][FAIL] 以下 Ready 节点存在 DiskPressure=True:${DISK_PRESSURE_NODES}"
-  exit 1
+  if [ -n "${DISK_PRESSURE_NODES}" ]; then
+    echo "[preflight][FAIL] 以下 Ready 节点存在 DiskPressure=True:${DISK_PRESSURE_NODES}"
+    exit 1
+  fi
+  echo "[preflight][OK] Ready 节点均无 DiskPressure"
+else
+  echo "[preflight][WARN] DiskPressure 节点级检查已跳过"
 fi
-echo "[preflight][OK] Ready 节点均无 DiskPressure"
 
 echo "[preflight] 4/4 检查最近是否出现 satellite-backend Evicted（仅告警）..."
 EVICT_COUNT="$(kubectl -n "${NAMESPACE}" get pods -l app=satellite-backend -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.status.reason}{"\n"}{end}' 2>/dev/null | grep -c '|Evicted' || true)"

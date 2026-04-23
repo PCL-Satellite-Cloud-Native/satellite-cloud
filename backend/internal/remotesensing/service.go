@@ -736,6 +736,22 @@ func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID 
 }
 
 func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	mode := strings.ToLower(strings.TrimSpace(s.cfg.PansharpenMode))
+	if mode == "" {
+		mode = "parallel"
+	}
+	switch mode {
+	case "batch":
+		return s.executePansharpenBatch(ctx, taskID, req)
+	case "parallel":
+		return s.executePansharpenParallel(ctx, taskID, req)
+	default:
+		s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("未知 pansharpen 模式 %q，回退 parallel", mode))
+		return s.executePansharpenParallel(ctx, taskID, req)
+	}
+}
+
+func (s *RemoteSensingService) executePansharpenBatch(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	outputDir := filepath.Join("output_preprocessing", "pansharpen")
 	if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, outputDir), 0o755); err != nil {
 		return nil, fmt.Errorf("创建 Pan-sharpen 输出目录失败: %w", err)
@@ -751,6 +767,9 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 	if _, err := s.runPython(ctx, taskID, StagePansharpen, "pansharpen_fusion.py", args); err != nil {
 		return nil, err
 	}
+	if err := ensurePansharpenOutputs(s.cfg.RootPath, outputDir, req.FilePrefix); err != nil {
+		return nil, err
+	}
 	details := map[string]interface{}{
 		"completed":          3,
 		"total":              3,
@@ -760,6 +779,109 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 	}
 	details["message"] = "三波段融合完成"
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "融合完成"}, nil
+}
+
+func (s *RemoteSensingService) executePansharpenParallel(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	outputDir := filepath.Join("output_preprocessing", "pansharpen")
+	absoluteOutputDir := filepath.Join(s.cfg.RootPath, outputDir)
+	workerBaseDir := filepath.Join(absoluteOutputDir, "workers")
+	if err := os.RemoveAll(workerBaseDir); err != nil {
+		s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("清理旧 Pansharpen workers 目录失败: %v", err))
+	}
+	if err := os.MkdirAll(workerBaseDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建 Pan-sharpen 工作目录失败: %w", err)
+	}
+	stageCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	parallelism := effectiveParallelism(s.cfg.PansharpenPar, 1, 3)
+	sem := make(chan struct{}, parallelism)
+	errCh := make(chan error, 3)
+	var wg sync.WaitGroup
+	for i := 1; i <= 3; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-stageCtx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			workerOutputDir := filepath.Join(outputDir, "workers", fmt.Sprintf("band%d", i))
+			workerOutputAbs := filepath.Join(s.cfg.RootPath, workerOutputDir)
+			if err := os.MkdirAll(workerOutputAbs, 0o755); err != nil {
+				errCh <- fmt.Errorf("创建 band%d 目录失败: %w", i, err)
+				cancel()
+				return
+			}
+			args := []string{
+				"--file_prefix", req.FilePrefix,
+				"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
+				"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
+				"--output_dir", workerOutputDir,
+				"--bandidx", strconv.Itoa(i),
+				"--gdal_num_threads", s.cfg.PansharpenGDALThread,
+			}
+			if _, err := s.runPython(stageCtx, taskID, StagePansharpen, "pansharpen_fusion.py", args); err != nil {
+				errCh <- err
+				cancel()
+				return
+			}
+			bandDatName := fmt.Sprintf("%s-MSS1_fused_band%d.dat", req.FilePrefix, i)
+			srcBandDat := filepath.Join(workerOutputAbs, bandDatName)
+			dstBandDat := filepath.Join(absoluteOutputDir, bandDatName)
+			if err := copyFile(srcBandDat, dstBandDat); err != nil {
+				errCh <- fmt.Errorf("复制 band%d dat 失败: %w", i, err)
+				cancel()
+				return
+			}
+			bandHdrName := fmt.Sprintf("%s-MSS1_fused_band%d.hdr", req.FilePrefix, i)
+			srcBandHdr := filepath.Join(workerOutputAbs, bandHdrName)
+			if _, err := os.Stat(srcBandHdr); err == nil {
+				dstBandHdr := filepath.Join(absoluteOutputDir, bandHdrName)
+				if err := copyFile(srcBandHdr, dstBandHdr); err != nil {
+					errCh <- fmt.Errorf("复制 band%d hdr 失败: %w", i, err)
+					cancel()
+					return
+				}
+			}
+			if err := os.RemoveAll(workerOutputAbs); err != nil {
+				s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("清理 Pansharpen band%d 临时目录失败: %v", i, err))
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := os.RemoveAll(workerBaseDir); err != nil {
+		s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("清理 Pansharpen workers 根目录失败: %v", err))
+	}
+	if err := ensurePansharpenOutputs(s.cfg.RootPath, outputDir, req.FilePrefix); err != nil {
+		return nil, err
+	}
+	details := map[string]interface{}{
+		"completed":   3,
+		"total":       3,
+		"parallelism": parallelism,
+		"mode":        "multi_process_parallel_workers",
+	}
+	details["message"] = "三波段融合完成"
+	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "融合完成"}, nil
+}
+
+func ensurePansharpenOutputs(rootPath, outputDir, filePrefix string) error {
+	for i := 1; i <= 3; i++ {
+		bandDatName := fmt.Sprintf("%s-MSS1_fused_band%d.dat", filePrefix, i)
+		if _, err := os.Stat(filepath.Join(rootPath, outputDir, bandDatName)); err != nil {
+			return fmt.Errorf("pansharpen 输出不存在: %s", filepath.Join(outputDir, bandDatName))
+		}
+	}
+	return nil
 }
 
 func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {

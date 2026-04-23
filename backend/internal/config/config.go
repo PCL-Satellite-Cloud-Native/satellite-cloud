@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/viper"
 	"github.com/subosito/gotenv"
@@ -53,6 +54,7 @@ type RemoteSensingConfig struct {
 	PanRPCWarpMemMB       int
 	PanRPCMaxTotalWarpMB  int
 	PanRPCResampleAlg     string
+	PansharpenMode        string
 	PansharpenGDALThread  string
 }
 
@@ -160,6 +162,7 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.pan_rpc_warp_mem_mb", 1024)
 	viper.SetDefault("remote_sensing.pan_rpc_max_total_warp_mem_mb", 2048)
 	viper.SetDefault("remote_sensing.pan_rpc_resample_alg", "near")
+	viper.SetDefault("remote_sensing.pansharpen_mode", "parallel")
 	viper.SetDefault("remote_sensing.pansharpen_gdal_threads", "1")
 }
 
@@ -188,6 +191,10 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	panRPCWarpMemMB := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB", "remote_sensing.pan_rpc_warp_mem_mb", 1024)
 	panRPCMaxTotalWarpMB := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB", "remote_sensing.pan_rpc_max_total_warp_mem_mb", 2048)
 	panRPCResampleAlg := get("SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG", "remote_sensing.pan_rpc_resample_alg", "near")
+	pansharpenMode := strings.ToLower(strings.TrimSpace(get("SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE", "remote_sensing.pansharpen_mode", "parallel")))
+	if pansharpenMode != "parallel" && pansharpenMode != "batch" {
+		pansharpenMode = "parallel"
+	}
 	pansharpenGDALThreads := get("SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS", "remote_sensing.pansharpen_gdal_threads", "1")
 	if pythonBin == "" {
 		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
@@ -218,6 +225,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		PanRPCWarpMemMB:       panRPCWarpMemMB,
 		PanRPCMaxTotalWarpMB:  panRPCMaxTotalWarpMB,
 		PanRPCResampleAlg:     panRPCResampleAlg,
+		PansharpenMode:        pansharpenMode,
 		PansharpenGDALThread:  pansharpenGDALThreads,
 	}
 }

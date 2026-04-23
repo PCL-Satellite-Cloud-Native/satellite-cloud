@@ -70,7 +70,7 @@
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB` 为 PAN RPC 的 `warpMemoryLimit`（MB）
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB` 为 PAN RPC 总内存预算（MB），用于自动下调分组并行度，避免 OOM 重启
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG` 为 PAN RPC 重采样算法（推荐默认 `near`；质量优先可切换为 `bilinear`）
-  - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM` 为波段并发度，`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS` 为每个波段进程的 GDAL 线程数
+  - 当前实现中 `pansharpen_fusion` 已改为单进程批量波段处理（`--band_indexes=1,2,3`），`SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM` 暂保留为兼容参数；`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS` 仍生效
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
   - `/opt/remote-sensing/output_preprocessing`（`emptyDir` 本地 scratch，中间产物）

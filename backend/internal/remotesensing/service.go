@@ -737,86 +737,26 @@ func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID 
 
 func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	outputDir := filepath.Join("output_preprocessing", "pansharpen")
-	absoluteOutputDir := filepath.Join(s.cfg.RootPath, outputDir)
-	workerBaseDir := filepath.Join(absoluteOutputDir, "workers")
-	if err := os.RemoveAll(workerBaseDir); err != nil {
-		s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("清理旧 Pansharpen workers 目录失败: %v", err))
+	if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, outputDir), 0o755); err != nil {
+		return nil, fmt.Errorf("创建 Pan-sharpen 输出目录失败: %w", err)
 	}
-	if err := os.MkdirAll(workerBaseDir, 0o755); err != nil {
-		return nil, fmt.Errorf("创建 Pan-sharpen 工作目录失败: %w", err)
+	args := []string{
+		"--file_prefix", req.FilePrefix,
+		"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
+		"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
+		"--output_dir", outputDir,
+		"--band_indexes", "1,2,3",
+		"--gdal_num_threads", s.cfg.PansharpenGDALThread,
 	}
-	stageCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	sem := make(chan struct{}, effectiveParallelism(s.cfg.PansharpenPar, 1, 3))
-	errCh := make(chan error, 3)
-	var wg sync.WaitGroup
-	for i := 1; i <= 3; i++ {
-		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-			case <-stageCtx.Done():
-				return
-			}
-			defer func() { <-sem }()
-			workerOutputDir := filepath.Join(outputDir, "workers", fmt.Sprintf("band%d", i))
-			if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, workerOutputDir), 0o755); err != nil {
-				errCh <- fmt.Errorf("创建 band%d 目录失败: %w", i, err)
-				cancel()
-				return
-			}
-			args := []string{
-				"--file_prefix", req.FilePrefix,
-				"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
-				"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
-				"--output_dir", workerOutputDir,
-				"--bandidx", strconv.Itoa(i),
-				"--gdal_num_threads", s.cfg.PansharpenGDALThread,
-			}
-			if _, err := s.runPython(stageCtx, taskID, StagePansharpen, "pansharpen_fusion.py", args); err != nil {
-				errCh <- err
-				cancel()
-				return
-			}
-			bandDatName := fmt.Sprintf("%s-MSS1_fused_band%d.dat", req.FilePrefix, i)
-			srcBandDat := filepath.Join(s.cfg.RootPath, workerOutputDir, bandDatName)
-			dstBandDat := filepath.Join(absoluteOutputDir, bandDatName)
-			if err := copyFile(srcBandDat, dstBandDat); err != nil {
-				errCh <- fmt.Errorf("复制 band%d dat 失败: %w", i, err)
-				cancel()
-				return
-			}
-			bandHdrName := fmt.Sprintf("%s-MSS1_fused_band%d.hdr", req.FilePrefix, i)
-			srcBandHdr := filepath.Join(s.cfg.RootPath, workerOutputDir, bandHdrName)
-			if _, err := os.Stat(srcBandHdr); err == nil {
-				dstBandHdr := filepath.Join(absoluteOutputDir, bandHdrName)
-				if err := copyFile(srcBandHdr, dstBandHdr); err != nil {
-					errCh <- fmt.Errorf("复制 band%d hdr 失败: %w", i, err)
-					cancel()
-					return
-				}
-			}
-			if err := os.RemoveAll(filepath.Join(s.cfg.RootPath, workerOutputDir)); err != nil {
-				s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("清理 Pansharpen band%d 临时目录失败: %v", i, err))
-			}
-		}()
-	}
-	wg.Wait()
-	close(errCh)
-	for err := range errCh {
-		if err != nil {
-			return nil, err
-		}
-	}
-	if err := os.RemoveAll(workerBaseDir); err != nil {
-		s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("清理 Pansharpen workers 根目录失败: %v", err))
+	if _, err := s.runPython(ctx, taskID, StagePansharpen, "pansharpen_fusion.py", args); err != nil {
+		return nil, err
 	}
 	details := map[string]interface{}{
-		"completed":   3,
-		"total":       3,
-		"parallelism": effectiveParallelism(s.cfg.PansharpenPar, 1, 3),
+		"completed":          3,
+		"total":              3,
+		"parallelism":        1,
+		"requested_parallel": effectiveParallelism(s.cfg.PansharpenPar, 1, 3),
+		"mode":               "single_process_batch_bands",
 	}
 	details["message"] = "三波段融合完成"
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "融合完成"}, nil

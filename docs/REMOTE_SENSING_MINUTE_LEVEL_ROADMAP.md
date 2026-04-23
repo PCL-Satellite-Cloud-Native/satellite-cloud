@@ -138,6 +138,7 @@
 4. 新增子进程心跳日志：`SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS`（默认 `60`）
 5. 运行中下载尚未生成的产物时，后端降级为 `info/warn`，避免误导性错误告警
 6. `PAN RPC`/`Pansharpen` 的 `workers` 临时目录在结果拷贝后立即清理，降低 `emptyDir` 峰值
+7. `pansharpen_fusion.py` 新增 `--band_indexes`，后端改为单次调用批量处理 1/2/3 波段，减少脚本启动与重复 I/O
 
 回滚：
 

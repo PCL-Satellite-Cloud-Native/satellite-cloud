@@ -79,9 +79,9 @@
 - 资源建议：
   - `requests.memory=1Gi`
   - `limits.memory=4Gi`（避免 `PAN RPC` 阶段 OOMKilled）
-  - `requests.ephemeral-storage=8Gi`
-  - `limits.ephemeral-storage=24Gi`
-  - `emptyDir.sizeLimit=20Gi`（避免单 Pod scratch 放大挤爆节点根盘）
+  - `requests.ephemeral-storage=10Gi`
+  - `limits.ephemeral-storage=48Gi`
+  - `emptyDir.sizeLimit=40Gi`（避免单 Pod scratch 放大挤爆节点根盘）
 - `initContainer` 建议使用内网镜像（如 `192.168.10.238/library/alpine:3.19-amd64-r1`），避免受外网拉取影响
 
 ## 3. 上线前准备（一次性）

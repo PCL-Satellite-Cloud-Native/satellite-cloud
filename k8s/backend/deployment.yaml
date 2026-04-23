@@ -109,6 +109,8 @@ spec:
               value: "near"
             - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM
               value: "3"
+            - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE
+              value: "parallel"
             - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS
               value: "1"
           resources:

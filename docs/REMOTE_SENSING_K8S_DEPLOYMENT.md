@@ -59,6 +59,7 @@
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB=2048`
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG=near`
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3`
+  - `SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE=parallel`
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS=1`
 - 说明：
   - `SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS` 为通用阶段超时秒数
@@ -70,7 +71,8 @@
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB` 为 PAN RPC 的 `warpMemoryLimit`（MB）
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB` 为 PAN RPC 总内存预算（MB），用于自动下调分组并行度，避免 OOM 重启
   - `SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG` 为 PAN RPC 重采样算法（推荐默认 `near`；质量优先可切换为 `bilinear`）
-  - 当前实现中 `pansharpen_fusion` 已改为单进程批量波段处理（`--band_indexes=1,2,3`），`SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM` 暂保留为兼容参数；`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS` 仍生效
+  - `SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE` 支持 `parallel`（多进程分波段）/`batch`（单进程批处理），默认推荐 `parallel`
+  - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM` 在 `parallel` 模式下生效，`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS` 两种模式都生效
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
   - `/opt/remote-sensing/output_preprocessing`（`emptyDir` 本地 scratch，中间产物）
@@ -303,6 +305,7 @@ kubectl -n gitlab-runner set env deploy/satellite-backend \
   SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB=2048 \
   SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG=near \
   SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3 \
+  SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE=parallel \
   SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS=1
 kubectl -n gitlab-runner rollout restart deploy/satellite-backend
 kubectl -n gitlab-runner rollout status deploy/satellite-backend

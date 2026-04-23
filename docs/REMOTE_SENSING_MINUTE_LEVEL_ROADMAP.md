@@ -137,6 +137,7 @@
 3. 新增阶段重试次数：`SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES`（默认 `1`，仅重试当前阶段）
 4. 新增子进程心跳日志：`SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS`（默认 `60`）
 5. 运行中下载尚未生成的产物时，后端降级为 `info/warn`，避免误导性错误告警
+6. `PAN RPC`/`Pansharpen` 的 `workers` 临时目录在结果拷贝后立即清理，降低 `emptyDir` 峰值
 
 回滚：
 

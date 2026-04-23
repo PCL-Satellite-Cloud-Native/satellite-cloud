@@ -589,6 +589,10 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 	if err := os.MkdirAll(absoluteOutputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建 PAN RPC 输出目录失败: %w", err)
 	}
+	workerRootAbs := filepath.Join(absoluteOutputDir, "workers")
+	if err := os.RemoveAll(workerRootAbs); err != nil {
+		s.log(taskID, StagePanRpcWarp, "warn", fmt.Sprintf("清理旧 PAN RPC workers 目录失败: %v", err))
+	}
 
 	stageCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -646,6 +650,9 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 					return
 				}
 			}
+			if err := os.RemoveAll(workerAbsDir); err != nil {
+				s.log(taskID, StagePanRpcWarp, "warn", fmt.Sprintf("清理 PAN RPC group%d 临时目录失败: %v", groupID, err))
+			}
 		}()
 	}
 
@@ -655,6 +662,9 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 		if err != nil {
 			return nil, err
 		}
+	}
+	if err := os.RemoveAll(workerRootAbs); err != nil {
+		s.log(taskID, StagePanRpcWarp, "warn", fmt.Sprintf("清理 PAN RPC workers 根目录失败: %v", err))
 	}
 
 	details := map[string]interface{}{
@@ -729,6 +739,9 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 	outputDir := filepath.Join("output_preprocessing", "pansharpen")
 	absoluteOutputDir := filepath.Join(s.cfg.RootPath, outputDir)
 	workerBaseDir := filepath.Join(absoluteOutputDir, "workers")
+	if err := os.RemoveAll(workerBaseDir); err != nil {
+		s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("清理旧 Pansharpen workers 目录失败: %v", err))
+	}
 	if err := os.MkdirAll(workerBaseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建 Pan-sharpen 工作目录失败: %w", err)
 	}
@@ -785,6 +798,9 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 					return
 				}
 			}
+			if err := os.RemoveAll(filepath.Join(s.cfg.RootPath, workerOutputDir)); err != nil {
+				s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("清理 Pansharpen band%d 临时目录失败: %v", i, err))
+			}
 		}()
 	}
 	wg.Wait()
@@ -793,6 +809,9 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 		if err != nil {
 			return nil, err
 		}
+	}
+	if err := os.RemoveAll(workerBaseDir); err != nil {
+		s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("清理 Pansharpen workers 根目录失败: %v", err))
 	}
 	details := map[string]interface{}{
 		"completed":   3,

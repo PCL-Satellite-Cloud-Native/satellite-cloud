@@ -115,11 +115,11 @@ spec:
             requests:
               memory: "1Gi"
               cpu: "300m"
-              ephemeral-storage: "8Gi"
+              ephemeral-storage: "10Gi"
             limits:
               memory: "4Gi"
               cpu: "2000m"
-              ephemeral-storage: "24Gi"
+              ephemeral-storage: "48Gi"
           volumeMounts:
             - name: remote-sensing-data
               mountPath: /opt/remote-sensing/input
@@ -154,7 +154,7 @@ spec:
             claimName: remote-sensing-data
         - name: remote-sensing-scratch-output
           emptyDir:
-            sizeLimit: "20Gi"
+            sizeLimit: "40Gi"
 
 ---
 apiVersion: v1

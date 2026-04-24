@@ -44,6 +44,8 @@ func main() {
 		zap.String("persist_output_dir", cfg.RemoteSensing.PersistOutputDir),
 		zap.Int("stage_timeout_seconds", cfg.RemoteSensing.StageTimeoutSec),
 		zap.Int("fusion_stage_timeout_seconds", cfg.RemoteSensing.FusionStageTimeoutSec),
+		zap.Int("fusion_block_size", cfg.RemoteSensing.FusionBlockSize),
+		zap.String("fusion_gdal_threads", cfg.RemoteSensing.FusionGDALThreads),
 		zap.Int("stage_max_retries", cfg.RemoteSensing.StageMaxRetries),
 		zap.Int("command_heartbeat_seconds", cfg.RemoteSensing.CommandHeartbeatSec),
 		zap.Int("pan_rpc_parallelism", cfg.RemoteSensing.PanRPCParallel),

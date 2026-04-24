@@ -888,12 +888,22 @@ func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID ui
 	inputDir := filepath.Join("output_preprocessing", "pansharpen")
 	outputDir := filepath.Join("output_preprocessing", "fusion_envi")
 	s.log(taskID, StageFusionStack, "info", "开始执行 fusion_stack_envi")
+	fusionBlockSize := s.cfg.FusionBlockSize
+	if fusionBlockSize <= 0 {
+		fusionBlockSize = 2048
+	}
+	fusionGDALThreads := strings.TrimSpace(s.cfg.FusionGDALThreads)
+	if fusionGDALThreads == "" {
+		fusionGDALThreads = "2"
+	}
 	args := []string{
 		"--file_prefix", req.FilePrefix,
 		"--input_dir", inputDir,
 		"--output_dir", outputDir,
+		"--block_size", strconv.Itoa(fusionBlockSize),
+		"--gdal_num_threads", fusionGDALThreads,
 	}
-	fusionCtx, cancelFusion := context.WithTimeout(ctx, 20*time.Minute)
+	fusionCtx, cancelFusion := context.WithTimeout(ctx, s.stageTimeoutFor(StageFusionStack))
 	defer cancelFusion()
 	if _, err := s.runPython(fusionCtx, taskID, StageFusionStack, "fusion_stack_envi.py", args); err != nil {
 		return nil, err

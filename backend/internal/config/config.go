@@ -46,6 +46,8 @@ type RemoteSensingConfig struct {
 	PersistOutputDir      string
 	StageTimeoutSec       int
 	FusionStageTimeoutSec int
+	FusionBlockSize       int
+	FusionGDALThreads     string
 	StageMaxRetries       int
 	CommandHeartbeatSec   int
 	PanRPCParallel        int
@@ -154,6 +156,8 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.persist_output_dir", "persist_output_preprocessing")
 	viper.SetDefault("remote_sensing.stage_timeout_seconds", 1800)
 	viper.SetDefault("remote_sensing.fusion_stage_timeout_seconds", 1500)
+	viper.SetDefault("remote_sensing.fusion_block_size", 2048)
+	viper.SetDefault("remote_sensing.fusion_gdal_threads", "2")
 	viper.SetDefault("remote_sensing.stage_max_retries", 1)
 	viper.SetDefault("remote_sensing.command_heartbeat_seconds", 60)
 	viper.SetDefault("remote_sensing.pan_rpc_parallelism", 2)
@@ -183,6 +187,8 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	persistOutputDir := filepath.Clean(get("SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR", "remote_sensing.persist_output_dir", "persist_output_preprocessing"))
 	stageTimeoutSec := getInt("SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS", "remote_sensing.stage_timeout_seconds", 1800)
 	fusionStageTimeoutSec := getInt("SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS", "remote_sensing.fusion_stage_timeout_seconds", 1500)
+	fusionBlockSize := getInt("SATELLITE_REMOTE_SENSING_FUSION_BLOCK_SIZE", "remote_sensing.fusion_block_size", 2048)
+	fusionGDALThreads := get("SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS", "remote_sensing.fusion_gdal_threads", "2")
 	stageMaxRetries := getInt("SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES", "remote_sensing.stage_max_retries", 1)
 	commandHeartbeatSec := getInt("SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS", "remote_sensing.command_heartbeat_seconds", 60)
 	panRPCParallel := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM", "remote_sensing.pan_rpc_parallelism", 2)
@@ -217,6 +223,8 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		PersistOutputDir:      persistOutputDir,
 		StageTimeoutSec:       stageTimeoutSec,
 		FusionStageTimeoutSec: fusionStageTimeoutSec,
+		FusionBlockSize:       fusionBlockSize,
+		FusionGDALThreads:     fusionGDALThreads,
 		StageMaxRetries:       stageMaxRetries,
 		CommandHeartbeatSec:   commandHeartbeatSec,
 		PanRPCParallel:        panRPCParallel,

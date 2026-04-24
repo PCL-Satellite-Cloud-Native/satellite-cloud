@@ -141,6 +141,14 @@
 7. `pansharpen_fusion.py` 新增 `--band_indexes`，后端改为单次调用批量处理 1/2/3 波段，减少脚本启动与重复 I/O
 8. 新增 `SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE`（`parallel`/`batch`）用于可控 A/B，对应保留最优模式
 
+当前仓库已落地的阶段2-I实现（融合堆栈参数化）：
+
+1. `fusion_stack_envi.py` 新增 `--block_size`、`--gdal_num_threads` 参数
+2. 后端新增配置项：
+   - `SATELLITE_REMOTE_SENSING_FUSION_BLOCK_SIZE`（默认 `2048`）
+   - `SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS`（默认 `2`）
+3. 后端执行 `fusion_stack_envi.py` 时透传上述参数，便于在低资源节点做可控 A/B 调优
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑

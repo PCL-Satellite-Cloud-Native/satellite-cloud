@@ -4,11 +4,12 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 用法:
-  scripts/remote_sensing_stage1_benchmark.sh pre  --run-id <id> [--namespace gitlab-runner] [--selector app=satellite-backend]
+  scripts/remote_sensing_stage1_benchmark.sh pre  --run-id <id> [--namespace gitlab-runner] [--selector app=satellite-backend] [--clean-scratch]
   scripts/remote_sensing_stage1_benchmark.sh post --run-id <id> --task-id <id> [--namespace gitlab-runner] [--selector app=satellite-backend]
 
 说明:
   1) pre: 采集任务开始前快照（CPU cgroup + NFS mountstats bytes）
+          可选 --clean-scratch 会先清空 /opt/remote-sensing/output_preprocessing/*
   2) post: 采集任务结束后快照，并输出 delta 报告与阶段耗时汇总
 EOF
 }
@@ -25,6 +26,7 @@ SELECTOR="app=satellite-backend"
 RUN_ID=""
 TASK_ID=""
 BASE_DIR="artifacts/benchmarks"
+CLEAN_SCRATCH="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +38,8 @@ while [[ $# -gt 0 ]]; do
       RUN_ID="$2"; shift 2 ;;
     --task-id)
       TASK_ID="$2"; shift 2 ;;
+    --clean-scratch)
+      CLEAN_SCRATCH="true"; shift 1 ;;
     *)
       echo "未知参数: $1"
       usage
@@ -72,7 +76,13 @@ collect_nfs_bytes() {
 
 collect_runtime_config() {
   kubectl -n "${NAMESPACE}" exec "${POD}" -- sh -lc '
-    env | grep -E "^SATELLITE_REMOTE_SENSING_(PAN_RPC|PANSHARPEN|DEM_FILE|PERSIST_OUTPUT_DIR)" | sort
+    env | grep -E "^SATELLITE_REMOTE_SENSING_(PAN_RPC|PANSHARPEN|FUSION|DEM_FILE|PERSIST_OUTPUT_DIR|STAGE_TIMEOUT_SECONDS|FUSION_STAGE_TIMEOUT_SECONDS|STAGE_MAX_RETRIES|COMMAND_HEARTBEAT_SECONDS)" | sort
+  '
+}
+
+clean_scratch_dir() {
+  kubectl -n "${NAMESPACE}" exec "${POD}" -- sh -lc '
+    rm -rf /opt/remote-sensing/output_preprocessing/* /opt/remote-sensing/output_preprocessing/.[!.]* /opt/remote-sensing/output_preprocessing/..?* 2>/dev/null || true
   '
 }
 
@@ -85,6 +95,10 @@ write_snapshot() {
 }
 
 if [[ "${MODE}" == "pre" ]]; then
+  if [[ "${CLEAN_SCRATCH}" == "true" ]]; then
+    clean_scratch_dir
+    echo "已清理 scratch: /opt/remote-sensing/output_preprocessing/*"
+  fi
   write_snapshot "pre"
   echo "已写入 pre 快照: ${RUN_DIR}"
   exit 0

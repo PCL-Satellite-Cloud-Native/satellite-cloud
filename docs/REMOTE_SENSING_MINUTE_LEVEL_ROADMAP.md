@@ -236,7 +236,7 @@ grep -A120 -E "device 192.168.10.112:/export/remote-sensing-data/(input|output_p
 
 ```bash
 # 1) 任务开始前
-./scripts/remote_sensing_stage1_benchmark.sh pre --run-id stage1-run-001
+./scripts/remote_sensing_stage1_benchmark.sh pre --run-id stage1-run-001 --clean-scratch
 
 # 2) 在页面触发任务，记下 task_id（例如 11）
 
@@ -250,6 +250,7 @@ cat artifacts/benchmarks/stage1-run-001/report.txt
 报告包含：
 
 1. 运行参数快照（`runtime_config`，用于复现实验）
+   - 包含 `PAN_RPC`、`PANSHARPEN`、`FUSION` 相关参数
 2. 任务汇总（`task_summary`，含状态/起止时间/总耗时）
 3. CPU throttle 增量
 4. NFS bytes 增量（input/output_preprocessing）

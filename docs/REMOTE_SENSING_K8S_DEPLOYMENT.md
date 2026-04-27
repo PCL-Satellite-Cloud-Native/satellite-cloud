@@ -278,7 +278,7 @@ kubectl -n gitlab-runner exec "$POD" -- sh -lc 'mount | grep -E "/opt/remote-sen
 
 ```bash
 # 任务前
-./scripts/remote_sensing_stage1_benchmark.sh pre --run-id stage1-run-001
+./scripts/remote_sensing_stage1_benchmark.sh pre --run-id stage1-run-001 --clean-scratch
 
 # 任务后（task_id 按实际填写）
 ./scripts/remote_sensing_stage1_benchmark.sh post --run-id stage1-run-001 --task-id 11
@@ -286,6 +286,11 @@ kubectl -n gitlab-runner exec "$POD" -- sh -lc 'mount | grep -E "/opt/remote-sen
 # 查看报告
 cat artifacts/benchmarks/stage1-run-001/report.txt
 ```
+
+说明：
+
+1. `--clean-scratch` 会在 `pre` 阶段清空 `/opt/remote-sensing/output_preprocessing/*`，避免复用上次中间产物造成统计失真。
+2. `runtime_config` 会记录 `PAN_RPC` / `PANSHARPEN` / `FUSION` 参数，便于 A/B 可追溯。
 
 ### 5.6 并发度 A/B 测试（阶段2）
 

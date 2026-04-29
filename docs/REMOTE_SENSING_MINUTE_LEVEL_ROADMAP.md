@@ -149,6 +149,12 @@
    - `SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS`（默认 `2`）
 3. 后端执行 `fusion_stack_envi.py` 时透传上述参数，便于在低资源节点做可控 A/B 调优
 
+当前仓库已落地的阶段2-J实现（MSS 配准降重）：
+
+1. `mss_coregister_to_pan.py` 新增 `--band_indexes`，支持一次处理多个波段
+2. 后端 `executeMssCoregister` 从 4 次单波段调用改为 1 次多波段调用（`1,2,3,4`）
+3. 减少脚本启动与参考影像重复初始化开销，便于压缩 `mss_coregister_to_pan` 阶段耗时
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑

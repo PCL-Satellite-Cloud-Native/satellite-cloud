@@ -56,6 +56,7 @@ func main() {
 		zap.Int("pansharpen_parallelism", cfg.RemoteSensing.PansharpenPar),
 		zap.String("pansharpen_mode", cfg.RemoteSensing.PansharpenMode),
 		zap.String("pansharpen_gdal_threads", cfg.RemoteSensing.PansharpenGDALThread),
+		zap.String("coregister_mode", cfg.RemoteSensing.CoregisterMode),
 	)
 
 	// 启动时自动执行未应用的迁移（与 K8s/本地环境保持一致）

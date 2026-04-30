@@ -717,17 +717,40 @@ func (s *RemoteSensingService) executeMssRadQuac(ctx context.Context, taskID uin
 
 func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	outputDir := filepath.Join("output_preprocessing", "mss_coregister_pan")
-	details := map[string]interface{}{"completed": 4, "total": 4}
-	args := []string{
-		"--file_prefix", req.FilePrefix,
-		"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
-		"--input_dir_mss", filepath.Join("output_preprocessing", "mss_rad_quac_rpc"),
-		"--output_dir", outputDir,
-		"--band_indexes", "1,2,3,4",
-		"--gdal_num_threads", s.cfg.PansharpenGDALThread,
+	mode := strings.ToLower(strings.TrimSpace(s.cfg.CoregisterMode))
+	if mode == "" {
+		mode = "serial4"
 	}
-	if _, err := s.runPython(ctx, taskID, StageCoregister, "mss_coregister_to_pan.py", args); err != nil {
-		return nil, err
+	details := map[string]interface{}{"completed": 4, "total": 4, "mode": mode}
+	switch mode {
+	case "batch1":
+		args := []string{
+			"--file_prefix", req.FilePrefix,
+			"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
+			"--input_dir_mss", filepath.Join("output_preprocessing", "mss_rad_quac_rpc"),
+			"--output_dir", outputDir,
+			"--band_indexes", "1,2,3,4",
+			"--gdal_num_threads", s.cfg.PansharpenGDALThread,
+		}
+		if _, err := s.runPython(ctx, taskID, StageCoregister, "mss_coregister_to_pan.py", args); err != nil {
+			return nil, err
+		}
+	case "serial4":
+		for i := 1; i <= 4; i++ {
+			args := []string{
+				"--file_prefix", req.FilePrefix,
+				"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
+				"--input_dir_mss", filepath.Join("output_preprocessing", "mss_rad_quac_rpc"),
+				"--output_dir", outputDir,
+				"--bandidx", strconv.Itoa(i),
+				"--gdal_num_threads", s.cfg.PansharpenGDALThread,
+			}
+			if _, err := s.runPython(ctx, taskID, StageCoregister, "mss_coregister_to_pan.py", args); err != nil {
+				return nil, err
+			}
+		}
+	default:
+		return nil, fmt.Errorf("未知 coregister 模式: %s", mode)
 	}
 	details["message"] = "四个波段注册完成"
 	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: "多光谱配准完成"}, nil

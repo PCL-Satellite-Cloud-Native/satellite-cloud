@@ -145,8 +145,8 @@
 
 1. `fusion_stack_envi.py` 新增 `--block_size`、`--gdal_num_threads` 参数
 2. 后端新增配置项：
-   - `SATELLITE_REMOTE_SENSING_FUSION_BLOCK_SIZE`（默认 `2048`）
-   - `SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS`（默认 `2`）
+   - `SATELLITE_REMOTE_SENSING_FUSION_BLOCK_SIZE`（默认 `1024`）
+   - `SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS`（默认 `1`）
 3. 后端执行 `fusion_stack_envi.py` 时透传上述参数，便于在低资源节点做可控 A/B 调优
 
 当前仓库已落地的阶段2-J实现（MSS 配准降重）：
@@ -154,6 +154,11 @@
 1. `mss_coregister_to_pan.py` 新增 `--band_indexes`，支持一次处理多个波段
 2. 后端 `executeMssCoregister` 从 4 次单波段调用改为 1 次多波段调用（`1,2,3,4`）
 3. 减少脚本启动与参考影像重复初始化开销，便于压缩 `mss_coregister_to_pan` 阶段耗时
+
+当前仓库已落地的阶段2-K实现（MSS 配准模式开关）：
+
+1. 新增 `SATELLITE_REMOTE_SENSING_COREGISTER_MODE`（`serial4`/`batch1`）
+2. 默认回退 `serial4` 作为稳定基线；`batch1` 仅用于可控 A/B 试验
 
 回滚：
 

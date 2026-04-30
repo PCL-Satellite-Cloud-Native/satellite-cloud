@@ -58,6 +58,7 @@ type RemoteSensingConfig struct {
 	PanRPCResampleAlg     string
 	PansharpenMode        string
 	PansharpenGDALThread  string
+	CoregisterMode        string
 }
 
 func Load() *Config {
@@ -168,6 +169,7 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.pan_rpc_resample_alg", "near")
 	viper.SetDefault("remote_sensing.pansharpen_mode", "parallel")
 	viper.SetDefault("remote_sensing.pansharpen_gdal_threads", "1")
+	viper.SetDefault("remote_sensing.coregister_mode", "serial4")
 }
 
 func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
@@ -202,6 +204,10 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		pansharpenMode = "parallel"
 	}
 	pansharpenGDALThreads := get("SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS", "remote_sensing.pansharpen_gdal_threads", "1")
+	coregisterMode := strings.ToLower(strings.TrimSpace(get("SATELLITE_REMOTE_SENSING_COREGISTER_MODE", "remote_sensing.coregister_mode", "serial4")))
+	if coregisterMode != "serial4" && coregisterMode != "batch1" {
+		coregisterMode = "serial4"
+	}
 	if pythonBin == "" {
 		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
 		venvPython := filepath.Join(rootPath, ".venv", "bin", "python")
@@ -235,6 +241,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		PanRPCResampleAlg:     panRPCResampleAlg,
 		PansharpenMode:        pansharpenMode,
 		PansharpenGDALThread:  pansharpenGDALThreads,
+		CoregisterMode:        coregisterMode,
 	}
 }
 

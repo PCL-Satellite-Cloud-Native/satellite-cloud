@@ -730,7 +730,7 @@ func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID 
 			"--input_dir_mss", filepath.Join("output_preprocessing", "mss_rad_quac_rpc"),
 			"--output_dir", outputDir,
 			"--band_indexes", "1,2,3,4",
-			"--gdal_num_threads", s.cfg.PansharpenGDALThread,
+			"--gdal_num_threads", s.cfg.CoregisterGDALThreads,
 		}
 		if _, err := s.runPython(ctx, taskID, StageCoregister, "mss_coregister_to_pan.py", args); err != nil {
 			return nil, err
@@ -743,7 +743,7 @@ func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID 
 				"--input_dir_mss", filepath.Join("output_preprocessing", "mss_rad_quac_rpc"),
 				"--output_dir", outputDir,
 				"--bandidx", strconv.Itoa(i),
-				"--gdal_num_threads", s.cfg.PansharpenGDALThread,
+				"--gdal_num_threads", s.cfg.CoregisterGDALThreads,
 			}
 			if _, err := s.runPython(ctx, taskID, StageCoregister, "mss_coregister_to_pan.py", args); err != nil {
 				return nil, err

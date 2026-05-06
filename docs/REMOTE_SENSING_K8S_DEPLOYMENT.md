@@ -64,6 +64,7 @@
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE=parallel`
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS=1`
   - `SATELLITE_REMOTE_SENSING_COREGISTER_MODE=serial4`
+  - `SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS=2`
 - 说明：
   - `SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS` 为通用阶段超时秒数
   - `SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS` 为融合阶段专用超时秒数
@@ -79,6 +80,7 @@
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE` 支持 `parallel`（多进程分波段）/`batch`（单进程批处理），默认推荐 `parallel`
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM` 在 `parallel` 模式下生效，`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS` 两种模式都生效
   - `SATELLITE_REMOTE_SENSING_COREGISTER_MODE` 支持 `serial4`（稳定基线）/`batch1`（单次多波段试验），默认 `serial4`
+  - `SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS` 为 `mss_coregister_to_pan.py` 独立线程参数（推荐 `2`）
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
   - `/opt/remote-sensing/output_preprocessing`（`emptyDir` 本地 scratch，中间产物）
@@ -320,7 +322,8 @@ kubectl -n gitlab-runner set env deploy/satellite-backend \
   SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM=3 \
   SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE=parallel \
   SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS=1 \
-  SATELLITE_REMOTE_SENSING_COREGISTER_MODE=serial4
+  SATELLITE_REMOTE_SENSING_COREGISTER_MODE=serial4 \
+  SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS=2
 kubectl -n gitlab-runner rollout restart deploy/satellite-backend
 kubectl -n gitlab-runner rollout status deploy/satellite-backend
 ```

@@ -119,6 +119,8 @@ spec:
               value: "1"
             - name: SATELLITE_REMOTE_SENSING_COREGISTER_MODE
               value: "serial4"
+            - name: SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS
+              value: "2"
           resources:
             requests:
               memory: "1Gi"

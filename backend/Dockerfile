@@ -42,7 +42,8 @@ COPY remote-sensing-src /opt/remote-sensing
 RUN python3 -m venv /opt/remote-sensing/.venv && \
     /opt/remote-sensing/.venv/bin/pip install --no-cache-dir --upgrade pip && \
     /opt/remote-sensing/.venv/bin/pip install --no-cache-dir "numpy<2" && \
-    /opt/remote-sensing/.venv/bin/pip install --no-cache-dir -r /opt/remote-sensing/requirements.txt && \
+    grep -viE '^[[:space:]]*gdal([[:space:]]*[<>=!~].*)?[[:space:]]*$' /opt/remote-sensing/requirements.txt > /tmp/remote-sensing-requirements.no-gdal.txt && \
+    /opt/remote-sensing/.venv/bin/pip install --no-cache-dir -r /tmp/remote-sensing-requirements.no-gdal.txt && \
     CPLUS_INCLUDE_PATH=/usr/include/gdal C_INCLUDE_PATH=/usr/include/gdal \
     /opt/remote-sensing/.venv/bin/pip install --no-cache-dir --no-build-isolation --no-binary=GDAL "GDAL==$(gdal-config --version)" && \
     /opt/remote-sensing/.venv/bin/python -c "from osgeo import gdal, gdal_array; import numpy as np; print(gdal.__version__)"

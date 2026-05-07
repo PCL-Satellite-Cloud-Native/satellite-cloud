@@ -48,6 +48,7 @@
   - `SATELLITE_REMOTE_SENSING_ROOT=/opt/remote-sensing`
   - `SATELLITE_REMOTE_SENSING_PYTHON=/opt/remote-sensing/.venv/bin/python`
   - `SATELLITE_REMOTE_SENSING_DEM_FILE=/opt/remote-sensing-data/dem/GMTED2010.jp2`
+  - `SATELLITE_REMOTE_SENSING_DEVICE=cpu`
   - `SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR=persist_output_preprocessing`
   - `SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS=1800`
   - `SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS=1500`
@@ -72,6 +73,7 @@
   - `SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS` 为融合阶段专用超时秒数
   - `SATELLITE_REMOTE_SENSING_FUSION_BLOCK_SIZE` 为融合堆栈分块大小（像素，推荐 `1024`）
   - `SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS` 为融合堆栈 GDAL 线程数（推荐 `1`）
+  - `SATELLITE_REMOTE_SENSING_DEVICE` 为数组计算后端（`cpu`/`gpu`/`auto`），内网无 GPU 场景建议固定 `cpu`
   - `SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES` 为阶段失败后的重试次数（仅重试当前阶段）
   - `SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS` 为子进程执行心跳日志间隔（秒）
   - `SATELLITE_REMOTE_SENSING_WORKER_CONCURRENCY` 为后台任务 worker 数量（推荐 `1` 起步）
@@ -84,7 +86,7 @@
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE` 支持 `parallel`（多进程分波段）/`batch`（单进程批处理），默认推荐 `parallel`
   - `SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM` 在 `parallel` 模式下生效，`SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS` 两种模式都生效
   - `SATELLITE_REMOTE_SENSING_COREGISTER_MODE` 支持 `serial4`（稳定基线）/`batch1`（单次多波段试验），默认 `serial4`
-  - `SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS` 为 `mss_coregister_to_pan.py` 独立线程参数（推荐 `2`）
+  - `SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS` 为历史兼容参数；若使用最新 `Satellite-Remote-Sensing` 脚本版本，该参数不再通过 CLI 透传
 - 新增 volumeMount：
   - `/opt/remote-sensing/input`（subPath=`input`）
   - `/opt/remote-sensing/output_preprocessing`（`emptyDir` 本地 scratch，中间产物）
@@ -314,6 +316,7 @@ cat artifacts/benchmarks/stage1-run-001/report.txt
 kubectl -n gitlab-runner set env deploy/satellite-backend \
   SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS=1800 \
   SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS=1500 \
+  SATELLITE_REMOTE_SENSING_DEVICE=cpu \
   SATELLITE_REMOTE_SENSING_FUSION_BLOCK_SIZE=1024 \
   SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS=1 \
   SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES=1 \
@@ -346,6 +349,7 @@ kubectl -n gitlab-runner rollout status deploy/satellite-backend
 kubectl -n gitlab-runner set env deploy/satellite-backend \
   SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS=1800 \
   SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS=1500 \
+  SATELLITE_REMOTE_SENSING_DEVICE=cpu \
   SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES=1 \
   SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS=60 \
   SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM=2 \

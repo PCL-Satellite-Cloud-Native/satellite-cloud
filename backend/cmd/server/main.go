@@ -48,6 +48,8 @@ func main() {
 		zap.String("fusion_gdal_threads", cfg.RemoteSensing.FusionGDALThreads),
 		zap.Int("stage_max_retries", cfg.RemoteSensing.StageMaxRetries),
 		zap.Int("command_heartbeat_seconds", cfg.RemoteSensing.CommandHeartbeatSec),
+		zap.Int("worker_concurrency", cfg.RemoteSensing.WorkerConcurrency),
+		zap.Int("worker_queue_size", cfg.RemoteSensing.WorkerQueueSize),
 		zap.Int("pan_rpc_parallelism", cfg.RemoteSensing.PanRPCParallel),
 		zap.Int("pan_rpc_cpu_threads", cfg.RemoteSensing.PanRPCCPUThreads),
 		zap.Int("pan_rpc_warp_mem_mb", cfg.RemoteSensing.PanRPCWarpMemMB),

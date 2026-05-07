@@ -50,6 +50,8 @@ type RemoteSensingConfig struct {
 	FusionGDALThreads     string
 	StageMaxRetries       int
 	CommandHeartbeatSec   int
+	WorkerConcurrency     int
+	WorkerQueueSize       int
 	PanRPCParallel        int
 	PansharpenPar         int
 	PanRPCCPUThreads      int
@@ -162,6 +164,8 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.fusion_gdal_threads", "2")
 	viper.SetDefault("remote_sensing.stage_max_retries", 1)
 	viper.SetDefault("remote_sensing.command_heartbeat_seconds", 60)
+	viper.SetDefault("remote_sensing.worker_concurrency", 1)
+	viper.SetDefault("remote_sensing.worker_queue_size", 64)
 	viper.SetDefault("remote_sensing.pan_rpc_parallelism", 2)
 	viper.SetDefault("remote_sensing.pansharpen_parallelism", 3)
 	viper.SetDefault("remote_sensing.pan_rpc_cpu_threads", 1)
@@ -195,6 +199,8 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	fusionGDALThreads := get("SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS", "remote_sensing.fusion_gdal_threads", "2")
 	stageMaxRetries := getInt("SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES", "remote_sensing.stage_max_retries", 1)
 	commandHeartbeatSec := getInt("SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS", "remote_sensing.command_heartbeat_seconds", 60)
+	workerConcurrency := getInt("SATELLITE_REMOTE_SENSING_WORKER_CONCURRENCY", "remote_sensing.worker_concurrency", 1)
+	workerQueueSize := getInt("SATELLITE_REMOTE_SENSING_WORKER_QUEUE_SIZE", "remote_sensing.worker_queue_size", 64)
 	panRPCParallel := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM", "remote_sensing.pan_rpc_parallelism", 2)
 	pansharpenParallel := getInt("SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM", "remote_sensing.pansharpen_parallelism", 3)
 	panRPCCPUThreads := getInt("SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS", "remote_sensing.pan_rpc_cpu_threads", 1)
@@ -236,6 +242,8 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		FusionGDALThreads:     fusionGDALThreads,
 		StageMaxRetries:       stageMaxRetries,
 		CommandHeartbeatSec:   commandHeartbeatSec,
+		WorkerConcurrency:     workerConcurrency,
+		WorkerQueueSize:       workerQueueSize,
 		PanRPCParallel:        panRPCParallel,
 		PansharpenPar:         pansharpenParallel,
 		PanRPCCPUThreads:      panRPCCPUThreads,

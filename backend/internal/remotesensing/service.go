@@ -124,15 +124,35 @@ type RemoteSensingService struct {
 	cfg         config.RemoteSensingConfig
 	subsMu      sync.Mutex
 	subscribers map[uint][]chan RemoteSensingStageEvent
+	queue       chan pipelineJob
+}
+
+type pipelineJob struct {
+	TaskID uint
+	Req    CreateTaskRequest
 }
 
 func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig) *RemoteSensingService {
-	return &RemoteSensingService{
+	queueSize := cfg.WorkerQueueSize
+	if queueSize <= 0 {
+		queueSize = 64
+	}
+	workerN := cfg.WorkerConcurrency
+	if workerN <= 0 {
+		workerN = 1
+	}
+	s := &RemoteSensingService{
 		db:          db,
 		logger:      logger,
 		cfg:         cfg,
 		subscribers: make(map[uint][]chan RemoteSensingStageEvent),
+		queue:       make(chan pipelineJob, queueSize),
 	}
+	for i := 0; i < workerN; i++ {
+		go s.workerLoop(i + 1)
+	}
+	s.bootstrapPendingTasks()
+	return s
 }
 
 func (s *RemoteSensingService) CreateTask(ctx context.Context, req CreateTaskRequest) (*model.RemoteSensingTask, error) {
@@ -158,8 +178,48 @@ func (s *RemoteSensingService) CreateTask(ctx context.Context, req CreateTaskReq
 		s.db.Delete(task)
 		return nil, err
 	}
-	go s.runPipeline(context.Background(), task.ID, req)
+	s.enqueueTask(task.ID, req)
 	return task, nil
+}
+
+func (s *RemoteSensingService) enqueueTask(taskID uint, req CreateTaskRequest) {
+	job := pipelineJob{TaskID: taskID, Req: req}
+	select {
+	case s.queue <- job:
+	default:
+		s.logger.Warn("任务队列已满，阻塞等待入队",
+			zap.Uint("task_id", taskID),
+			zap.Int("queue_size", cap(s.queue)),
+		)
+		s.queue <- job
+	}
+}
+
+func (s *RemoteSensingService) workerLoop(workerID int) {
+	for job := range s.queue {
+		s.logger.Info("worker 开始处理任务", zap.Int("worker_id", workerID), zap.Uint("task_id", job.TaskID))
+		s.runPipeline(context.Background(), job.TaskID, job.Req)
+	}
+}
+
+func (s *RemoteSensingService) bootstrapPendingTasks() {
+	var tasks []model.RemoteSensingTask
+	if err := s.db.Where("status = ?", TaskStatusPending).Order("created_at ASC").Find(&tasks).Error; err != nil {
+		s.logger.Error("加载 pending 任务失败", zap.Error(err))
+		return
+	}
+	for _, t := range tasks {
+		req := CreateTaskRequest{
+			Name:           t.Name,
+			FilePrefix:     t.FilePrefix,
+			InputDirectory: t.InputDirectory,
+			Sensor:         t.Sensor,
+		}
+		s.enqueueTask(t.ID, req)
+	}
+	if len(tasks) > 0 {
+		s.logger.Info("已恢复 pending 任务入队", zap.Int("count", len(tasks)))
+	}
 }
 
 func (s *RemoteSensingService) ListTasks(ctx context.Context) ([]model.RemoteSensingTask, error) {
@@ -271,15 +331,21 @@ func (s *RemoteSensingService) createStagesForTask(ctx context.Context, taskID u
 
 func (s *RemoteSensingService) runPipeline(ctx context.Context, taskID uint, req CreateTaskRequest) {
 	start := time.Now().UTC()
-	if err := s.db.Model(&model.RemoteSensingTask{}).
-		Where("id = ?", taskID).
+	tx := s.db.Model(&model.RemoteSensingTask{}).
+		Where("id = ? AND status = ?", taskID, TaskStatusPending).
 		Updates(map[string]interface{}{
 			"status":        TaskStatusRunning,
 			"current_stage": "",
 			"started_at":    start,
 			"updated_at":    start,
-		}).Error; err != nil {
-		s.logger.Error("更新任务状态失败", zap.Error(err))
+		})
+	if tx.Error != nil {
+		s.logger.Error("更新任务状态失败", zap.Error(tx.Error), zap.Uint("task_id", taskID))
+		return
+	}
+	if tx.RowsAffected == 0 {
+		s.logger.Warn("任务未处于 pending，跳过执行", zap.Uint("task_id", taskID))
+		return
 	}
 	s.publishStageEvent(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusRunning, UpdatedAt: time.Now().UTC()})
 

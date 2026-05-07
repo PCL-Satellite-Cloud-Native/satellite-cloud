@@ -160,6 +160,12 @@
 1. 新增 `SATELLITE_REMOTE_SENSING_COREGISTER_MODE`（`serial4`/`batch1`）
 2. 默认回退 `serial4` 作为稳定基线；`batch1` 仅用于可控 A/B 试验
 
+当前仓库已落地的阶段2-L实现（MSS 配准线程解耦）：
+
+1. 新增 `SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS`，与 `PANSHARPEN_GDAL_THREADS` 解耦
+2. 实测结论：`COREGISTER_GDAL_THREADS=2` 优于 `ALL_CPUS`
+3. 推荐固化：`COREGISTER_MODE=serial4` + `COREGISTER_GDAL_THREADS=2`
+
 回滚：
 
 - 将分块执行恢复为当前串行逻辑
@@ -186,6 +192,13 @@
 回滚：
 
 - 切回“本进程执行”模式（保留 feature flag）
+
+当前仓库已落地的阶段3-A实现（最小队列化）：
+
+1. 创建任务后由内存队列入队，不再直接 `go runPipeline(...)`
+2. 新增 worker 消费模型（默认 `WORKER_CONCURRENCY=1`）
+3. 服务启动时会恢复 DB 中 `pending` 任务入队
+4. worker 执行前原子领取 `pending -> running`，避免重复执行
 
 ---
 

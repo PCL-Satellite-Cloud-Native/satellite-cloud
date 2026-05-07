@@ -43,6 +43,7 @@ type RemoteSensingConfig struct {
 	RootPath              string
 	PythonBin             string
 	DemFile               string
+	Device                string
 	PersistOutputDir      string
 	StageTimeoutSec       int
 	FusionStageTimeoutSec int
@@ -157,6 +158,7 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.root", "../Satellite-Remote-Sensing")
 	viper.SetDefault("remote_sensing.python", "python3")
 	viper.SetDefault("remote_sensing.dem_file", "")
+	viper.SetDefault("remote_sensing.device", "cpu")
 	viper.SetDefault("remote_sensing.persist_output_dir", "persist_output_preprocessing")
 	viper.SetDefault("remote_sensing.stage_timeout_seconds", 1800)
 	viper.SetDefault("remote_sensing.fusion_stage_timeout_seconds", 1500)
@@ -192,6 +194,10 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	rootPath := normalizePath(get("SATELLITE_REMOTE_SENSING_ROOT", "remote_sensing.root", "../Satellite-Remote-Sensing"))
 	pythonBin := get("SATELLITE_REMOTE_SENSING_PYTHON", "remote_sensing.python", "")
 	demFile := normalizePath(get("SATELLITE_REMOTE_SENSING_DEM_FILE", "remote_sensing.dem_file", ""))
+	device := strings.ToLower(strings.TrimSpace(get("SATELLITE_REMOTE_SENSING_DEVICE", "remote_sensing.device", "cpu")))
+	if device != "cpu" && device != "gpu" && device != "auto" {
+		device = "cpu"
+	}
 	persistOutputDir := filepath.Clean(get("SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR", "remote_sensing.persist_output_dir", "persist_output_preprocessing"))
 	stageTimeoutSec := getInt("SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS", "remote_sensing.stage_timeout_seconds", 1800)
 	fusionStageTimeoutSec := getInt("SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS", "remote_sensing.fusion_stage_timeout_seconds", 1500)
@@ -235,6 +241,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		RootPath:              rootPath,
 		PythonBin:             pythonBin,
 		DemFile:               demFile,
+		Device:                device,
 		PersistOutputDir:      persistOutputDir,
 		StageTimeoutSec:       stageTimeoutSec,
 		FusionStageTimeoutSec: fusionStageTimeoutSec,

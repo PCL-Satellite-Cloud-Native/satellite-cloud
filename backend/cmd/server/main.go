@@ -41,6 +41,7 @@ func main() {
 		zap.String("root_path", cfg.RemoteSensing.RootPath),
 		zap.String("python_bin", cfg.RemoteSensing.PythonBin),
 		zap.String("dem_file", cfg.RemoteSensing.DemFile),
+		zap.String("device", cfg.RemoteSensing.Device),
 		zap.String("persist_output_dir", cfg.RemoteSensing.PersistOutputDir),
 		zap.Int("stage_timeout_seconds", cfg.RemoteSensing.StageTimeoutSec),
 		zap.Int("fusion_stage_timeout_seconds", cfg.RemoteSensing.FusionStageTimeoutSec),

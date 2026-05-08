@@ -108,11 +108,11 @@ spec:
             - name: SATELLITE_REMOTE_SENSING_WORKER_QUEUE_SIZE
               value: "64"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM
-              value: "2"
+              value: "4"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS
               value: "1"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB
-              value: "1024"
+              value: "512"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB
               value: "2048"
             - name: SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG

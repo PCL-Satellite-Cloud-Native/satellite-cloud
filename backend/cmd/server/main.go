@@ -62,6 +62,13 @@ func main() {
 		zap.String("coregister_mode", cfg.RemoteSensing.CoregisterMode),
 		zap.String("coregister_gdal_threads", cfg.RemoteSensing.CoregisterGDALThreads),
 	)
+	if cfg.RemoteSensing.Device != "cpu" {
+		zapLogger.Warn(
+			"Remote sensing device is not cpu; current production workflow is validated on cpu path. "+
+				"Use gpu/auto only when GPU branch is fully validated with matching stage orchestration.",
+			zap.String("device", cfg.RemoteSensing.Device),
+		)
+	}
 
 	// 启动时自动执行未应用的迁移（与 K8s/本地环境保持一致）
 	sourceDriver, err := iofs.New(migrations.FS, ".")

@@ -74,6 +74,7 @@
   - `SATELLITE_REMOTE_SENSING_FUSION_BLOCK_SIZE` 为融合堆栈分块大小（像素，推荐 `1024`）
   - `SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS` 为融合堆栈 GDAL 线程数（推荐 `1`）
   - `SATELLITE_REMOTE_SENSING_DEVICE` 为数组计算后端（`cpu`/`gpu`/`auto`），内网无 GPU 场景建议固定 `cpu`
+  - 生产建议：默认 `cpu`。`auto/gpu` 仅在 GPU 分支脚本与后端阶段编排整体联调验证通过后启用
   - `SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES` 为阶段失败后的重试次数（仅重试当前阶段）
   - `SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS` 为子进程执行心跳日志间隔（秒）
   - `SATELLITE_REMOTE_SENSING_WORKER_CONCURRENCY` 为后台任务 worker 数量（推荐 `1` 起步）

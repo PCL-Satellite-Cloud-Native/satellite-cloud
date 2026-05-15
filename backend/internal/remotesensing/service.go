@@ -845,6 +845,13 @@ func (s *RemoteSensingService) executePansharpenDirect(ctx context.Context, task
 	if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, outputDir), 0o755); err != nil {
 		return nil, fmt.Errorf("创建融合输出目录失败: %w", err)
 	}
+	blockLines := s.cfg.FusionBlockSize
+	if blockLines <= 0 {
+		blockLines = 1024
+	}
+	if blockLines > 1024 {
+		blockLines = 1024
+	}
 	args := []string{
 		"--file_prefix", req.FilePrefix,
 		"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
@@ -852,6 +859,7 @@ func (s *RemoteSensingService) executePansharpenDirect(ctx context.Context, task
 		"--output_dir", outputDir,
 		"--band_indexes", "1,2,3",
 		"--gdal_num_threads", s.cfg.PansharpenGDALThread,
+		"--block_lines", strconv.Itoa(blockLines),
 		"--device", s.cfg.Device,
 	}
 	if _, err := s.runPython(ctx, taskID, StagePansharpen, "pansharpen_fusion_direct.py", args); err != nil {

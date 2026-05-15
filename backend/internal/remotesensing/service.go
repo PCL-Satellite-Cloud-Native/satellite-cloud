@@ -822,6 +822,9 @@ func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID 
 }
 
 func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	if s.cfg.FusionDirectEnabled {
+		return s.executePansharpenDirect(ctx, taskID, req)
+	}
 	mode := strings.ToLower(strings.TrimSpace(s.cfg.PansharpenMode))
 	if mode == "" {
 		mode = "parallel"
@@ -835,6 +838,41 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 		s.log(taskID, StagePansharpen, "warn", fmt.Sprintf("未知 pansharpen 模式 %q，回退 parallel", mode))
 		return s.executePansharpenParallel(ctx, taskID, req)
 	}
+}
+
+func (s *RemoteSensingService) executePansharpenDirect(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	outputDir := filepath.Join("output_preprocessing", "fusion_envi")
+	if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, outputDir), 0o755); err != nil {
+		return nil, fmt.Errorf("创建融合输出目录失败: %w", err)
+	}
+	args := []string{
+		"--file_prefix", req.FilePrefix,
+		"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
+		"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
+		"--output_dir", outputDir,
+		"--band_indexes", "1,2,3",
+		"--gdal_num_threads", s.cfg.PansharpenGDALThread,
+		"--device", s.cfg.Device,
+	}
+	if _, err := s.runPython(ctx, taskID, StagePansharpen, "pansharpen_fusion_direct.py", args); err != nil {
+		return nil, err
+	}
+	finalDatName := fmt.Sprintf("%s-MSS1-fusion.dat", req.FilePrefix)
+	finalDat := filepath.Join(outputDir, finalDatName)
+	if _, err := os.Stat(filepath.Join(s.cfg.RootPath, finalDat)); err != nil {
+		return nil, fmt.Errorf("直出融合结果不存在: %s", finalDat)
+	}
+	details := map[string]interface{}{
+		"completed": 3,
+		"total":     3,
+		"mode":      "direct_fusion_envi",
+	}
+	details["message"] = "Pan-sharpen 直出融合结果完成"
+	return &stageExecutionResult{
+		Details:    details,
+		OutputPath: outputDir,
+		Message:    "Pan-sharpen 直出融合结果完成",
+	}, nil
 }
 
 func (s *RemoteSensingService) executePansharpenBatch(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
@@ -973,28 +1011,32 @@ func ensurePansharpenOutputs(rootPath, outputDir, filePrefix string) error {
 func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	inputDir := filepath.Join("output_preprocessing", "pansharpen")
 	outputDir := filepath.Join("output_preprocessing", "fusion_envi")
-	s.log(taskID, StageFusionStack, "info", "开始执行 fusion_stack_envi")
-	fusionBlockSize := s.cfg.FusionBlockSize
-	if fusionBlockSize <= 0 {
-		fusionBlockSize = 2048
+	if s.cfg.FusionDirectEnabled {
+		s.log(taskID, StageFusionStack, "info", "fusion_direct_enabled=true，跳过 fusion_stack_envi，复用阶段8直出结果")
+	} else {
+		s.log(taskID, StageFusionStack, "info", "开始执行 fusion_stack_envi")
+		fusionBlockSize := s.cfg.FusionBlockSize
+		if fusionBlockSize <= 0 {
+			fusionBlockSize = 2048
+		}
+		fusionGDALThreads := strings.TrimSpace(s.cfg.FusionGDALThreads)
+		if fusionGDALThreads == "" {
+			fusionGDALThreads = "2"
+		}
+		args := []string{
+			"--file_prefix", req.FilePrefix,
+			"--input_dir", inputDir,
+			"--output_dir", outputDir,
+			"--block_size", strconv.Itoa(fusionBlockSize),
+			"--gdal_num_threads", fusionGDALThreads,
+		}
+		fusionCtx, cancelFusion := context.WithTimeout(ctx, s.stageTimeoutFor(StageFusionStack))
+		defer cancelFusion()
+		if _, err := s.runPython(fusionCtx, taskID, StageFusionStack, "fusion_stack_envi.py", args); err != nil {
+			return nil, err
+		}
+		s.log(taskID, StageFusionStack, "info", "fusion_stack_envi 执行完成")
 	}
-	fusionGDALThreads := strings.TrimSpace(s.cfg.FusionGDALThreads)
-	if fusionGDALThreads == "" {
-		fusionGDALThreads = "2"
-	}
-	args := []string{
-		"--file_prefix", req.FilePrefix,
-		"--input_dir", inputDir,
-		"--output_dir", outputDir,
-		"--block_size", strconv.Itoa(fusionBlockSize),
-		"--gdal_num_threads", fusionGDALThreads,
-	}
-	fusionCtx, cancelFusion := context.WithTimeout(ctx, s.stageTimeoutFor(StageFusionStack))
-	defer cancelFusion()
-	if _, err := s.runPython(fusionCtx, taskID, StageFusionStack, "fusion_stack_envi.py", args); err != nil {
-		return nil, err
-	}
-	s.log(taskID, StageFusionStack, "info", "fusion_stack_envi 执行完成")
 	finalDatName := fmt.Sprintf("%s-MSS1-fusion.dat", req.FilePrefix)
 	finalDat := filepath.Join(outputDir, finalDatName)
 	if _, err := os.Stat(filepath.Join(s.cfg.RootPath, finalDat)); err != nil {

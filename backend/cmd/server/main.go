@@ -61,6 +61,7 @@ func main() {
 		zap.String("pansharpen_gdal_threads", cfg.RemoteSensing.PansharpenGDALThread),
 		zap.String("coregister_mode", cfg.RemoteSensing.CoregisterMode),
 		zap.String("coregister_gdal_threads", cfg.RemoteSensing.CoregisterGDALThreads),
+		zap.Bool("fusion_direct_enabled", cfg.RemoteSensing.FusionDirectEnabled),
 	)
 	if cfg.RemoteSensing.Device != "cpu" {
 		zapLogger.Warn(

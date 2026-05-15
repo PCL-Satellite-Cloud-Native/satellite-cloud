@@ -63,6 +63,7 @@ type RemoteSensingConfig struct {
 	PansharpenGDALThread  string
 	CoregisterMode        string
 	CoregisterGDALThreads string
+	FusionDirectEnabled   bool
 }
 
 func Load() *Config {
@@ -178,6 +179,7 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.pansharpen_gdal_threads", "1")
 	viper.SetDefault("remote_sensing.coregister_mode", "serial4")
 	viper.SetDefault("remote_sensing.coregister_gdal_threads", "2")
+	viper.SetDefault("remote_sensing.fusion_direct_enabled", false)
 }
 
 func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
@@ -223,6 +225,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		coregisterMode = "serial4"
 	}
 	coregisterGDALThreads := get("SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS", "remote_sensing.coregister_gdal_threads", "2")
+	fusionDirectEnabled := getBool("SATELLITE_REMOTE_SENSING_FUSION_DIRECT_ENABLED", "remote_sensing.fusion_direct_enabled", false)
 	if pythonBin == "" {
 		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
 		venvPython := filepath.Join(rootPath, ".venv", "bin", "python")
@@ -261,6 +264,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		PansharpenGDALThread:  pansharpenGDALThreads,
 		CoregisterMode:        coregisterMode,
 		CoregisterGDALThreads: coregisterGDALThreads,
+		FusionDirectEnabled:   fusionDirectEnabled,
 	}
 }
 
@@ -288,6 +292,21 @@ func normalizePath(pathStr string) string {
 		return pathStr
 	}
 	return abs
+}
+
+func getBool(envKey, viperKey string, defaultVal bool) bool {
+	if v := os.Getenv(envKey); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "y", "on":
+			return true
+		case "0", "false", "no", "n", "off":
+			return false
+		}
+	}
+	if viper.IsSet(viperKey) {
+		return viper.GetBool(viperKey)
+	}
+	return defaultVal
 }
 
 // DSN 返回 PostgreSQL 连接字符串（libpq 格式，供 GORM 等使用）

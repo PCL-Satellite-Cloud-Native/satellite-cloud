@@ -100,7 +100,7 @@ spec:
             - name: SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS
               value: "1"
             - name: SATELLITE_REMOTE_SENSING_FUSION_DIRECT_ENABLED
-              value: "false"
+              value: "true"
             - name: SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES
               value: "1"
             - name: SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS

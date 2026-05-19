@@ -179,7 +179,7 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.pansharpen_gdal_threads", "1")
 	viper.SetDefault("remote_sensing.coregister_mode", "serial4")
 	viper.SetDefault("remote_sensing.coregister_gdal_threads", "2")
-	viper.SetDefault("remote_sensing.fusion_direct_enabled", false)
+	viper.SetDefault("remote_sensing.fusion_direct_enabled", true)
 }
 
 func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
@@ -225,7 +225,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		coregisterMode = "serial4"
 	}
 	coregisterGDALThreads := get("SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS", "remote_sensing.coregister_gdal_threads", "2")
-	fusionDirectEnabled := getBool("SATELLITE_REMOTE_SENSING_FUSION_DIRECT_ENABLED", "remote_sensing.fusion_direct_enabled", false)
+	fusionDirectEnabled := getBool("SATELLITE_REMOTE_SENSING_FUSION_DIRECT_ENABLED", "remote_sensing.fusion_direct_enabled", true)
 	if pythonBin == "" {
 		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
 		venvPython := filepath.Join(rootPath, ".venv", "bin", "python")

@@ -18,6 +18,7 @@ import (
 
 	"satellite-cloud/backend/internal/api/handlers"
 	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/objectdetection"
 	"satellite-cloud/backend/internal/remotesensing"
 	"satellite-cloud/backend/internal/topology"
 	"satellite-cloud/backend/migrations"
@@ -63,6 +64,17 @@ func main() {
 		zap.String("coregister_gdal_threads", cfg.RemoteSensing.CoregisterGDALThreads),
 		zap.Bool("fusion_direct_enabled", cfg.RemoteSensing.FusionDirectEnabled),
 	)
+	zapLogger.Info("Object detection runtime configured",
+		zap.String("root_path", cfg.ObjectDetection.RootPath),
+		zap.String("runner", cfg.ObjectDetection.RunnerPath),
+		zap.String("device", cfg.ObjectDetection.Device),
+		zap.Bool("use_cpu", cfg.ObjectDetection.UseCPU()),
+		zap.String("output_subdir", cfg.ObjectDetection.OutputSubdir),
+		zap.Int("stage_timeout_seconds", cfg.ObjectDetection.StageTimeoutSec),
+	)
+
+	// 独立检测 API 保留供后续 K8s 微服务拆分；主流程已并入遥感串行流水线
+	objectDetectionService := objectdetection.NewObjectDetectionService(db, zapLogger, cfg.ObjectDetection)
 	if cfg.RemoteSensing.Device != "cpu" {
 		zapLogger.Warn(
 			"Remote sensing device is not cpu; current production workflow is validated on cpu path. "+
@@ -170,12 +182,12 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 
-	remoteSensingService := remotesensing.NewRemoteSensingService(db, zapLogger, cfg.RemoteSensing)
+	remoteSensingService := remotesensing.NewRemoteSensingService(db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection)
 
 	// API 路由
 	api := router.Group("/api")
 	{
-		handlers.RegisterRoutes(api, db, zapLogger, remoteSensingService)
+		handlers.RegisterRoutes(api, db, zapLogger, remoteSensingService, objectDetectionService)
 	}
 
 	// 创建 HTTP 服务器

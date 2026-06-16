@@ -20,6 +20,7 @@ import (
 
 	"satellite-cloud/backend/internal/config"
 	"satellite-cloud/backend/internal/model"
+	"satellite-cloud/backend/internal/objectdetection"
 )
 
 const (
@@ -41,7 +42,8 @@ const (
 	StageMssRadQuac    = "mss_rad_quac_rpc"
 	StageCoregister    = "mss_coregister_to_pan"
 	StagePansharpen    = "pansharpen_fusion"
-	StageFusionStack   = "fusion_stack_envi"
+	StageFusionStack       = "fusion_stack_envi"
+	StageObjectDetection   = "object_detection"
 )
 
 type stageDefinition struct {
@@ -60,6 +62,7 @@ var stageDefinitions = []stageDefinition{
 	{Name: StageCoregister, Title: "多光谱与全色配准", Order: 7},
 	{Name: StagePansharpen, Title: "Pan-sharpen 融合", Order: 8},
 	{Name: StageFusionStack, Title: "融合堆栈 ENVI", Order: 9},
+	{Name: StageObjectDetection, Title: "YOLOv8 目标识别", Order: 10},
 }
 
 type RemoteSensingStageEvent struct {
@@ -73,10 +76,13 @@ type RemoteSensingStageEvent struct {
 }
 
 type CreateTaskRequest struct {
-	Name           string `json:"name"`
-	FilePrefix     string `json:"filePrefix"`
-	InputDirectory string `json:"inputDirectory"`
-	Sensor         string `json:"sensor"`
+	Name                string `json:"name"`
+	FilePrefix          string `json:"filePrefix"`
+	InputDirectory      string `json:"inputDirectory"`
+	Sensor              string `json:"sensor"`
+	EnableDetection     bool   `json:"enableDetection"`
+	DetectionClasses    string `json:"detectionClasses"`
+	DetectionDrawLabels bool   `json:"detectionDrawLabels"`
 }
 
 type stageExecutionResult struct {
@@ -116,15 +122,20 @@ var stageExecutors = map[string]stageExecutor{
 	StageFusionStack: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 		return s.executeFusionStack(ctx, taskID, req)
 	},
+	StageObjectDetection: func(ctx context.Context, s *RemoteSensingService, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+		return s.executeObjectDetection(ctx, taskID, req)
+	},
 }
 
 type RemoteSensingService struct {
-	db          *gorm.DB
-	logger      *zap.Logger
-	cfg         config.RemoteSensingConfig
-	subsMu      sync.Mutex
-	subscribers map[uint][]chan RemoteSensingStageEvent
-	queue       chan pipelineJob
+	db              *gorm.DB
+	logger          *zap.Logger
+	cfg             config.RemoteSensingConfig
+	detectionCfg    config.ObjectDetectionConfig
+	detectionRunner *objectdetection.Runner
+	subsMu          sync.Mutex
+	subscribers     map[uint][]chan RemoteSensingStageEvent
+	queue           chan pipelineJob
 }
 
 type pipelineJob struct {
@@ -132,7 +143,7 @@ type pipelineJob struct {
 	Req    CreateTaskRequest
 }
 
-func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig) *RemoteSensingService {
+func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig, detectionCfg config.ObjectDetectionConfig) *RemoteSensingService {
 	queueSize := cfg.WorkerQueueSize
 	if queueSize <= 0 {
 		queueSize = 64
@@ -145,9 +156,11 @@ func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteS
 		db:          db,
 		logger:      logger,
 		cfg:         cfg,
+		detectionCfg: detectionCfg,
 		subscribers: make(map[uint][]chan RemoteSensingStageEvent),
 		queue:       make(chan pipelineJob, queueSize),
 	}
+	s.initDetectionRunner()
 	for i := 0; i < workerN; i++ {
 		go s.workerLoop(i + 1)
 	}
@@ -164,11 +177,14 @@ func (s *RemoteSensingService) CreateTask(ctx context.Context, req CreateTaskReq
 		name = req.FilePrefix
 	}
 	task := &model.RemoteSensingTask{
-		Name:           name,
-		Status:         TaskStatusPending,
-		InputDirectory: req.InputDirectory,
-		FilePrefix:     req.FilePrefix,
-		Sensor:         req.Sensor,
+		Name:                name,
+		Status:              TaskStatusPending,
+		InputDirectory:      req.InputDirectory,
+		FilePrefix:          req.FilePrefix,
+		Sensor:              req.Sensor,
+		EnableDetection:     req.EnableDetection,
+		DetectionClasses:    strings.TrimSpace(req.DetectionClasses),
+		DetectionDrawLabels: req.DetectionDrawLabels,
 	}
 	if err := s.db.WithContext(ctx).Create(task).Error; err != nil {
 		return nil, err
@@ -210,10 +226,13 @@ func (s *RemoteSensingService) bootstrapPendingTasks() {
 	}
 	for _, t := range tasks {
 		req := CreateTaskRequest{
-			Name:           t.Name,
-			FilePrefix:     t.FilePrefix,
-			InputDirectory: t.InputDirectory,
-			Sensor:         t.Sensor,
+			Name:                t.Name,
+			FilePrefix:          t.FilePrefix,
+			InputDirectory:      t.InputDirectory,
+			Sensor:              t.Sensor,
+			EnableDetection:     t.EnableDetection,
+			DetectionClasses:    t.DetectionClasses,
+			DetectionDrawLabels: t.DetectionDrawLabels,
 		}
 		s.enqueueTask(t.ID, req)
 	}
@@ -259,6 +278,16 @@ func (s *RemoteSensingService) ListLogs(ctx context.Context, taskID uint, limit 
 }
 
 func (s *RemoteSensingService) ListArtifacts(ctx context.Context, taskID uint) ([]model.RemoteSensingTaskArtifact, error) {
+	var task model.RemoteSensingTask
+	if err := s.db.WithContext(ctx).Select("id", "status", "enable_detection").First(&task, taskID).Error; err != nil {
+		return nil, err
+	}
+	if task.EnableDetection && task.Status == TaskStatusCompleted {
+		if err := s.syncDetectionArtifactsFromDisk(ctx, taskID); err != nil {
+			s.logger.Warn("同步检测产物索引失败", zap.Uint("task_id", taskID), zap.Error(err))
+		}
+	}
+
 	var artifacts []model.RemoteSensingTaskArtifact
 	err := s.db.WithContext(ctx).
 		Where("task_id = ?", taskID).
@@ -302,7 +331,17 @@ func (s *RemoteSensingService) Subscribe(taskID uint) (<-chan RemoteSensingStage
 }
 
 func (s *RemoteSensingService) ArtifactAbsolutePath(artifact *model.RemoteSensingTaskArtifact) (string, error) {
-	rootAbs, err := filepath.Abs(s.cfg.RootPath)
+	rootKey := ""
+	if artifact.Metadata != nil {
+		if v, ok := artifact.Metadata["artifact_root"].(string); ok {
+			rootKey = v
+		}
+	}
+	rootPath := s.cfg.RootPath
+	if rootKey == "object_detection" {
+		rootPath = s.detectionCfg.RootPath
+	}
+	rootAbs, err := filepath.Abs(rootPath)
 	if err != nil {
 		return "", err
 	}
@@ -350,6 +389,13 @@ func (s *RemoteSensingService) runPipeline(ctx context.Context, taskID uint, req
 	s.publishStageEvent(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusRunning, UpdatedAt: time.Now().UTC()})
 
 	for _, def := range stageDefinitions {
+		if def.Name == StageObjectDetection && !req.EnableDetection {
+			if err := s.updateStageStatus(taskID, def.Name, StageSuccess, map[string]interface{}{"skipped": true}, "", "已跳过目标识别"); err != nil {
+				s.finishTaskWithError(taskID, fmt.Sprintf("更新阶段 %s 失败: %v", def.Name, err))
+				return
+			}
+			continue
+		}
 		if err := s.runStage(ctx, taskID, def, req); err != nil {
 			s.finishTaskWithError(taskID, fmt.Sprintf("阶段 %s 失败: %v", def.Name, err))
 			return
@@ -415,6 +461,12 @@ func (s *RemoteSensingService) stageTimeoutFor(stageName string) time.Duration {
 	seconds := s.cfg.StageTimeoutSec
 	if stageName == StageFusionStack {
 		seconds = s.cfg.FusionStageTimeoutSec
+	}
+	if stageName == StageObjectDetection {
+		seconds = s.detectionCfg.StageTimeoutSec
+		if seconds <= 0 {
+			seconds = 14400
+		}
 	}
 	if seconds <= 0 {
 		seconds = 1800
@@ -529,6 +581,7 @@ func (s *RemoteSensingService) createArtifact(ctx context.Context, artifact mode
 }
 
 func (s *RemoteSensingService) runPython(ctx context.Context, taskID uint, stageName, script string, args []string) (string, error) {
+	args = normalizeArgsForPython(s.cfg.PythonBin, args)
 	cmdArgs := append([]string{script}, args...)
 	return s.runBinaryWithHeartbeat(ctx, taskID, stageName, s.cfg.PythonBin, script, cmdArgs, args)
 }
@@ -646,7 +699,7 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 		))
 		parallelism = maxByMem
 	}
-	if _, err := os.Stat(demFile); err != nil {
+	if _, err := os.Stat(pathForOSAccess(demFile)); err != nil {
 		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
 	}
 	// 分组执行：每组一次脚本调用（每次共享一次 VRT），在减少重复计算的同时保留并行能力。
@@ -764,7 +817,7 @@ func (s *RemoteSensingService) executePanMerge(ctx context.Context, taskID uint,
 func (s *RemoteSensingService) executeMssRadQuac(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
 	outputDir := filepath.Join("output_preprocessing", "mss_rad_quac_rpc")
 	demFile := s.cfg.DemFile
-	if _, err := os.Stat(demFile); err != nil {
+	if _, err := os.Stat(pathForOSAccess(demFile)); err != nil {
 		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
 	}
 	args := []string{
@@ -775,6 +828,8 @@ func (s *RemoteSensingService) executeMssRadQuac(ctx context.Context, taskID uin
 		"--aero_profile", "Urban",
 		"--dem_file", demFile,
 		"--device", s.cfg.Device,
+		"--rpc_warp_mem_mb", strconv.Itoa(s.cfg.PanRPCWarpMemMB),
+		"--rpc_cpu_threads", strconv.Itoa(s.cfg.PanRPCCPUThreads),
 	}
 	if _, err := s.runPython(ctx, taskID, StageMssRadQuac, "mss_rad_quac_rpc.py", args); err != nil {
 		return nil, err

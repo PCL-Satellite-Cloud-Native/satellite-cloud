@@ -49,6 +49,14 @@ export function streamRemoteSensingEvents(taskId, onEvent, onError) {
   return source
 }
 
+export function getRemoteSensingDetectionStats(taskId) {
+  return fetch(`${API_BASE_URL}/remote-sensing/tasks/${taskId}/detection-stats`).then(handleJSON)
+}
+
 export function artifactDownloadUrl(taskId, artifactId) {
   return `${API_BASE_URL}/remote-sensing/tasks/${taskId}/artifacts/${artifactId}`
+}
+
+export function detectionTilesArchiveUrl(taskId) {
+  return `${API_BASE_URL}/remote-sensing/tasks/${taskId}/detection-tiles.zip`
 }

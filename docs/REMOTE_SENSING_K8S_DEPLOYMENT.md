@@ -104,6 +104,32 @@
   - `emptyDir.sizeLimit=40Gi`（避免单 Pod scratch 放大挤爆节点根盘）
 - `initContainer` 建议使用内网镜像（如 `192.168.10.238/library/alpine:3.19-amd64-r1`），避免受外网拉取影响
 
+### 2.5 目标检测运行时（流水线第 10 阶段）
+
+- 文件：`backend/Dockerfile`（多阶段 `detection-builder`）
+- CI：`.gitlab-ci.yml` 克隆 `Object-Detection` 到 `backend/object-detection-src`
+- 构建阶段自动执行：
+  - `bash scripts/fetch_font.sh`（内嵌 Noto Sans CJK SC，避免检测图右侧空白侧栏）
+  - 下载 ONNX Runtime CPU 1.24.4 到 `third_party/`
+  - `go build -o yolov8s .`（**必须在 Linux 镜像内编译**，含 CGO）
+- 运行镜像包含：
+  - `/opt/object-detection/yolov8s`
+  - `/opt/object-detection/third_party/*.so`
+  - `/opt/object-detection/assets/fonts/`（内嵌字体备份）
+  - `/opt/object-detection/config.env`（`MODEL_PATH=./yolov8m-obb.onnx`）
+  - `fonts-noto-cjk`（系统字体备份，apt 安装）
+- 文件：`k8s/backend/deployment.yaml` 新增环境变量：
+  - `SATELLITE_OBJECT_DETECTION_ROOT=/opt/object-detection`
+  - `SATELLITE_OBJECT_DETECTION_RUNNER=/opt/object-detection/yolov8s`
+  - `SATELLITE_OBJECT_DETECTION_DEVICE=cpu`（GPU 就绪后改为 `gpu` 并换 GPU 版 ORT）
+  - `SATELLITE_OBJECT_DETECTION_STAGE_TIMEOUT_SECONDS=14400`
+  - `SATELLITE_OBJECT_DETECTION_OUTPUT_SUBDIR=output_detection`
+- 新增 volumeMount：
+  - `/opt/object-detection/output_detection`（subPath=`object_detection_output`）
+  - `/opt/object-detection/yolov8m-obb.onnx`（subPath=`models/yolov8m-obb.onnx`，单文件挂载）
+- **模型文件** 需上传到 NFS `models/yolov8m-obb.onnx`（或打入镜像，见 `Object-Detection/K8S_RUNTIME_PREP.md`）
+- 详细说明：`Object-Detection/K8S_RUNTIME_PREP.md`
+
 ## 3. 上线前准备（一次性）
 
 ### 3.1 NFS 目录
@@ -113,6 +139,8 @@
 ```bash
 sudo mkdir -p /export/remote-sensing-data/input
 sudo mkdir -p /export/remote-sensing-data/output_preprocessing
+sudo mkdir -p /export/remote-sensing-data/object_detection_output
+sudo mkdir -p /export/remote-sensing-data/models
 sudo mkdir -p /export/remote-sensing-data/dem
 sudo chmod -R 0777 /export/remote-sensing-data
 
@@ -135,6 +163,8 @@ sudo exportfs -v
 - `REMOTE_SENSING_REPO_URL`（内网 GitLab 仓库 HTTPS 地址）
   - 当前集群示例：`https://192.168.10.238:8444/root/satellite-remote-sensing.git`
 - （可选）`REMOTE_SENSING_REPO_REF`（默认 `main`）
+- `OBJECT_DETECTION_REPO_URL`（内网 GitLab Object-Detection 仓库 HTTPS 地址，**必填**）
+- （可选）`OBJECT_DETECTION_REPO_REF`（默认 `main`）
 - `CI_BUILD_IMAGE`（推荐：`192.168.10.238/library/ci-build:docker25-git-amd64-r3`）
 
 说明：
@@ -287,6 +317,18 @@ kubectl -n gitlab-runner exec "$POD" -- sh -lc 'mount | grep -E "/opt/remote-sen
 2. 自动执行 `imgshow.py`
 3. 产物中有 `preview`，路径类似：
    `persist_output_preprocessing/imgshow/<prefix>-MSS1-fusion.png`
+4. （若启用目标识别）`object_detection` 阶段完成
+5. 检测瓦片在 `output_detection/rs_task_<id>/` 且右侧信息栏有中文（非空白条）
+
+### 5.4.1 目标检测运行时确认
+
+```bash
+POD=$(kubectl -n gitlab-runner get pod -l app=satellite-backend -o jsonpath='{.items[0].metadata.name}')
+kubectl -n gitlab-runner exec "$POD" -- ls -l /opt/object-detection/yolov8s
+kubectl -n gitlab-runner exec "$POD" -- ls /opt/object-detection/third_party/*.so
+kubectl -n gitlab-runner exec "$POD" -- ls -l /opt/object-detection/yolov8m-obb.onnx
+kubectl -n gitlab-runner logs deploy/satellite-backend | rg "Object detection|object_detection|yolov8s"
+```
 
 ### 5.5 阶段1压测验收（推荐）
 
@@ -490,6 +532,12 @@ sudo iptables -t nat -I CLASH 1 -s 192.168.10.0/24 -j RETURN
 
 建议后续在跳板机侧做持久化配置，避免重启后规则丢失。
 
+### 问题 9：检测图右侧空白侧栏
+
+原因：镜像构建时未执行 `scripts/fetch_font.sh`，且未安装 `fonts-noto-cjk`。  
+处理：确认 `backend/Dockerfile` 的 `detection-builder` 阶段包含 `fetch_font.sh`；运行镜像已 `apt install fonts-noto-cjk`。  
+详见 `Object-Detection/K8S_RUNTIME_PREP.md`。
+
 ## 7. 回滚策略
 
 ### 7.1 快速回滚 Deployment
@@ -512,3 +560,6 @@ kubectl -n gitlab-runner rollout status deploy/satellite-backend
 - `backend/Dockerfile`
 - `k8s/backend/deployment.yaml`
 - `k8s/backend/remote-sensing-pv-pvc.yaml`
+- **`docs/MICROSERVICES_IMPLEMENTATION_PLAN.md`** — 微服务化 / 多星协同 / 第三方测试总方案（SSOT）
+- `Object-Detection/K8S_RUNTIME_PREP.md`（Object-Detection 仓库）
+- `Object-Detection/Dockerfile`（Object-Detection 仓库，可选独立构建）

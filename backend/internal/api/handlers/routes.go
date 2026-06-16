@@ -6,11 +6,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"satellite-cloud/backend/internal/objectdetection"
 	"satellite-cloud/backend/internal/remotesensing"
 )
 
 // RegisterRoutes 注册所有 API 路由
-func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, remoteSvc *remotesensing.RemoteSensingService) {
+func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, remoteSvc *remotesensing.RemoteSensingService, detectionSvc *objectdetection.ObjectDetectionService) {
 	// 场景处理器
 	scenarioHandler := NewScenarioHandler(db, logger)
 	router.GET("/scenarios", scenarioHandler.List)
@@ -37,7 +38,22 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, re
 		remote.GET("/tasks/:id/stages", remoteHandler.ListStages)
 		remote.GET("/tasks/:id/logs", remoteHandler.ListLogs)
 		remote.GET("/tasks/:id/artifacts", remoteHandler.ListArtifacts)
+		remote.GET("/tasks/:id/detection-stats", remoteHandler.GetDetectionStats)
+		remote.GET("/tasks/:id/detection-tiles.zip", remoteHandler.DownloadDetectionTilesArchive)
 		remote.GET("/tasks/:id/artifacts/:artifactId", remoteHandler.DownloadArtifact)
 		remote.GET("/tasks/:id/events", remoteHandler.StreamEvents)
+	}
+
+	if detectionSvc != nil {
+		detectionHandler := NewObjectDetectionHandler(detectionSvc, logger)
+		detection := router.Group("/object-detection")
+		detection.POST("/tasks", detectionHandler.CreateTask)
+		detection.GET("/tasks", detectionHandler.ListTasks)
+		detection.GET("/tasks/:id", detectionHandler.GetTask)
+		detection.GET("/tasks/:id/stages", detectionHandler.ListStages)
+		detection.GET("/tasks/:id/logs", detectionHandler.ListLogs)
+		detection.GET("/tasks/:id/artifacts", detectionHandler.ListArtifacts)
+		detection.GET("/tasks/:id/artifacts/:artifactId", detectionHandler.DownloadArtifact)
+		detection.GET("/tasks/:id/events", detectionHandler.StreamEvents)
 	}
 }

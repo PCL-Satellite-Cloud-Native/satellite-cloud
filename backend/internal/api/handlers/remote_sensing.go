@@ -102,6 +102,21 @@ func (h *RemoteSensingHandler) ListLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, logs)
 }
 
+func (h *RemoteSensingHandler) GetDetectionStats(c *gin.Context) {
+	taskID, err := parseUintParam(c, "id")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	stats, err := h.svc.GetDetectionStats(c.Request.Context(), taskID)
+	if err != nil {
+		h.logger.Error("获取检测统计失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, stats)
+}
+
 func (h *RemoteSensingHandler) ListArtifacts(c *gin.Context) {
 	taskID, err := parseUintParam(c, "id")
 	if err != nil {
@@ -140,6 +155,41 @@ func (h *RemoteSensingHandler) StreamEvents(c *gin.Context) {
 			return true
 		}
 	})
+}
+
+func (h *RemoteSensingHandler) DownloadDetectionTilesArchive(c *gin.Context) {
+	taskID, err := parseUintParam(c, "id")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	task, err := h.svc.GetTask(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+	if !task.EnableDetection {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该任务未启用目标识别"})
+		return
+	}
+	if _, err := h.svc.DetectionOutputAbsDir(taskID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	filename := fmt.Sprintf("rs_task_%d_detection_tiles.zip", taskID)
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+
+	count, err := h.svc.WriteDetectionTilesArchive(c.Request.Context(), taskID, c.Writer)
+	if err != nil {
+		h.logger.Error("打包检测瓦片失败", zap.Uint("task_id", taskID), zap.Error(err))
+		if !c.Writer.Written() {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	h.logger.Info("检测瓦片打包完成", zap.Uint("task_id", taskID), zap.Int("files", count))
 }
 
 func (h *RemoteSensingHandler) DownloadArtifact(c *gin.Context) {
@@ -181,7 +231,7 @@ func (h *RemoteSensingHandler) DownloadArtifact(c *gin.Context) {
 		}
 	}
 	disposition := "attachment"
-	if artifact.Type == "preview" {
+	if artifact.Type == "preview" || artifact.Type == "detection_preview" || artifact.Type == "detection_tile" {
 		disposition = "inline"
 	}
 	c.Header("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, filepath.Base(absPath)))

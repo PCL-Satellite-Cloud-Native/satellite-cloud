@@ -14,7 +14,46 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/server ./cmd/server && \
     CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/import_topology ./tools
 
-# 运行阶段：Go 服务 + Python 遥感运行时
+# 构建阶段：编译 yolov8s（Linux + CGO + 内嵌字体）
+FROM ${BASE_IMAGE_REGISTRY}/golang:1.25.7-bookworm-amd64-r1 AS detection-builder
+
+WORKDIR /detection
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=off
+
+COPY object-detection-src/go.mod object-detection-src/go.sum ./
+RUN go mod download
+
+COPY object-detection-src/ .
+
+RUN bash scripts/fetch_font.sh
+
+ARG ORT_VERSION=1.24.4
+RUN set -eu; \
+    curl -fsSL -o /tmp/ort.tgz \
+      "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"; \
+    tar -xzf /tmp/ort.tgz -C /tmp; \
+    mkdir -p third_party; \
+    cp "/tmp/onnxruntime-linux-x64-${ORT_VERSION}/lib/"*.so third_party/; \
+    if [ -f third_party/libonnxruntime.so ] && [ ! -e third_party/onnxruntime.so ]; then \
+      ln -s libonnxruntime.so third_party/onnxruntime.so; \
+    fi; \
+    if [ -f third_party/libonnxruntime_providers_shared.so ] && [ ! -e third_party/onnxruntime_providers_shared.so ]; then \
+      ln -s libonnxruntime_providers_shared.so third_party/onnxruntime_providers_shared.so; \
+    fi; \
+    rm -rf /tmp/ort.tgz "/tmp/onnxruntime-linux-x64-${ORT_VERSION}"
+
+ENV CGO_ENABLED=1 \
+    LD_LIBRARY_PATH=/detection/third_party
+
+RUN go build -o yolov8s .
+
+# 运行阶段：Go 服务 + Python 遥感运行时 + 目标检测运行时
 ARG BASE_IMAGE_REGISTRY=192.168.10.238/library
 FROM ${BASE_IMAGE_REGISTRY}/python:3.11-slim-bookworm-amd64-r1
 
@@ -29,6 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgdal-dev \
     python3-dev \
     build-essential \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # 从构建阶段复制二进制文件（server + 拓扑导入 CLI）
@@ -37,6 +77,13 @@ COPY --from=builder /build/bin/import_topology .
 
 # 复制 GitLab CI 拉取的遥感项目源码
 COPY remote-sensing-src /opt/remote-sensing
+
+# 目标检测：yolov8s + ONNX Runtime + 内嵌字体（模型 yolov8m-obb.onnx 需另行挂载或 COPY）
+COPY --from=detection-builder /detection/yolov8s /opt/object-detection/yolov8s
+COPY --from=detection-builder /detection/third_party /opt/object-detection/third_party
+COPY --from=detection-builder /detection/assets/fonts /opt/object-detection/assets/fonts
+COPY --from=detection-builder /detection/config.env /opt/object-detection/config.env
+RUN chmod +x /opt/object-detection/yolov8s
 
 # 创建并安装遥感虚拟环境依赖
 RUN python3 -m venv /opt/remote-sensing/.venv && \
@@ -51,7 +98,7 @@ RUN python3 -m venv /opt/remote-sensing/.venv && \
 # 创建运行用户
 RUN groupadd -g 1000 appuser && \
     useradd -m -u 1000 -g appuser appuser && \
-    chown -R appuser:appuser /app /opt/remote-sensing
+    chown -R appuser:appuser /app /opt/remote-sensing /opt/object-detection
 
 USER appuser
 

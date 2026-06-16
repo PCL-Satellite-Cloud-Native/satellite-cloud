@@ -13,8 +13,11 @@ type RemoteSensingTask struct {
 	Status         string     `gorm:"type:varchar(32);not null" json:"status"`
 	InputDirectory string     `gorm:"type:text;not null" json:"input_directory"`
 	FilePrefix     string     `gorm:"type:varchar(255);not null" json:"file_prefix"`
-	Sensor         string     `gorm:"type:varchar(64)" json:"sensor,omitempty"`
-	CurrentStage   string     `gorm:"type:varchar(64)" json:"current_stage,omitempty"`
+	Sensor             string     `gorm:"type:varchar(64)" json:"sensor,omitempty"`
+	EnableDetection    bool       `gorm:"not null;default:true" json:"enable_detection"`
+	DetectionClasses   string     `gorm:"type:varchar(255)" json:"detection_classes,omitempty"`
+	DetectionDrawLabels bool      `gorm:"not null;default:false" json:"detection_draw_labels"`
+	CurrentStage       string     `gorm:"type:varchar(64)" json:"current_stage,omitempty"`
 	ErrorMessage   string     `gorm:"type:text" json:"error_message,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`

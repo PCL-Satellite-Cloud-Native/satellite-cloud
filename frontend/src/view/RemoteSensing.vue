@@ -3,7 +3,7 @@
     <header class="page-header card">
       <div>
         <h1>遥感应用</h1>
-        <p>实时追踪遥感预处理任务进度、日志与产物。</p>
+        <p>预处理与目标识别串行流水线：一次提交，自动完成融合与 YOLOv8 检测。</p>
       </div>
       <div class="header-actions">
         <span class="live-indicator" :class="{ on: isLiveRefreshing }">
@@ -16,23 +16,69 @@
     <div class="page-body">
       <section class="task-panel">
         <form class="task-form card" @submit.prevent="submitTask">
-          <h2>创建遥感任务</h2>
-          <label>
-            任务名称
-            <input v-model="form.name" placeholder="可选，默认使用前缀" />
-          </label>
-          <label>
-            数据前缀
-            <input v-model="form.filePrefix" placeholder="例如 GF2_PMS1_..." required />
-          </label>
-          <label>
-            数据目录
-            <input v-model="form.inputDirectory" placeholder="例如 input/" required />
-          </label>
-          <label>
-            Sensor
-            <input v-model="form.sensor" placeholder="可选，如 MSS1" />
-          </label>
+          <h2>创建任务</h2>
+
+          <fieldset class="form-section">
+            <legend>预处理（1–9 阶段）</legend>
+            <label>
+              任务名称
+              <input v-model="form.name" placeholder="可选，默认使用前缀" />
+            </label>
+            <label>
+              数据前缀
+              <input v-model="form.filePrefix" placeholder="例如 GF2_PMS1_..." required />
+            </label>
+            <label>
+              数据目录
+              <input v-model="form.inputDirectory" placeholder="例如 input/" required />
+            </label>
+            <label>
+              Sensor
+              <input v-model="form.sensor" placeholder="可选，如 MSS1" />
+            </label>
+          </fieldset>
+
+          <fieldset class="form-section">
+            <legend>目标识别（第 10 阶段）</legend>
+            <label class="checkbox-row">
+              <input type="checkbox" v-model="form.enableDetection" />
+              融合完成后自动运行 YOLOv8 检测
+            </label>
+            <template v-if="form.enableDetection">
+              <div class="class-picker">
+                <div class="class-picker-head">
+                  <span class="class-picker-title">检测目标类别</span>
+                  <span class="class-picker-actions">
+                    <button type="button" class="link-btn" @click="selectAllDetectionClasses">全选</button>
+                    <button type="button" class="link-btn" @click="clearDetectionClasses">清空</button>
+                  </span>
+                </div>
+                <p class="form-hint">勾选需要检测的地物类型；未勾选任何类别时无法提交。</p>
+                <div class="class-checkbox-grid">
+                  <label
+                    v-for="item in DETECTION_CLASSES"
+                    :key="item.id"
+                    class="class-checkbox-item"
+                  >
+                    <input type="checkbox" :value="item.id" v-model="form.detectionClassIds" />
+                    <span class="class-text">
+                      <span class="class-label">{{ item.label }}</span>
+                      <span class="class-name-en">{{ item.name }}</span>
+                    </span>
+                  </label>
+                </div>
+                <p class="class-summary" v-if="detectionSelectionSummary">
+                  已选：{{ detectionSelectionSummary }}
+                </p>
+              </div>
+              <label class="checkbox-row">
+                <input type="checkbox" v-model="form.detectionDrawLabels" />
+                在输出瓦片上绘制标签
+              </label>
+              <p class="form-hint">融合 .dat 路径由后端自动解析，无需手动填写。</p>
+            </template>
+          </fieldset>
+
           <div class="form-actions">
             <button type="submit">提交任务</button>
             <span class="form-note" v-if="submitMessage">{{ submitMessage }}</span>
@@ -53,6 +99,7 @@
                 <p class="task-meta">
                   状态：{{ statusText(task.status) }}
                   · 阶段：{{ stageNameText(task.current_stage) || '等待中' }}
+                  <span v-if="task.enable_detection === false"> · 未启用检测</span>
                 </p>
               </div>
               <button type="button" @click="selectTask(task)" :disabled="selectedTask?.id === task.id">
@@ -62,6 +109,9 @@
             <div class="task-body">
               <div>文件前缀：{{ task.file_prefix }}</div>
               <div>目录：{{ task.input_directory }}</div>
+              <div v-if="task.enable_detection !== false && task.detection_classes !== undefined">
+                检测类别：{{ formatDetectionClasses(task.detection_classes) }}
+              </div>
               <div>创建：{{ formatTime(task.created_at) }}</div>
             </div>
           </div>
@@ -72,6 +122,12 @@
         <div class="detail-header">
           <h2>{{ selectedTask.name || selectedTask.file_prefix }}</h2>
           <span class="status-chip" :class="selectedTask.status">{{ statusText(selectedTask.status) }}</span>
+        </div>
+
+        <div class="pipeline-hint card-inline">
+          流水线：预处理 9 阶段
+          <template v-if="selectedTask.enable_detection !== false"> → 目标识别</template>
+          <template v-else>（已跳过目标识别）</template>
         </div>
 
         <div class="summary-grid">
@@ -90,6 +146,10 @@
           <article class="summary-item">
             <span>预计剩余</span>
             <strong>{{ etaText }}</strong>
+          </article>
+          <article class="summary-item" v-if="selectedTask.enable_detection !== false">
+            <span>检测类别</span>
+            <strong>{{ formatDetectionClasses(selectedTask.detection_classes) }}</strong>
           </article>
           <article class="summary-item" v-if="selectedTask.error_message">
             <span>失败原因</span>
@@ -131,27 +191,99 @@
         <div class="result-grid">
           <div class="preview">
             <h3>结果预览</h3>
-            <div v-if="previewUrl" class="preview-image">
-              <img :src="previewUrl" alt="融合预览" />
+
+            <div v-if="previewGroups.length" class="preview-gallery">
+              <p v-if="detectionSummaryText" class="detection-summary">{{ detectionSummaryText }}</p>
+              <div class="preview-tabs" role="tablist" aria-label="结果分类">
+                <button
+                  v-for="group in previewGroups"
+                  :key="group.key"
+                  type="button"
+                  class="preview-tab"
+                  :class="{ active: activePreviewTab === group.key }"
+                  role="tab"
+                  :aria-selected="activePreviewTab === group.key"
+                  @click="selectPreviewTab(group.key)"
+                >
+                  <span class="tab-label">{{ group.label }}</span>
+                  <span v-if="group.kind === 'detection'" class="tab-stats">
+                    <span class="tab-stat">{{ group.tileCount }}图</span>
+                    <span class="tab-stat tab-stat--target">{{ group.detectionCount }}目标</span>
+                  </span>
+                  <span v-else class="tab-count">{{ group.totalCount ?? group.images.length }}</span>
+                </button>
+              </div>
+
+              <div v-if="activePreviewGroup" class="preview-main">
+                <div class="preview-image">
+                  <img :src="activePreviewImageUrl" :alt="activePreviewGroup.label" />
+                </div>
+
+                <div class="preview-toolbar" v-if="activePreviewGroup.images.length > 1">
+                  <button type="button" class="ghost sm" @click="shiftPreviewImage(-1)">上一张</button>
+                  <span class="preview-counter">
+                    {{ activeImageIndex + 1 }} / {{ activePreviewGroup.images.length }}
+                    <template v-if="activePreviewGroup.kind === 'detection' && activePreviewGroup.totalCount > activePreviewGroup.images.length">
+                      （预览 {{ activePreviewGroup.images.length }} / {{ activePreviewGroup.tileCount }} 图）
+                    </template>
+                    · {{ activePreviewImage?.label }}
+                  </span>
+                  <button type="button" class="ghost sm" @click="shiftPreviewImage(1)">下一张</button>
+                </div>
+
+                <div class="thumb-strip" v-if="activePreviewGroup.images.length > 1">
+                  <button
+                    v-for="(img, index) in activePreviewGroup.images"
+                    :key="img.id"
+                    type="button"
+                    class="thumb-btn"
+                    :class="{ active: index === activeImageIndex }"
+                    @click="activeImageIndex = index"
+                  >
+                    <img :src="artifactUrl(img.id)" :alt="img.label" loading="lazy" />
+                  </button>
+                </div>
+
+                <p class="preview-caption">
+                  <template v-if="activePreviewGroup.kind === 'fusion'">预处理融合预览（imgshow）</template>
+                  <template v-else-if="activePreviewGroup.kind === 'detection'">
+                    {{ activePreviewGroup.label }} · 含目标瓦片 {{ activePreviewGroup.tileCount }} 张 · 检出 {{ activePreviewGroup.detectionCount }} 个目标<template v-if="activePreviewGroup.tileCount > activePreviewGroup.images.length"> · 预览前 {{ activePreviewGroup.images.length }} 张</template>
+                  </template>
+                </p>
+              </div>
             </div>
             <p v-else class="placeholder">暂无预览图，请等待结果产出。</p>
 
-            <h4>产物下载</h4>
-            <ul class="artifact-list" v-if="artifacts.length">
-              <li v-for="artifact in artifacts" :key="artifact.id">
-                <a :href="artifactUrl(artifact.id)" target="_blank" rel="noreferrer">
-                  {{ artifact.label || artifact.type }}
-                </a>
-              </li>
-            </ul>
-            <p v-else class="placeholder">暂无产物</p>
+            <div v-if="detectionTileCount > 0" class="detection-download-bar">
+              <a
+                class="primary sm"
+                :href="detectionTilesArchiveUrl(selectedTask.id)"
+                download
+              >
+                下载全部检测瓦片（{{ detectionTileCount }} 图<template v-if="detectionStats?.total_detections"> · {{ detectionStats.total_detections }} 目标</template>）
+              </a>
+            </div>
+
+            <details class="artifact-downloads" v-if="downloadArtifacts.length">
+              <summary>产物下载（{{ downloadArtifacts.length }}）</summary>
+              <ul class="artifact-list">
+                <li v-for="artifact in downloadArtifacts" :key="artifact.id">
+                  <a :href="artifactUrl(artifact.id)" target="_blank" rel="noreferrer">
+                    {{ artifact.label || artifact.type }}
+                  </a>
+                </li>
+              </ul>
+            </details>
           </div>
 
           <div class="logs">
             <h3>执行日志</h3>
             <div v-if="logs.length" class="log-list">
               <div v-for="log in displayLogs" :key="log.id" class="log-line">
-                <small>{{ formatTime(log.created_at) }} · {{ stageNameText(log.stage_name) || '全局' }}</small>
+                <small>
+                  {{ formatTime(log.created_at) }}
+                  · {{ stageNameText(log.stage_name) || '全局' }}
+                </small>
                 <p>{{ log.content }}</p>
               </div>
             </div>
@@ -168,15 +300,17 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   listRemoteSensingTasks,
   createRemoteSensingTask,
   getRemoteSensingStages,
   getRemoteSensingLogs,
   getRemoteSensingArtifacts,
+  getRemoteSensingDetectionStats,
   streamRemoteSensingEvents,
   artifactDownloadUrl,
+  detectionTilesArchiveUrl,
 } from '../api/remoteSensing'
 
 const STAGE_TITLE_MAP = {
@@ -189,7 +323,19 @@ const STAGE_TITLE_MAP = {
   mss_coregister_to_pan: '多光谱与全色配准',
   pansharpen_fusion: 'Pan-sharpen 融合',
   fusion_stack_envi: '融合堆栈 ENVI',
+  object_detection: 'YOLOv8 目标识别',
 }
+
+const DETECTION_CLASSES = [
+  { id: 0, label: '油罐', name: 'oil' },
+  { id: 1, label: '桥梁', name: 'bridge' },
+  { id: 2, label: '篮球场', name: 'basketball court' },
+  { id: 3, label: '田径场', name: 'ground track field' },
+  { id: 4, label: '环形交叉口', name: 'roundabout' },
+  { id: 5, label: '码头', name: 'harbor' },
+  { id: 6, label: '其他球场', name: 'other court' },
+  { id: 7, label: '足球场', name: 'soccer ball field' },
+]
 
 const STATUS_TEXT_MAP = {
   pending: '等待中',
@@ -204,7 +350,10 @@ const selectedTask = ref(null)
 const stages = ref([])
 const logs = ref([])
 const artifacts = ref([])
+const detectionStats = ref(null)
 const submitMessage = ref('')
+const activePreviewTab = ref('')
+const activeImageIndex = ref(0)
 
 const eventSource = ref(null)
 const eventTaskId = ref(null)
@@ -220,7 +369,49 @@ const form = reactive({
   filePrefix: '',
   inputDirectory: 'input',
   sensor: '',
+  enableDetection: true,
+  detectionClassIds: [1, 5],
+  detectionDrawLabels: true,
 })
+
+const detectionSelectionSummary = computed(() => {
+  if (!form.detectionClassIds.length) return ''
+  if (form.detectionClassIds.length === DETECTION_CLASSES.length) return '全部 8 类'
+  return form.detectionClassIds
+    .slice()
+    .sort((a, b) => a - b)
+    .map((id) => DETECTION_CLASSES.find((c) => c.id === id)?.label || id)
+    .join('、')
+})
+
+function selectAllDetectionClasses() {
+  form.detectionClassIds = DETECTION_CLASSES.map((c) => c.id)
+}
+
+function clearDetectionClasses() {
+  form.detectionClassIds = []
+}
+
+function buildDetectionClassesParam() {
+  const ids = [...form.detectionClassIds].sort((a, b) => a - b)
+  if (!ids.length) return null
+  if (ids.length === DETECTION_CLASSES.length) return ''
+  return ids.join(',')
+}
+
+function formatDetectionClasses(value) {
+  if (value === undefined || value === null) return '-'
+  const raw = String(value).trim()
+  if (!raw) return '全部类别'
+  return raw
+    .split(',')
+    .map((token) => {
+      const id = Number(token.trim())
+      const found = DETECTION_CLASSES.find((c) => c.id === id)
+      return found ? found.label : token.trim()
+    })
+    .join('、')
+}
 
 const completedStages = computed(
   () => stages.value.filter((stage) => stage.status === 'success' || stage.status === 'failed').length
@@ -233,12 +424,138 @@ const stageProgress = computed(() => {
 
 const displayLogs = computed(() => [...logs.value].reverse())
 
-const previewUrl = computed(() => {
-  if (!selectedTask.value) return ''
-  const preview = artifacts.value.find((artifact) => artifact.type === 'preview')
-  if (!preview) return ''
-  return artifactDownloadUrl(selectedTask.value.id, preview.id)
+const IMAGE_ARTIFACT_TYPES = new Set(['preview', 'detection_preview', 'detection_tile'])
+
+function isImageArtifact(artifact) {
+  return IMAGE_ARTIFACT_TYPES.has(artifact.type)
+}
+
+function classLabelFromDir(dir) {
+  if (!dir) return '未分类'
+  const found = DETECTION_CLASSES.find((c) => c.name === dir)
+  return found ? found.label : dir
+}
+
+function classOrderFromDir(dir) {
+  const found = DETECTION_CLASSES.find((c) => c.name === dir)
+  return found ? found.id : 99
+}
+
+const PREVIEW_TILES_PER_CLASS = 8
+
+const detectionStatsByClass = computed(() => {
+  const map = new Map()
+  for (const row of detectionStats.value?.by_class ?? []) {
+    map.set(row.class_dir, row)
+  }
+  return map
 })
+
+const detectionSummaryText = computed(() => {
+  const stats = detectionStats.value
+  if (!stats?.total_detections) return ''
+  const tiles = stats.total_tiles ?? 0
+  return `共检出 ${stats.total_detections} 个目标，分布在 ${tiles} 张含目标瓦片中`
+})
+
+const previewGroups = computed(() => {
+  if (!selectedTask.value) return []
+
+  const groups = []
+  const fusion = artifacts.value.filter((a) => a.type === 'preview')
+  if (fusion.length) {
+    groups.push({
+      key: 'fusion',
+      label: '融合影像',
+      kind: 'fusion',
+      totalCount: fusion.length,
+      images: fusion.map((a) => ({
+        id: a.id,
+        label: a.label || '融合预览',
+      })),
+    })
+  }
+
+  const byClass = new Map()
+  for (const a of artifacts.value) {
+    if (a.type !== 'detection_preview' && a.type !== 'detection_tile') continue
+    const classDir = a.metadata?.class_dir || 'unknown'
+    if (!byClass.has(classDir)) byClass.set(classDir, [])
+    byClass.get(classDir).push({
+      id: a.id,
+      label: a.label || classDir,
+    })
+  }
+
+  const detectionGroups = [...byClass.entries()]
+    .sort(([a], [b]) => classOrderFromDir(a) - classOrderFromDir(b))
+    .map(([classDir, images]) => {
+      const sorted = images.sort((x, y) => x.label.localeCompare(y.label))
+      const stat = detectionStatsByClass.value.get(classDir)
+      return {
+        key: `detection-${classDir}`,
+        label: classLabelFromDir(classDir),
+        kind: 'detection',
+        tileCount: stat?.tile_count ?? sorted.length,
+        detectionCount: stat?.detection_count ?? 0,
+        totalCount: stat?.tile_count ?? sorted.length,
+        images: sorted.slice(0, PREVIEW_TILES_PER_CLASS),
+      }
+    })
+
+  return groups.concat(detectionGroups)
+})
+
+const detectionTileCount = computed(() => {
+  if (detectionStats.value?.total_tiles) {
+    return detectionStats.value.total_tiles
+  }
+  return artifacts.value.filter((a) => a.type === 'detection_preview' || a.type === 'detection_tile').length
+})
+
+const downloadArtifacts = computed(() =>
+  artifacts.value.filter((a) => !isImageArtifact(a))
+)
+
+const activePreviewGroup = computed(() =>
+  previewGroups.value.find((g) => g.key === activePreviewTab.value) || null
+)
+
+const activePreviewImage = computed(() => {
+  const group = activePreviewGroup.value
+  if (!group?.images.length) return null
+  const index = Math.min(activeImageIndex.value, group.images.length - 1)
+  return group.images[index]
+})
+
+const activePreviewImageUrl = computed(() => {
+  if (!selectedTask.value || !activePreviewImage.value) return ''
+  return artifactDownloadUrl(selectedTask.value.id, activePreviewImage.value.id)
+})
+
+watch(previewGroups, (groups) => {
+  if (!groups.length) {
+    activePreviewTab.value = ''
+    activeImageIndex.value = 0
+    return
+  }
+  if (!groups.some((g) => g.key === activePreviewTab.value)) {
+    activePreviewTab.value = groups[0].key
+    activeImageIndex.value = 0
+  }
+})
+
+function selectPreviewTab(key) {
+  activePreviewTab.value = key
+  activeImageIndex.value = 0
+}
+
+function shiftPreviewImage(delta) {
+  const group = activePreviewGroup.value
+  if (!group?.images.length) return
+  const next = (activeImageIndex.value + delta + group.images.length) % group.images.length
+  activeImageIndex.value = next
+}
 
 const isLiveRefreshing = computed(() => selectedTask.value?.status === 'running')
 
@@ -366,6 +683,7 @@ async function loadTasks(preferredId, options = {}) {
       stages.value = []
       logs.value = []
       artifacts.value = []
+      detectionStats.value = null
       stopEventStream()
       stopPolling()
       return
@@ -373,9 +691,7 @@ async function loadTasks(preferredId, options = {}) {
 
     if (selectedTask.value) {
       const latestSelected = data.find((item) => item.id === selectedTask.value.id)
-      if (latestSelected) {
-        selectedTask.value = latestSelected
-      }
+      if (latestSelected) selectedTask.value = latestSelected
     }
 
     if (!autoSelect) return
@@ -384,9 +700,7 @@ async function loadTasks(preferredId, options = {}) {
     if (target) {
       const changed = selectedTask.value?.id !== target.id
       selectedTask.value = target
-      if (changed) {
-        await loadDetails(target.id)
-      }
+      if (changed) await loadDetails(target.id)
       syncLiveRefresh()
       return
     }
@@ -400,14 +714,22 @@ async function loadTasks(preferredId, options = {}) {
 }
 
 async function loadDetails(taskId) {
-  const [stageData, logData, artifactData] = await Promise.all([
+  const task = selectedTask.value
+  const statsPromise =
+    task?.enable_detection !== false
+      ? getRemoteSensingDetectionStats(taskId).catch(() => null)
+      : Promise.resolve(null)
+
+  const [stageData, logData, artifactData, statsData] = await Promise.all([
     getRemoteSensingStages(taskId),
     getRemoteSensingLogs(taskId, 200),
     getRemoteSensingArtifacts(taskId),
+    statsPromise,
   ])
   stages.value = stageData
   logs.value = logData
   artifacts.value = artifactData
+  detectionStats.value = statsData
 }
 
 async function selectTask(task) {
@@ -475,9 +797,7 @@ function startEventStream(taskId) {
     () => {
       stopEventStream()
       if (selectedTask.value && selectedTask.value.id === taskId && selectedTask.value.status === 'running') {
-        if (reconnectTimer.value) {
-          clearTimeout(reconnectTimer.value)
-        }
+        if (reconnectTimer.value) clearTimeout(reconnectTimer.value)
         reconnectTimer.value = setTimeout(() => {
           reconnectTimer.value = null
           if (selectedTask.value && selectedTask.value.id === taskId && selectedTask.value.status === 'running') {
@@ -512,7 +832,7 @@ function startPolling(taskId) {
     }
     await loadDetails(taskId)
     await loadTasks(taskId, { autoSelect: false })
-    if (selectedTask.value.status !== 'running') {
+    if (selectedTask.value?.status !== 'running') {
       syncLiveRefresh()
     }
   }, 4000)
@@ -528,8 +848,18 @@ function stopPolling() {
 
 async function submitTask() {
   if (!form.filePrefix || !form.inputDirectory) {
-    submitMessage.value = '请填写必填字段'
+    submitMessage.value = '请填写预处理必填字段'
     return
+  }
+
+  let detectionClasses = ''
+  if (form.enableDetection) {
+    const built = buildDetectionClassesParam()
+    if (built === null) {
+      submitMessage.value = '请至少勾选一个检测类别'
+      return
+    }
+    detectionClasses = built
   }
 
   submitMessage.value = '正在提交...'
@@ -539,8 +869,11 @@ async function submitTask() {
       filePrefix: form.filePrefix,
       inputDirectory: form.inputDirectory,
       sensor: form.sensor,
+      enableDetection: form.enableDetection,
+      detectionClasses,
+      detectionDrawLabels: form.detectionDrawLabels,
     })
-    submitMessage.value = '任务已提交'
+    submitMessage.value = '任务已提交（预处理 → 目标识别串行执行）'
     form.name = ''
     form.filePrefix = ''
     form.inputDirectory = 'input'
@@ -604,6 +937,125 @@ onBeforeUnmount(() => {
 .page-header p {
   margin: 0.35rem 0 0;
   color: #5a647a;
+}
+
+.form-section {
+  border: 1px solid #e8edf8;
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem 0.25rem;
+  margin-bottom: 0.85rem;
+}
+
+.form-section legend {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #3d4a63;
+  padding: 0 0.35rem;
+}
+
+.pipeline-hint.card-inline {
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.85rem;
+  background: #f8fafd;
+  border: 1px solid #e8edf8;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  color: #5a647a;
+}
+
+.checkbox-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-hint {
+  font-size: 0.82rem;
+  color: #6b758a;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.class-picker {
+  margin: 0.5rem 0 0.75rem;
+}
+
+.class-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.class-picker-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: #3d4a63;
+}
+
+.class-picker-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  color: #1265d8;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.class-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.class-checkbox-item {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid #e8edf8;
+  border-radius: 8px;
+  background: #fafbfd;
+  cursor: pointer;
+  margin: 0;
+}
+
+.class-checkbox-item input {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.class-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.class-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #2f3a4f;
+  line-height: 1.3;
+}
+
+.class-name-en {
+  display: block;
+  font-size: 0.75rem;
+  color: #8a94a8;
+  font-weight: 400;
+}
+
+.class-summary {
+  margin: 0.55rem 0 0;
+  font-size: 0.84rem;
+  color: #1265d8;
 }
 
 .header-actions {
@@ -991,7 +1443,168 @@ onBeforeUnmount(() => {
 .preview-image img {
   width: 100%;
   border-radius: 10px;
-  margin-bottom: 0.6rem;
+  display: block;
+  background: #eef2f8;
+}
+
+.detection-download-bar {
+  margin-top: 0.65rem;
+}
+
+.detection-download-bar .primary.sm {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.85rem;
+  text-decoration: none;
+  border-radius: 8px;
+  background: #1265d8;
+  color: #fff;
+}
+
+.detection-download-bar .primary.sm:hover {
+  background: #0f54b8;
+}
+
+.preview-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.preview-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.preview-tab {
+  border: 1px solid #d8dfed;
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  color: #4e5a71;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.preview-tab.active {
+  border-color: #1265d8;
+  background: #edf4ff;
+  color: #1265d8;
+  font-weight: 600;
+}
+
+.tab-count {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.tab-label {
+  margin-right: 0.15rem;
+}
+
+.tab-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tab-stat {
+  font-size: 0.72rem;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  background: #eef2f8;
+  color: #5a647a;
+}
+
+.tab-stat--target {
+  background: #e8f2ff;
+  color: #1265d8;
+}
+
+.detection-summary {
+  margin: 0 0 0.5rem;
+  font-size: 0.84rem;
+  color: #5a647a;
+}
+
+.preview-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: #5a647a;
+}
+
+.preview-counter {
+  flex: 1;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghost.sm {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+.thumb-strip {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
+}
+
+.thumb-btn {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+}
+
+.thumb-btn.active {
+  border-color: #1265d8;
+}
+
+.thumb-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.preview-caption {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #8a94a8;
+}
+
+.artifact-downloads {
+  margin-top: 0.75rem;
+  font-size: 0.88rem;
+}
+
+.artifact-downloads summary {
+  cursor: pointer;
+  color: #1265d8;
+  user-select: none;
 }
 
 .placeholder {

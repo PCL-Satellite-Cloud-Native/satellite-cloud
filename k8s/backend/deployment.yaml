@@ -23,8 +23,8 @@ spec:
             - -c
             - |
               set -e
-              mkdir -p /mnt/input /mnt/output_preprocessing /mnt/dem /scratch/output_preprocessing
-              chmod -R 0777 /mnt/input /mnt/output_preprocessing /mnt/dem /scratch/output_preprocessing
+              mkdir -p /mnt/input /mnt/output_preprocessing /mnt/dem /mnt/object_detection_output /mnt/models /scratch/output_preprocessing
+              chmod -R 0777 /mnt/input /mnt/output_preprocessing /mnt/dem /mnt/object_detection_output /mnt/models /scratch/output_preprocessing
           volumeMounts:
             - name: remote-sensing-data
               mountPath: /mnt
@@ -129,6 +129,16 @@ spec:
               value: "serial4"
             - name: SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS
               value: "2"
+            - name: SATELLITE_OBJECT_DETECTION_ROOT
+              value: "/opt/object-detection"
+            - name: SATELLITE_OBJECT_DETECTION_RUNNER
+              value: "/opt/object-detection/yolov8s"
+            - name: SATELLITE_OBJECT_DETECTION_DEVICE
+              value: "cpu"
+            - name: SATELLITE_OBJECT_DETECTION_STAGE_TIMEOUT_SECONDS
+              value: "14400"
+            - name: SATELLITE_OBJECT_DETECTION_OUTPUT_SUBDIR
+              value: "output_detection"
           resources:
             requests:
               memory: "1Gi"
@@ -150,6 +160,12 @@ spec:
             - name: remote-sensing-data
               mountPath: /opt/remote-sensing-data/dem
               subPath: dem
+            - name: remote-sensing-data
+              mountPath: /opt/object-detection/output_detection
+              subPath: object_detection_output
+            - name: remote-sensing-data
+              mountPath: /opt/object-detection/yolov8m-obb.onnx
+              subPath: models/yolov8m-obb.onnx
           livenessProbe:
             httpGet:
               path: /health

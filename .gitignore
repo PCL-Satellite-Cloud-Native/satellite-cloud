@@ -25,13 +25,20 @@ Thumbs.db
 
 # Build artifacts
 backend/bin/
+backend/server
 frontend/dist/
 frontend/node_modules/
 
 # Environment
 .env
 .env.local
+.env.*.local
+backend/.env
 *.local
+
+# Windows 本地开发（机器/WSL 路径相关，勿提交仓库）
+backend/wsl-*.cmd
+!backend/wsl-*.cmd.example
 
 # Kubernetes
 k8s/secrets/
@@ -40,5 +47,6 @@ k8s/secrets/
 # Docker
 .dockerignore
 
-# Cursor
-.cursor/
+# CI 克隆的 sibling 仓库源码（构建上下文，勿提交）
+backend/remote-sensing-src/
+backend/object-detection-src/

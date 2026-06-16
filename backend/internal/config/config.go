@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -13,10 +15,11 @@ import (
 )
 
 type Config struct {
-	Server        ServerConfig
-	Database      DatabaseConfig
-	Log           LogConfig
-	RemoteSensing RemoteSensingConfig
+	Server          ServerConfig
+	Database        DatabaseConfig
+	Log             LogConfig
+	RemoteSensing   RemoteSensingConfig
+	ObjectDetection ObjectDetectionConfig
 }
 
 type ServerConfig struct {
@@ -66,6 +69,24 @@ type RemoteSensingConfig struct {
 	FusionDirectEnabled   bool
 }
 
+type ObjectDetectionConfig struct {
+	RootPath            string
+	RunnerPath          string
+	Device              string
+	DefaultClasses      string
+	OutputSubdir        string
+	StageTimeoutSec     int
+	StageMaxRetries     int
+	CommandHeartbeatSec int
+	WorkerConcurrency   int
+	WorkerQueueSize     int
+}
+
+// UseCPU 当 device 不为 gpu 时使用 CPU 推理（本地默认 cpu；服务器 GPU 就绪后设 SATELLITE_OBJECT_DETECTION_DEVICE=gpu）
+func (c ObjectDetectionConfig) UseCPU() bool {
+	return strings.ToLower(strings.TrimSpace(c.Device)) != "gpu"
+}
+
 func Load() *Config {
 	// 可选：加载 .env 到环境变量（本地开发用；K8s 下通常无此文件，由 ConfigMap/Secret 注入 env）
 	_ = gotenv.Load(".env")
@@ -98,7 +119,8 @@ func Load() *Config {
 			Level:  viper.GetString("log.level"),
 			Output: viper.GetString("log.output"),
 		},
-		RemoteSensing: remoteSensingConfigFromEnvOrViper(),
+		RemoteSensing:   remoteSensingConfigFromEnvOrViper(),
+		ObjectDetection: objectDetectionConfigFromEnvOrViper(),
 	}
 
 	return config
@@ -180,6 +202,17 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.coregister_mode", "serial4")
 	viper.SetDefault("remote_sensing.coregister_gdal_threads", "2")
 	viper.SetDefault("remote_sensing.fusion_direct_enabled", true)
+
+	viper.SetDefault("object_detection.root", "../Object-Detection")
+	viper.SetDefault("object_detection.runner", "")
+	viper.SetDefault("object_detection.device", "cpu")
+	viper.SetDefault("object_detection.default_classes", "")
+	viper.SetDefault("object_detection.output_subdir", "output_detection")
+	viper.SetDefault("object_detection.stage_timeout_seconds", 14400)
+	viper.SetDefault("object_detection.stage_max_retries", 0)
+	viper.SetDefault("object_detection.command_heartbeat_seconds", 60)
+	viper.SetDefault("object_detection.worker_concurrency", 1)
+	viper.SetDefault("object_detection.worker_queue_size", 64)
 }
 
 func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
@@ -241,7 +274,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	}
 
 	return RemoteSensingConfig{
-		RootPath:              rootPath,
+		RootPath: rootPath,
 		PythonBin:             pythonBin,
 		DemFile:               demFile,
 		Device:                device,
@@ -268,6 +301,54 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	}
 }
 
+func objectDetectionConfigFromEnvOrViper() ObjectDetectionConfig {
+	get := func(envKey, viperKey, defaultVal string) string {
+		if v := os.Getenv(envKey); v != "" {
+			return v
+		}
+		if v := viper.GetString(viperKey); v != "" {
+			return v
+		}
+		return defaultVal
+	}
+
+	rootPath := normalizePath(get("SATELLITE_OBJECT_DETECTION_ROOT", "object_detection.root", "../Object-Detection"))
+	runnerPath := get("SATELLITE_OBJECT_DETECTION_RUNNER", "object_detection.runner", "")
+	device := strings.ToLower(strings.TrimSpace(get("SATELLITE_OBJECT_DETECTION_DEVICE", "object_detection.device", "cpu")))
+	if device != "cpu" && device != "gpu" {
+		device = "cpu"
+	}
+	defaultClasses := get("SATELLITE_OBJECT_DETECTION_DEFAULT_CLASSES", "object_detection.default_classes", "")
+	outputSubdir := filepath.Clean(get("SATELLITE_OBJECT_DETECTION_OUTPUT_SUBDIR", "object_detection.output_subdir", "output_detection"))
+	stageTimeoutSec := getInt("SATELLITE_OBJECT_DETECTION_STAGE_TIMEOUT_SECONDS", "object_detection.stage_timeout_seconds", 14400)
+	stageMaxRetries := getInt("SATELLITE_OBJECT_DETECTION_STAGE_MAX_RETRIES", "object_detection.stage_max_retries", 0)
+	commandHeartbeatSec := getInt("SATELLITE_OBJECT_DETECTION_COMMAND_HEARTBEAT_SECONDS", "object_detection.command_heartbeat_seconds", 60)
+	workerConcurrency := getInt("SATELLITE_OBJECT_DETECTION_WORKER_CONCURRENCY", "object_detection.worker_concurrency", 1)
+	workerQueueSize := getInt("SATELLITE_OBJECT_DETECTION_WORKER_QUEUE_SIZE", "object_detection.worker_queue_size", 64)
+
+	if runnerPath == "" {
+		binary := filepath.Join(rootPath, "yolov8s")
+		if stat, err := os.Stat(binary); err == nil && !stat.IsDir() {
+			runnerPath = binary
+		} else {
+			runnerPath = "./yolov8s"
+		}
+	}
+
+	return ObjectDetectionConfig{
+		RootPath:            rootPath,
+		RunnerPath:          runnerPath,
+		Device:              device,
+		DefaultClasses:      defaultClasses,
+		OutputSubdir:        outputSubdir,
+		StageTimeoutSec:     stageTimeoutSec,
+		StageMaxRetries:     stageMaxRetries,
+		CommandHeartbeatSec: commandHeartbeatSec,
+		WorkerConcurrency:   workerConcurrency,
+		WorkerQueueSize:     workerQueueSize,
+	}
+}
+
 func getInt(envKey, viperKey string, defaultVal int) int {
 	if v := os.Getenv(envKey); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
@@ -283,6 +364,10 @@ func getInt(envKey, viperKey string, defaultVal int) int {
 func normalizePath(pathStr string) string {
 	if pathStr == "" {
 		return pathStr
+	}
+	// WSL 挂载路径在 Windows 上不是 filepath.IsAbs；若 Abs 会变成 D:\mnt\d\... 导致 Python/Stat 均失败。
+	if runtime.GOOS == "windows" && strings.HasPrefix(pathStr, "/mnt/") {
+		return path.Clean(pathStr)
 	}
 	if filepath.IsAbs(pathStr) {
 		return filepath.Clean(pathStr)

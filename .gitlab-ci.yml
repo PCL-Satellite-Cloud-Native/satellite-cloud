@@ -20,6 +20,9 @@ variables:
   # https://gitlab.example.local/your-group/Satellite-Remote-Sensing.git
   REMOTE_SENSING_REPO_URL: ""
   REMOTE_SENSING_REPO_REF: "main"
+  # 内网 GitLab Object-Detection 仓库（与遥感类似，HTTPS）
+  OBJECT_DETECTION_REPO_URL: ""
+  OBJECT_DETECTION_REPO_REF: "main"
 
 # 构建并推送后端镜像
 build-backend:
@@ -56,6 +59,27 @@ build-backend:
     - git ls-remote "$AUTH_REMOTE_SENSING_REPO_URL" > /dev/null
     - rm -rf backend/remote-sensing-src
     - git clone --depth 1 --branch "$REMOTE_SENSING_REPO_REF" "$AUTH_REMOTE_SENSING_REPO_URL" backend/remote-sensing-src
+    - |
+      if [ -z "$OBJECT_DETECTION_REPO_URL" ]; then
+        echo "OBJECT_DETECTION_REPO_URL 未配置，请先在内网 GitLab 建仓并配置该变量"
+        exit 1
+      fi
+    - |
+      case "$OBJECT_DETECTION_REPO_URL" in
+        https://*)
+          AUTH_OBJECT_DETECTION_REPO_URL="$(echo "$OBJECT_DETECTION_REPO_URL" | sed "s#^https://#https://gitlab-ci-token:${CI_JOB_TOKEN}@#")"
+          ;;
+        http://*)
+          AUTH_OBJECT_DETECTION_REPO_URL="$(echo "$OBJECT_DETECTION_REPO_URL" | sed "s#^http://#http://gitlab-ci-token:${CI_JOB_TOKEN}@#")"
+          ;;
+        *)
+          echo "OBJECT_DETECTION_REPO_URL 必须是 HTTP(S) 地址"
+          exit 1
+          ;;
+      esac
+    - git ls-remote "$AUTH_OBJECT_DETECTION_REPO_URL" > /dev/null
+    - rm -rf backend/object-detection-src
+    - git clone --depth 1 --branch "$OBJECT_DETECTION_REPO_REF" "$AUTH_OBJECT_DETECTION_REPO_URL" backend/object-detection-src
     - docker login "$HARBOR_URL" -u "$HARBOR_USER" -p "$HARBOR_PASSWORD"
     - cd backend
     - docker build --build-arg BASE_IMAGE_REGISTRY="$BASE_IMAGE_REGISTRY" -t "$BACKEND_IMAGE" .

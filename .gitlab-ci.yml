@@ -82,7 +82,18 @@ build-backend:
     - git clone --depth 1 --branch "$OBJECT_DETECTION_REPO_REF" "$AUTH_OBJECT_DETECTION_REPO_URL" backend/object-detection-src
     - docker login "$HARBOR_URL" -u "$HARBOR_USER" -p "$HARBOR_PASSWORD"
     - cd backend
-    - docker build --build-arg BASE_IMAGE_REGISTRY="$BASE_IMAGE_REGISTRY" -t "$BACKEND_IMAGE" .
+    - |
+      BUILD_ARGS="--build-arg BASE_IMAGE_REGISTRY=$BASE_IMAGE_REGISTRY"
+      if [ -n "${ORT_DOWNLOAD_URL:-}" ]; then
+        BUILD_ARGS="$BUILD_ARGS --build-arg ORT_DOWNLOAD_URL=$ORT_DOWNLOAD_URL"
+      fi
+      if [ -n "${FONT_DOWNLOAD_URL:-}" ]; then
+        BUILD_ARGS="$BUILD_ARGS --build-arg FONT_DOWNLOAD_URL=$FONT_DOWNLOAD_URL"
+      fi
+      if [ "${CURL_INSECURE:-}" = "true" ]; then
+        BUILD_ARGS="$BUILD_ARGS --build-arg CURL_INSECURE=true"
+      fi
+      docker build $BUILD_ARGS -t "$BACKEND_IMAGE" .
     - docker push "$BACKEND_IMAGE"
     - docker tag "$BACKEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
     - docker push "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"

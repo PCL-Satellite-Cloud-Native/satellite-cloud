@@ -31,22 +31,16 @@ RUN go mod download
 
 COPY object-detection-src/ .
 
+ARG FONT_DOWNLOAD_URL=
+ARG CURL_INSECURE=
+ENV FONT_DOWNLOAD_URL=${FONT_DOWNLOAD_URL} CURL_INSECURE=${CURL_INSECURE}
 RUN bash scripts/fetch_font.sh
 
 ARG ORT_VERSION=1.24.4
-RUN set -eu; \
-    curl -fsSL -o /tmp/ort.tgz \
-      "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"; \
-    tar -xzf /tmp/ort.tgz -C /tmp; \
-    mkdir -p third_party; \
-    cp "/tmp/onnxruntime-linux-x64-${ORT_VERSION}/lib/"*.so third_party/; \
-    if [ -f third_party/libonnxruntime.so ] && [ ! -e third_party/onnxruntime.so ]; then \
-      ln -s libonnxruntime.so third_party/onnxruntime.so; \
-    fi; \
-    if [ -f third_party/libonnxruntime_providers_shared.so ] && [ ! -e third_party/onnxruntime_providers_shared.so ]; then \
-      ln -s libonnxruntime_providers_shared.so third_party/onnxruntime_providers_shared.so; \
-    fi; \
-    rm -rf /tmp/ort.tgz "/tmp/onnxruntime-linux-x64-${ORT_VERSION}"
+ARG ORT_DOWNLOAD_URL=
+ENV ORT_VERSION=${ORT_VERSION} ORT_DOWNLOAD_URL=${ORT_DOWNLOAD_URL}
+COPY scripts/download_ort.sh /tmp/download_ort.sh
+RUN bash /tmp/download_ort.sh && rm -f /tmp/download_ort.sh
 
 ENV CGO_ENABLED=1 \
     LD_LIBRARY_PATH=/detection/third_party

@@ -31,13 +31,12 @@ ls -lh "$OUT_DIR/$FONT_FILE"
 
 cat <<EOF
 
-下载完成。请将 $OUT_DIR 下两个文件放到内网 HTTP 可访问路径，例如：
-  http://192.168.10.238/static/${ORT_FILE}
-  http://192.168.10.238/static/${FONT_FILE}
+下载完成。请将 $OUT_DIR 下两个文件放到内网 HTTP 可访问路径。
 
-然后在 satellite-cloud → Settings → CI/CD → Variables 配置：
-  ORT_DOWNLOAD_URL  = http://192.168.10.238/static/${ORT_FILE}
-  FONT_DOWNLOAD_URL = http://192.168.10.238/static/${FONT_FILE}
+本集群示例（238 上 python3 -m http.server 18080）：
+  ORT_DOWNLOAD_URL  = http://192.168.10.238:18080/${ORT_FILE}
+  FONT_DOWNLOAD_URL = http://192.168.10.238:18080/${FONT_FILE}
 
-重新 push satellite-cloud 触发 pipeline。
+在 satellite-cloud → Settings → CI/CD → Variables 配置上述变量。
+详见 docs/K8S_BASELINE_RUNBOOK.md §5.2。
 EOF

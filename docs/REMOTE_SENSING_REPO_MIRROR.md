@@ -18,6 +18,12 @@
 
 ## 2. 中转机同步 GitHub -> 内网 GitLab
 
+### 2.1 本集群：k8s-repository bare mirror
+
+与 Object-Detection 相同：在 `~/Code/Satellite-Remote-Sensing.git` 上 `fetch origin`，`push remote-sensing`（`gitlab-internal:root/satellite-remote-sensing.git`）。详见 [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) §2.3。
+
+### 2.2 脚本方式
+
 仓库已提供脚本：
 
 - `scripts/sync_remote_sensing_repo.sh`

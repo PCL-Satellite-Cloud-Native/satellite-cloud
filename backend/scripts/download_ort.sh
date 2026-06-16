@@ -23,7 +23,11 @@ download_one() {
   local size
   size="$(wc -c < /tmp/ort.tgz)"
   if [ "$size" -lt 5000000 ]; then
-    echo "ORT 包过小 (${size} bytes)，可能下载不完整" >&2
+    echo "ORT 包过小 (${size} bytes)，可能下载到了 HTML 重定向/404 页面而非 .tgz" >&2
+    echo "请检查：1) CI 变量用 https:// 而非 http://  2) 文件在 238 nginx 静态目录  3) 设 CURL_INSECURE=true" >&2
+    echo "响应内容前 200 字节：" >&2
+    head -c 200 /tmp/ort.tgz >&2 || true
+    echo >&2
     return 1
   fi
 }

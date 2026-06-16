@@ -37,6 +37,14 @@
 - **GitLab CI/CD**：持续集成/部署
 - **PostgreSQL**：数据库
 
+## 📚 文档索引
+
+三仓（satellite-cloud、Satellite-Remote-Sensing、Object-Detection）文档较多，**请先阅读**：
+
+→ **[docs/DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md)**（按角色 / 场景 / 分级索引）
+
+当前 K8s 生产 baseline（RS 1～10）：**[docs/K8S_BASELINE_RUNBOOK.md](docs/K8S_BASELINE_RUNBOOK.md)**
+
 ## 📁 项目结构
 
 ```

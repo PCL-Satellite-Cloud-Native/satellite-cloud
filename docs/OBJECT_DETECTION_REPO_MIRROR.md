@@ -16,6 +16,22 @@
 
 ## 2. 中转机同步 GitHub → 内网 GitLab
 
+### 2.1 本集群方式：k8s-repository bare mirror（推荐）
+
+仓库机 **即 192.168.10.238**（`k8s-repository`），使用 **bare 仓 + `gitlab-internal:`** 推送，无需 HTTPS Token。
+
+```bash
+# Object-Detection 示例
+git clone --mirror git@github.com:PCL-Satellite-Cloud-Native/Object-Detection.git
+git -C Object-Detection.git remote add object-detection gitlab-internal:root/object-detection.git
+git -C Object-Detection.git fetch origin --prune
+git -C Object-Detection.git push object-detection --all --force
+```
+
+完整三仓流程与 CI 变量见 [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) §2.3、附录 A。
+
+### 2.2 脚本方式（HTTPS + Token）
+
 脚本：`scripts/sync_object_detection_repo.sh`
 
 ```bash

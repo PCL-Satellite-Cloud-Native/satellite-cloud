@@ -1,8 +1,9 @@
 # K8s Baseline 实施手册（RS 1～9 + 目标识别第 10 阶段）
 
-> **目标**：在现有 15 节点 K8s 集群上，把 **satellite-cloud + Satellite-Remote-Sensing + Object-Detection** 串成一条可验收的 baseline 流水线，**暂不拆微服务、不上 Redis/Argo**。  
-> **前提**：集群里已跑通 RS 1～9；Object-Detection **尚未**在内网 GitLab / 镜像 / NFS 模型。  
-> **关联**：[REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md) §2.5、[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) Phase 0。
+> **文档定位**：15 节点集群 **1～10 全链路 baseline** 的 **单一入口（SSOT）**——含操作步骤、CI/NFS/仓库机、故障排查，以及 **2026-06 实际部署记录**（附录 A）。  
+> **文档索引**：[DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md)（三仓归类与阅读路线）。  
+> **目标**：单 Pod `satellite-backend` 跑通 RS + 目标识别，**暂不拆微服务、不上 Redis/Argo**。  
+> **关联**：[REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md)、[REMOTE_SENSING_REPO_MIRROR.md](./REMOTE_SENSING_REPO_MIRROR.md)、[OBJECT_DETECTION_REPO_MIRROR.md](./OBJECT_DETECTION_REPO_MIRROR.md)、[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 0。
 
 ---
 
@@ -72,26 +73,42 @@ MODEL_PATH=./yolov8m-obb.onnx
 2. 仓库名示例：`object-detection` 或 `Object-Detection`。
 3. 默认分支：`main`，保护 `main`。
 
-### 2.3 从中转机同步代码
+### 2.3 代码同步：GitHub → 仓库机 → 内网 GitLab
 
-详见 [OBJECT_DETECTION_REPO_MIRROR.md](./OBJECT_DETECTION_REPO_MIRROR.md)。
+本集群实际路径：**开发机 push GitHub** → **k8s-repository（即 192.168.10.238）bare mirror** → **内网 GitLab**。  
+CI **不读 GitHub**，只读 GitLab HTTPS + Job Token。
+
+#### 方式 A — 仓库机 bare mirror + `gitlab-internal`（本集群已验证）
+
+仓库机目录示例：`~/Code/*.git`
+
+| bare 仓 | GitHub remote | 推 GitLab remote |
+|---------|---------------|------------------|
+| `satellite-cloud.git` | `github` → `PCL-Satellite-Cloud-Native/satellite-cloud` | `satellite-cloud` → `gitlab-internal:root/satellite-cloud.git` |
+| `Satellite-Remote-Sensing.git` | `origin` → `.../Satellite-Remote-Sensing` | `remote-sensing` → `gitlab-internal:root/satellite-remote-sensing.git` |
+| `Object-Detection.git` | `origin` → `.../Object-Detection` | `object-detection` → `gitlab-internal:root/object-detection.git` |
 
 ```bash
-cd /path/to/satellite-cloud
-export GITHUB_REPO_SSH='git@github.com:<org>/Object-Detection.git'
-export GITLAB_REPO_HTTPS='https://192.168.10.238:8444/<group>/object-detection.git'
-export GITLAB_USERNAME='root'
-export GITLAB_TOKEN='<token-with-write_repository>'
-bash scripts/sync_object_detection_repo.sh
+# 更新 Object-Detection 示例
+git -C ~/Code/Object-Detection.git fetch origin --prune
+git -C ~/Code/Object-Detection.git remote add object-detection gitlab-internal:root/object-detection.git 2>/dev/null || true
+git -C ~/Code/Object-Detection.git push object-detection --all --force
+git -C ~/Code/Object-Detection.git push object-detection --tags --force
+
+# satellite-cloud（含 detection-builder / download_ort.sh 的 commit 必须先上 GitHub）
+git -C ~/Code/satellite-cloud.git fetch github --prune
+git -C ~/Code/satellite-cloud.git push satellite-cloud --all --force
 ```
 
-**方式 B — 从开发机直接 push**（若 GitLab 可从办公网访问）：
+注意：
 
-```bash
-cd /mnt/d/Code/pcl_satellite_project/Object-Detection
-git remote add gitlab https://192.168.10.238:8444/<group>/object-detection.git
-git push gitlab main
-```
+- 从 GitHub 拉用 **`fetch github` / `fetch origin`**，不要用会 `Permission denied` 的旧 SSH `origin`（2224 端口）。
+- 推 GitLab 用 **`gitlab-internal:`**，不要用 HTTPS（自签证书会失败）。
+- **先**在 GitLab 配好 CI 变量与 Job Token，**再** push `satellite-cloud` 触发 pipeline。
+
+#### 方式 B — 脚本或 HTTPS Token
+
+详见 [OBJECT_DETECTION_REPO_MIRROR.md](./OBJECT_DETECTION_REPO_MIRROR.md)、[REMOTE_SENSING_REPO_MIRROR.md](./REMOTE_SENSING_REPO_MIRROR.md)（`sync_*_repo.sh` + Personal Access Token）。
 
 ### 2.4 Job Token 跨仓权限
 
@@ -142,26 +159,55 @@ ls -lh /export/remote-sensing-data/models/yolov8m-obb.onnx
 
 ## 5. GitLab CI/CD 变量
 
-在 **satellite-cloud** 项目 → Settings → CI/CD → Variables：
+**配置位置**：内网 GitLab → 项目 **`root/satellite-cloud`** → Settings → CI/CD → Variables（不是 Object-Detection / RS 子仓）。
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `HARBOR_USER` / `HARBOR_PASSWORD` | 是 | 已有 |
-| `REMOTE_SENSING_REPO_URL` | 是 | 已有 RS 内网 HTTPS 地址 |
-| `OBJECT_DETECTION_REPO_URL` | **是** | 例：`https://192.168.10.238:8444/<group>/object-detection.git` |
+| `HARBOR_USER` / `HARBOR_PASSWORD` | 是 | Harbor 推送 |
+| `REMOTE_SENSING_REPO_URL` | 是 | `https://192.168.10.238:8444/root/satellite-remote-sensing.git` |
+| `OBJECT_DETECTION_REPO_URL` | 是 | `https://192.168.10.238:8444/root/object-detection.git` |
 | `OBJECT_DETECTION_REPO_REF` | 否 | 默认 `main` |
 | `REMOTE_SENSING_REPO_REF` | 否 | 默认 `main` |
+| `ORT_DOWNLOAD_URL` | **是（内网）** | 见 §5.2 |
+| `FONT_DOWNLOAD_URL` | **是（内网）** | 见 §5.2 |
 
-> **注意**：`OBJECT_DETECTION_REPO_URL` 与 `REMOTE_SENSING_REPO_URL` 同为必填；未配置时 `build-backend` 会直接失败。
+> `OBJECT_DETECTION_REPO_URL` 未配置时 `build-backend` 直接失败。  
+> 子仓 **Job Token**：在 `object-detection`、`satellite-remote-sensing` 项目允许 **satellite-cloud** inbound `read_repository`。
 
-### 5.1 构建阶段网络要求
+### 5.1 构建阶段网络（内网无法稳定访问 GitHub 时）
 
-`build-backend` 的 Docker 构建会在 **detection-builder** 阶段：
+`detection-builder` 默认会从 GitHub 下载 ORT 与字体；内网 CI 常出现 `curl: (18)` 或 `ORT 包过小 (785 bytes)`（实际下到 HTML 跳转页）。**必须**配置 §5.2 内网镜像 URL，并推送含 `backend/scripts/download_ort.sh` 的 `satellite-cloud` 代码。
 
-1. `bash scripts/fetch_font.sh`（可能访问 GitHub raw）
-2. `curl` 下载 ONNX Runtime CPU **1.24.4**（GitHub releases）
+### 5.2 构建依赖内网镜像（ORT + 字体）— 本集群方案
 
-请确认 **CI Runner 或构建节点**能访问上述地址（或预置 Harbor 代理镜像/内网缓存）。若 RS 镜像已能成功 build，通常同一 Runner 可用。
+| 用途 | 放哪 | CI 变量 | 运行时 Pod 是否用 |
+|------|------|---------|-------------------|
+| ORT `.tgz`、Noto 字体 | **238 静态 HTTP** | `ORT_DOWNLOAD_URL`、`FONT_DOWNLOAD_URL` | 否（已打进镜像） |
+| 检测模型 `.onnx` | **NFS** `models/yolov8m-obb.onnx` | 无 | 是（PVC 挂载） |
+
+**本集群已验证（方案 A — 独立端口）**：
+
+1. 文件放在 238：`/usr/share/nginx/html/static/`（ORT ~7.8MB，字体 ~16MB）
+2. 因 443 被 GitLab/Harbor 占用，`https://192.168.10.238/static/...` 会返回 **785B HTML**，不可用
+3. 用临时 HTTP 服务（重启 238 需重新拉起，或后续改 nginx `location /static`）：
+
+```bash
+cd /usr/share/nginx/html/static
+nohup python3 -m http.server 18080 --bind 0.0.0.0 > /tmp/static-http.log 2>&1 &
+```
+
+4. CI 变量（**satellite-cloud** 项目）：
+
+| 变量 | 值 |
+|------|-----|
+| `ORT_DOWNLOAD_URL` | `http://192.168.10.238:18080/onnxruntime-linux-x64-1.24.4.tgz` |
+| `FONT_DOWNLOAD_URL` | `http://192.168.10.238:18080/NotoSansCJKsc-Regular.otf` |
+
+Runner 验收：`curl -f -o /tmp/t.tgz "$ORT_DOWNLOAD_URL" && ls -lh /tmp/t.tgz` → 约 **7.8M**。
+
+**方案 B（长期）**：在 443 的 nginx `server` 增加 `location /static/ { alias /usr/share/nginx/html/static/; }`，CI 改 `https://192.168.10.238/static/...` 并设 `CURL_INSECURE=true`。baseline 跑通后再做即可。
+
+本地准备文件：`scripts/mirror_build_deps.sh`；WSL 已有 `Object-Detection/third_party/*.so` **不能**替代 CI 用的 `.tgz`。
 
 ---
 
@@ -267,7 +313,7 @@ kubectl -n gitlab-runner exec "$POD" -- ls -la /opt/object-detection/output_dete
 3. **下载全部检测瓦片**：`GET .../detection-tiles.zip`。
 4. 检测 JPG **右侧信息栏有中文**，不是 300px 白条。
 
-### 7.5 记录 Phase 0 baseline（建议表格）
+### 7.5 记录 Phase 0 baseline
 
 | 指标 | 记录方式 |
 |------|----------|
@@ -277,7 +323,14 @@ kubectl -n gitlab-runner exec "$POD" -- ls -la /opt/object-detection/output_dete
 | 瓦片数 / 目标数 | detection-stats API |
 | CPU / 内存峰值 | Grafana 或 `kubectl top pod`（可选） |
 
-写入 [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) Phase 0 或单独 spreadsheet，作为微服务拆分前的 **对照基线**。
+**2026-06 本集群首次全链路验收**（GF2 示例、`device=cpu`、单 Pod）：见 **附录 A**。
+
+### 7.6 阶段 10「看起来卡住」是否正常
+
+- 默认超时 **14400s（4h）**；CPU 全图检测 **30～90 分钟** 都可能。
+- 后端约 **60s** 一条「心跳: yolov8s 仍在运行」；yolov8s 进度日志多在进程结束前才写入 DB。
+- 判断是否真卡死：`ps` 有 `yolov8s`、`output_detection/rs_task_<id>/` 文件数持续增加 → **继续等**。
+- 合理端到端：**40～90 分钟**（本集群 **46m36s** 属正常偏快）。
 
 ---
 
@@ -286,14 +339,19 @@ kubectl -n gitlab-runner exec "$POD" -- ls -la /opt/object-detection/output_dete
 | 现象 | 原因 | 处理 |
 |------|------|------|
 | `build-backend`: `COPY object-detection-src` 失败 | 未 clone OD 仓 | 配置 `OBJECT_DETECTION_REPO_URL` + Job Token |
-| `git ls-remote` 401/403 | Job Token 无跨仓读权限 | OD 仓 Allowlist satellite-cloud |
-| `fetch_font.sh` / `curl ORT` 失败 | Runner 无外网 | 内网缓存 ORT tgz / 字体，或改 Dockerfile 用 Harbor 镜像 |
-| 日志无 `Object detection runtime configured` | 旧镜像或未设 `SATELLITE_OBJECT_DETECTION_ROOT` | 确认 deploy 用了新镜像与 deployment.yaml |
-| stage 10: 找不到模型 | `config.env` MODEL_PATH 与挂载文件名不一致 | §2.1 改 `config.env` 或改 NFS/deployment 文件名 |
-| `libonnxruntime.so` 找不到 | third_party 未打进镜像 | 重建 backend 镜像，检查 detection-builder 日志 |
-| 检测图右侧白条 | 字体未嵌入 | 重建镜像（须执行 `fetch_font.sh`）；容器已有 `fonts-noto-cjk` 备份 |
-| stage 10 OOM / 极慢 | CPU 推理大 fusion 图 | baseline 预期；调大 `limits.memory`；后续 GPU + od-worker |
-| 只有 RS 无 stage 10 | DB 未迁移或 `enable_detection=false` | 重启 backend 触发 migrate；查 task 字段 |
+| `git ls-remote` 401/403 | Job Token 无跨仓读权限 | OD/RS 仓 Allowlist satellite-cloud |
+| `curl: (18)` 从 GitHub 下 ORT | Runner 外网不稳定 | §5.2 配 `ORT_DOWNLOAD_URL` |
+| `ORT 包过小 (785 bytes)` | URL 下到 HTML（308/404），非 tgz | 用 `:18080` 或 nginx `/static`；`curl -f` 验收 **~7.8MB** |
+| `http://192.168.10.238/static` 308 → 785B | 443 非静态站点 | 勿用该 URL；见 §5.2 |
+| HTTPS push GitLab `certificate verify failed` | 自签证书 | 仓库机用 `gitlab-internal:` 推送 |
+| `fetch_font.sh` 失败 | 同上 | `FONT_DOWNLOAD_URL` 指向内网 |
+| 日志无 `Object detection runtime configured` | 旧镜像（Pod 运行数月） | 新 pipeline deploy 后 **rollout**；启动日志只在 Pod 创建时打一次 |
+| stage 10: 找不到模型 | NFS 无 `models/yolov8m-obb.onnx` 或 `config.env` 路径不一致 | §2.1 + §4 |
+| `libonnxruntime.so` 找不到 | 镜像未含 detection-builder 产物 | 重建 backend 镜像 |
+| 检测图右侧白条 | 字体未嵌入 | 重建镜像 + `fetch_font.sh` / 内网字体 URL |
+| 阶段 10 很久不动 | CPU 推理正常慢 | §7.6；查 `yolov8s` 进程与输出目录增长 |
+| stage 10 OOM | 内存 limit 4Gi | 临时提到 8Gi；后续 od-worker |
+| 只有 RS 无 stage 10 | `enable_detection=false` 或未迁移 | migrate `000007` |
 
 ---
 
@@ -330,4 +388,57 @@ kubectl -n gitlab-runner exec "$POD" -- ls /opt/object-detection/output_detectio
 
 ---
 
-**文档维护**：Object-Detection 首次上 GitLab、模型路径或 CI 变量变更时，同步更新本节与 [REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md) §2.5。
+## 附录 A：2026-06 集群实际部署记录（归档）
+
+> 环境：15 Node K8s；namespace `gitlab-runner`；GitLab/Harbor/仓库机均为 **192.168.10.238**（`k8s-repository`）；NFS 数据在 **112**（`remote-sensing-data` PVC）；GitHub 组织 **PCL-Satellite-Cloud-Native**。
+
+### A.1 架构与调用方式（baseline）
+
+- **单 Pod** `satellite-backend`：Go `RemoteSensingService` 串行阶段 1～10。
+- 阶段 1～9：`exec` Python（`/opt/remote-sensing/.venv/bin/python`）。
+- 阶段 10：`exec` `/opt/object-detection/yolov8s -cpu`（同 Pod 子进程，**非**独立 Deployment / HTTP）。
+- 镜像构建：CI clone GitLab 上 RS + OD 源码 → Dockerfile `detection-builder` 编译 `yolov8s` + ORT。
+- 模型：NFS 挂载 `/opt/object-detection/yolov8m-obb.onnx`；检测输出 NFS `object_detection_output/`。
+
+### A.2 部署时间线（摘要）
+
+| 步骤 | 动作 | 结果 |
+|------|------|------|
+| 1 | 集群 RS 1～9 已运行；PVC `Bound` | 通过 |
+| 2 | GitHub 三仓 push；238 上建 `Object-Detection.git` mirror | 通过 |
+| 3 | `gitlab-internal` push → GitLab `root/object-detection`、`satellite-remote-sensing` | 通过 |
+| 4 | GitLab Job Token + CI 变量 `REMOTE/OBJECT_DETECTION_REPO_URL` | 通过 |
+| 5 | NFS 上传 `yolov8m-obb.onnx`；`object_detection_output` 目录 | 通过 |
+| 6 | CI 构建 ORT 失败（GitHub `curl 18`）→ 238 `:18080` 静态 + `ORT/FONT_DOWNLOAD_URL` | 通过 |
+| 7 | push `satellite-cloud`（含 `download_ort.sh`）→ pipeline deploy | 通过 |
+| 8 | 前端提交 RS 任务，`enable_detection=true` | **10 阶段 success** |
+
+### A.3 已验证 CI 变量（satellite-cloud 项目）
+
+```
+REMOTE_SENSING_REPO_URL=https://192.168.10.238:8444/root/satellite-remote-sensing.git
+OBJECT_DETECTION_REPO_URL=https://192.168.10.238:8444/root/object-detection.git
+ORT_DOWNLOAD_URL=http://192.168.10.238:18080/onnxruntime-linux-x64-1.24.4.tgz
+FONT_DOWNLOAD_URL=http://192.168.10.238:18080/NotoSansCJKsc-Regular.otf
+HARBOR_USER / HARBOR_PASSWORD=（已有）
+```
+
+### A.4 Phase 0 性能基线（首次全链路）
+
+| 指标 | 值 | 备注 |
+|------|-----|------|
+| 输入 | GF2 示例（`GF2_PMS1_E118.6_N37.4_20160826_L1A0001792619`） | 与本地/WSL 同套 |
+| 端到端 | **46 分 36 秒** | RS + CPU 检测 |
+| 阶段 10 观感 | 约 44 分钟时 UI 仍显示 running，随后完成 | 正常，见 §7.6 |
+| 环境 | `SATELLITE_OBJECT_DETECTION_DEVICE=cpu`；Pod limit **2 CPU / 4Gi** | 未上 GPU |
+| 结论 | **baseline 验收通过** | 可进入微服务 Phase 1 评审 |
+
+### A.5 运维备忘
+
+- **238 重启后**：检查 `python3 -m http.server 18080` 是否需重新拉起（或改 nginx 方案 B）。
+- **代码更新流程**：开发机 → GitHub → 238 `fetch` → `push gitlab-internal` → satellite-cloud pipeline。
+- **勿混淆**：CI 构建依赖（ORT tgz）走 HTTP；推理模型走 NFS；二者路径不同。
+
+---
+
+**文档维护**：部署流程、CI 变量或仓库机方式变更时，优先更新本文附录 A 与 §5.2；细节同步 [REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md) §2.5、§3.2。

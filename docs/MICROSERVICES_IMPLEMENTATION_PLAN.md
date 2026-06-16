@@ -2,7 +2,9 @@
 
 > **文档用途**：后续开发、评审、第三方测试、答辩对照的**单一事实来源（SSOT）**。  
 > **最后更新**：2026-06-15  
+> **文档用途**：三项目文档总索引见 [satellite-cloud/docs/DOCUMENTATION_INDEX.md](../satellite-cloud/docs/DOCUMENTATION_INDEX.md)。  
 > **关联文档**：
+> - [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) — **Baseline 1～10 部署 SSOT**（含 2026-06 归档）
 > - [REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md) — 当前单 Pod 部署
 > - [REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md](./REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md) — 性能优化与队列化阶段
 > - [Object-Detection/K8S_RUNTIME_PREP.md](../../Object-Detection/K8S_RUNTIME_PREP.md) — 检测运行时
@@ -144,15 +146,16 @@
 
 ### 阶段 0 — 基线固化（3～5 天）
 
-**状态**：本地 + 15 Node 单 Pod 流水线已基本完成。
+**状态（2026-06）**：**已完成**。15 Node 单 Pod 1～10 全链路在 K8s 验收通过；详见 [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) 附录 A。
 
 | 项 | 内容 |
 |----|------|
 | 固定输入 | `GF2_PMS1_E118.6_N37.4_20160826_L1A0001792619` |
 | 记录 | 总时长、各阶段耗时、检测「图/目标数」、产物完整性 |
+| **已测基线** | 端到端 **46m36s**（CPU 检测；GF2 示例） |
 | 产出 | `artifacts/benchmarks/<run-id>/report.txt`（可沿用现有 benchmark 脚本） |
 
-**验收**：连续 3 次总时长波动 ≤15%。
+**验收**：连续 3 次总时长波动 ≤15%（后续压测时补录）。
 
 ---
 

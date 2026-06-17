@@ -18,6 +18,7 @@
 | **本地 WSL 联调遥感脚本** | [Satellite-Remote-Sensing/README.md](../../Satellite-Remote-Sensing/README.md) | 30 分钟 |
 | **阶段 10 很慢 / 像卡住** | [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) §7.6、§8 | 5 分钟 |
 | **CI 构建 ORT/字体失败** | [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) §5.2、§8 | 10 分钟 |
+| **记录 Phase 0 baseline / 收口** | [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) **§11** | 1～3 天 |
 | **规划微服务 / 多星协同** | [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) | 45 分钟 |
 | **压到分钟级 / 性能优化** | [REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md](./REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md) | 30 分钟 |
 | **从没有遥感的旧版迁移** | [REMOTE_SENSING_BASELINE_MIGRATION_RUNBOOK.md](./REMOTE_SENSING_BASELINE_MIGRATION_RUNBOOK.md) | 历史参考 |
@@ -95,7 +96,7 @@ OD 开发者:
 
 | 文档 | 内容 | 谁该读 |
 |------|------|--------|
-| [docs/K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) | **Baseline 1～10 部署 SSOT**；仓库机 mirror、CI 变量、ORT 内网镜像、NFS 模型、附录 A 归档 | 所有人（运维优先） |
+| [docs/K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) | **Baseline 1～10 部署 SSOT**；仓库机 mirror、CI 变量、ORT 内网镜像、NFS 模型、附录 A 归档、**§11 Phase 0 收口 Checklist** | 所有人（运维优先） |
 | [docs/MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) | 微服务拆分、Redis/Argo、120 星、阶段 0 已完成标记 | 架构、负责人 |
 
 #### L2 · 部署与 CI/CD
@@ -218,6 +219,7 @@ flowchart LR
 | 变更类型 | 更新哪里 |
 |----------|----------|
 | 集群部署流程、CI 变量、首次验收 | `K8S_BASELINE_RUNBOOK.md`（含附录 A） |
+| Phase 0 收口（3× benchmark、签字） | `K8S_BASELINE_RUNBOOK.md` **§11** |
 | Deployment env / 资源 / 挂载 | `REMOTE_SENSING_K8S_DEPLOYMENT.md` + runbook 交叉引用 |
 | RS/OD 容器内路径或 config | 各仓 `K8S_RUNTIME_PREP.md` |
 | 微服务阶段划分 | `MICROSERVICES_IMPLEMENTATION_PLAN.md` |

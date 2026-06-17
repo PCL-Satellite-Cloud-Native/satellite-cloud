@@ -18,6 +18,7 @@ type Config struct {
 	Server          ServerConfig
 	Database        DatabaseConfig
 	Log             LogConfig
+	Queue           QueueConfig
 	RemoteSensing   RemoteSensingConfig
 	ObjectDetection ObjectDetectionConfig
 }
@@ -40,6 +41,16 @@ type DatabaseConfig struct {
 type LogConfig struct {
 	Level  string // debug, info, warn, error
 	Output string // stdout, file path
+}
+
+// QueueConfig Redis Stream 与 Phase 1 流水线开关
+type QueueConfig struct {
+	RedisAddr            string
+	StreamRS             string
+	StreamOD             string
+	ConsumerGroup        string
+	RSWorkerConcurrency  int
+	UseInProcessPipeline bool
 }
 
 type RemoteSensingConfig struct {
@@ -119,6 +130,7 @@ func Load() *Config {
 			Level:  viper.GetString("log.level"),
 			Output: viper.GetString("log.output"),
 		},
+		Queue:           queueConfigFromEnvOrViper(),
 		RemoteSensing:   remoteSensingConfigFromEnvOrViper(),
 		ObjectDetection: objectDetectionConfigFromEnvOrViper(),
 	}
@@ -213,6 +225,33 @@ func setDefaults() {
 	viper.SetDefault("object_detection.command_heartbeat_seconds", 60)
 	viper.SetDefault("object_detection.worker_concurrency", 1)
 	viper.SetDefault("object_detection.worker_queue_size", 64)
+
+	viper.SetDefault("queue.redis_addr", "localhost:6379")
+	viper.SetDefault("queue.stream_rs", "rs.jobs")
+	viper.SetDefault("queue.stream_od", "od.jobs")
+	viper.SetDefault("queue.consumer_group", "rs-workers")
+	viper.SetDefault("queue.rs_worker_concurrency", 1)
+	viper.SetDefault("queue.use_inprocess_pipeline", true)
+}
+
+func queueConfigFromEnvOrViper() QueueConfig {
+	get := func(envKey, viperKey, defaultVal string) string {
+		if v := os.Getenv(envKey); v != "" {
+			return v
+		}
+		if v := viper.GetString(viperKey); v != "" {
+			return v
+		}
+		return defaultVal
+	}
+	return QueueConfig{
+		RedisAddr:            get("SATELLITE_REDIS_ADDR", "queue.redis_addr", "localhost:6379"),
+		StreamRS:             get("SATELLITE_REDIS_STREAM_RS", "queue.stream_rs", "rs.jobs"),
+		StreamOD:             get("SATELLITE_REDIS_STREAM_OD", "queue.stream_od", "od.jobs"),
+		ConsumerGroup:        get("SATELLITE_REDIS_CONSUMER_GROUP", "queue.consumer_group", "rs-workers"),
+		RSWorkerConcurrency:  getInt("SATELLITE_RS_WORKER_CONCURRENCY", "queue.rs_worker_concurrency", 1),
+		UseInProcessPipeline: getBool("SATELLITE_USE_INPROCESS_PIPELINE", "queue.use_inprocess_pipeline", true),
+	}
 }
 
 func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {

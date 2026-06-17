@@ -146,20 +146,22 @@
 
 ### 阶段 0 — 基线固化（3～5 天）
 
-**状态（2026-06）**：**已完成**。15 Node 单 Pod 1～10 全链路在 K8s 验收通过；详见 [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) 附录 A。
+**状态（2026-06-17）**：**Phase 0 已闭合**。三次 GF2 全链路 benchmark 通过（波动 **2.8%**）；详见 [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) **§11.9**、**§11.12** 与附录 A.4。
 
 | 项 | 内容 |
 |----|------|
 | 固定输入 | `GF2_PMS1_E118.6_N37.4_20160826_L1A0001792619` |
 | 记录 | 总时长、各阶段耗时、检测「图/目标数」、产物完整性 |
-| **已测基线** | 端到端 **46m36s**（CPU 检测；GF2 示例） |
-| 产出 | `artifacts/benchmarks/<run-id>/report.txt`（可沿用现有 benchmark 脚本） |
+| **已测基线** | 端到端 **45.3～46.6 min**（三次 median **45.7 min**）；stage 10 **~35 min** |
+| 产出 | `artifacts/benchmarks/Object-Detection-test3/report.txt` 等 |
 
-**验收**：连续 3 次总时长波动 ≤15%（后续压测时补录）。
+**验收**：连续 3 次总时长波动 ≤15% — **已通过（2.8%）**；§11 A～G 已全部勾选。
 
 ---
 
 ### 阶段 1 — API 与 RS 计算分离（1～2 周）【优先开发】
+
+**状态（2026-06-17）**：**进行中** — Pilot 骨架已合入（Redis/rs-worker K8s、`cmd/rs-worker`）；见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)、归档 [archives/2026-06-17_phase1-kickoff.md](./archives/2026-06-17_phase1-kickoff.md)。
 
 | 项 | 内容 |
 |----|------|

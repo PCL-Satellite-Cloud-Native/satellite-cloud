@@ -1,0 +1,16 @@
+[Unit]
+Description=Satellite Cloud static build deps (ORT + fonts) on port 18080
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usr/share/nginx/html/static
+ExecStart=/usr/bin/python3 -m http.server 18080 --bind 0.0.0.0
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/static-http-18080.log
+StandardError=append:/var/log/static-http-18080.log
+
+[Install]
+WantedBy=multi-user.target

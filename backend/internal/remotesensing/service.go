@@ -21,6 +21,7 @@ import (
 	"satellite-cloud/backend/internal/config"
 	"satellite-cloud/backend/internal/model"
 	"satellite-cloud/backend/internal/objectdetection"
+	"satellite-cloud/backend/internal/queue"
 )
 
 const (
@@ -132,6 +133,9 @@ type RemoteSensingService struct {
 	logger          *zap.Logger
 	cfg             config.RemoteSensingConfig
 	detectionCfg    config.ObjectDetectionConfig
+	queueCfg        config.QueueConfig
+	redisClient     *queue.Client
+	redisMu         sync.Mutex
 	detectionRunner *objectdetection.Runner
 	subsMu          sync.Mutex
 	subscribers     map[uint][]chan RemoteSensingStageEvent
@@ -143,28 +147,47 @@ type pipelineJob struct {
 	Req    CreateTaskRequest
 }
 
-func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig, detectionCfg config.ObjectDetectionConfig) *RemoteSensingService {
+func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig, detectionCfg config.ObjectDetectionConfig, opts Options) *RemoteSensingService {
 	queueSize := cfg.WorkerQueueSize
 	if queueSize <= 0 {
 		queueSize = 64
 	}
-	workerN := cfg.WorkerConcurrency
-	if workerN <= 0 {
-		workerN = 1
-	}
 	s := &RemoteSensingService{
-		db:          db,
-		logger:      logger,
-		cfg:         cfg,
+		db:           db,
+		logger:       logger,
+		cfg:          cfg,
 		detectionCfg: detectionCfg,
-		subscribers: make(map[uint][]chan RemoteSensingStageEvent),
-		queue:       make(chan pipelineJob, queueSize),
+		queueCfg:     opts.Queue,
+		subscribers:  make(map[uint][]chan RemoteSensingStageEvent),
+		queue:        make(chan pipelineJob, queueSize),
 	}
 	s.initDetectionRunner()
-	for i := 0; i < workerN; i++ {
-		go s.workerLoop(i + 1)
+
+	if opts.Queue.UseInProcessPipeline {
+		workerN := cfg.WorkerConcurrency
+		if workerN <= 0 {
+			workerN = 1
+		}
+		for i := 0; i < workerN; i++ {
+			go s.workerLoop(i + 1)
+		}
+		logger.Info("Remote sensing in-process pipeline enabled",
+			zap.Int("worker_concurrency", workerN),
+		)
+	} else {
+		logger.Info("Remote sensing Redis queue mode enabled",
+			zap.String("redis_addr", opts.Queue.RedisAddr),
+			zap.String("stream_rs", opts.Queue.StreamRS),
+		)
 	}
-	s.bootstrapPendingTasks()
+
+	if opts.BootstrapPending {
+		if opts.Queue.UseInProcessPipeline {
+			s.bootstrapPendingTasks()
+		} else {
+			s.bootstrapPendingToRedis()
+		}
+	}
 	return s
 }
 
@@ -199,6 +222,12 @@ func (s *RemoteSensingService) CreateTask(ctx context.Context, req CreateTaskReq
 }
 
 func (s *RemoteSensingService) enqueueTask(taskID uint, req CreateTaskRequest) {
+	if !s.queueCfg.UseInProcessPipeline {
+		if err := s.enqueueRedis(context.Background(), taskID, req); err != nil {
+			s.logger.Error("Redis 入队失败", zap.Uint("task_id", taskID), zap.Error(err))
+		}
+		return
+	}
 	job := pipelineJob{TaskID: taskID, Req: req}
 	select {
 	case s.queue <- job:
@@ -214,7 +243,7 @@ func (s *RemoteSensingService) enqueueTask(taskID uint, req CreateTaskRequest) {
 func (s *RemoteSensingService) workerLoop(workerID int) {
 	for job := range s.queue {
 		s.logger.Info("worker 开始处理任务", zap.Int("worker_id", workerID), zap.Uint("task_id", job.TaskID))
-		s.runPipeline(context.Background(), job.TaskID, job.Req)
+		s.RunPipeline(context.Background(), job.TaskID, job.Req)
 	}
 }
 
@@ -225,16 +254,7 @@ func (s *RemoteSensingService) bootstrapPendingTasks() {
 		return
 	}
 	for _, t := range tasks {
-		req := CreateTaskRequest{
-			Name:                t.Name,
-			FilePrefix:          t.FilePrefix,
-			InputDirectory:      t.InputDirectory,
-			Sensor:              t.Sensor,
-			EnableDetection:     t.EnableDetection,
-			DetectionClasses:    t.DetectionClasses,
-			DetectionDrawLabels: t.DetectionDrawLabels,
-		}
-		s.enqueueTask(t.ID, req)
+		s.enqueueTask(t.ID, createTaskRequestFromModel(t))
 	}
 	if len(tasks) > 0 {
 		s.logger.Info("已恢复 pending 任务入队", zap.Int("count", len(tasks)))

@@ -2,7 +2,7 @@
 
 > **用途**：帮助你和同事在 **satellite-cloud**、**Satellite-Remote-Sensing**、**Object-Detection** 之间快速找到该读的文档，避免重复、遗漏或读错版本。  
 > **仓库关系**：`satellite-cloud` 是编排与部署中心；RS / OD 是载荷算法仓，由 CI 打入 backend 镜像或在本地/WSL 联调。  
-> **最后更新**：2026-06（含 K8s 1～10 baseline 归档）
+> **最后更新**：2026-06-17（Phase 0 归档 + Phase 1 启动）
 
 ---
 
@@ -18,7 +18,10 @@
 | **本地 WSL 联调遥感脚本** | [Satellite-Remote-Sensing/README.md](../../Satellite-Remote-Sensing/README.md) | 30 分钟 |
 | **阶段 10 很慢 / 像卡住** | [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) §7.6、§8 | 5 分钟 |
 | **CI 构建 ORT/字体失败** | [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) §5.2、§8 | 10 分钟 |
+| **记录 Phase 0 baseline / 收口** | [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) **§11** / [archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md) | 已闭合 |
+| **Phase 1 Redis + rs-worker** | [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md) | 按手册执行 |
 | **规划微服务 / 多星协同** | [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) | 45 分钟 |
+| **历史归档索引** | [archives/ARCHIVE_INDEX.md](./archives/ARCHIVE_INDEX.md) | 2 分钟 |
 | **压到分钟级 / 性能优化** | [REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md](./REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md) | 30 分钟 |
 | **从没有遥感的旧版迁移** | [REMOTE_SENSING_BASELINE_MIGRATION_RUNBOOK.md](./REMOTE_SENSING_BASELINE_MIGRATION_RUNBOOK.md) | 历史参考 |
 
@@ -95,7 +98,7 @@ OD 开发者:
 
 | 文档 | 内容 | 谁该读 |
 |------|------|--------|
-| [docs/K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) | **Baseline 1～10 部署 SSOT**；仓库机 mirror、CI 变量、ORT 内网镜像、NFS 模型、附录 A 归档 | 所有人（运维优先） |
+| [docs/K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) | **Baseline 1～10 部署 SSOT**；仓库机 mirror、CI 变量、ORT 内网镜像、NFS 模型、附录 A 归档、**§11 Phase 0 收口 Checklist** | 所有人（运维优先） |
 | [docs/MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) | 微服务拆分、Redis/Argo、120 星、阶段 0 已完成标记 | 架构、负责人 |
 
 #### L2 · 部署与 CI/CD
@@ -218,6 +221,9 @@ flowchart LR
 | 变更类型 | 更新哪里 |
 |----------|----------|
 | 集群部署流程、CI 变量、首次验收 | `K8S_BASELINE_RUNBOOK.md`（含附录 A） |
+| Phase 0 收口（3× benchmark、签字） | `K8S_BASELINE_RUNBOOK.md` **§11** / `archives/2026-06-17_phase0-closure.md` |
+| Phase 1 Pilot（Redis、rs-worker） | `PHASE1_RUNBOOK.md`、`k8s/phase1/` |
+| 文档大更新归档 | `archives/ARCHIVE_INDEX.md`、`scripts/archive_docs_snapshot.sh` |
 | Deployment env / 资源 / 挂载 | `REMOTE_SENSING_K8S_DEPLOYMENT.md` + runbook 交叉引用 |
 | RS/OD 容器内路径或 config | 各仓 `K8S_RUNTIME_PREP.md` |
 | 微服务阶段划分 | `MICROSERVICES_IMPLEMENTATION_PLAN.md` |

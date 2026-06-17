@@ -109,20 +109,43 @@ kubectl -n gitlab-runner logs deploy/satellite-backend --tail=20 | grep -E 'in-p
 
 ### 阶段 2 — 部署 Redis + rs-worker（Pilot，不切 backend）
 
-**backend 仍为单 Pod 内进程流水线**；仅拉起 Redis 与 rs-worker，验证连通。
+**方式 A — GitLab CI 自动（推荐）**
+
+1. GitLab → `root/satellite-cloud` → **Settings → CI/CD → Variables**  
+   - 新增或修改：`DEPLOY_PHASE1_PILOT` = `true`
+2. push `main` → pipeline 在 `deploy` 成功后自动跑 **`deploy-phase1-pilot`**
+
+CI job 会执行：
+
+```text
+kubectl apply -f k8s/phase1/namespaces.yaml
+kubectl apply -k k8s/phase1/
+rollout redis / rs-worker
+kubectl set image rs-worker → 本次 pipeline 的 backend:$CI_COMMIT_SHORT_SHA
+redis-cli ping
+```
+
+**不会**执行 `switch-backend-to-redis-mode.sh`（阶段 3 仍须手动）。
+
+**方式 B — k8s-master 手动**
 
 ```bash
-cd ~/code/satellite-cloud   # 或你 clone 的路径
+cd ~/code/satellite-cloud
 kubectl apply -f k8s/phase1/namespaces.yaml    # 可选
 kubectl apply -k k8s/phase1/
 kubectl -n gitlab-runner rollout status deployment/redis
 kubectl -n gitlab-runner rollout status deployment/rs-worker
+# 建议与 backend 同 SHA：
+kubectl -n gitlab-runner set image deployment/rs-worker rs-worker=192.168.10.238/satellite/backend:<SHA>
 ```
+
+**backend 仍为单 Pod 内进程流水线**；仅拉起 Redis 与 rs-worker，验证连通。
 
 **验收 2**
 
 | ☐ | 检查 | 命令 | 通过标准 |
 |---|------|------|----------|
+| 2.0 | CI job（若用方式 A） | GitLab pipeline | `deploy-phase1-pilot` success，日志含 PONG |
 | 2.1 | Redis Running | `kubectl -n gitlab-runner get pod -l app=redis` | `1/1 Running`，无 ImagePullBackOff |
 | 2.2 | Redis PONG | 见下 | 返回 PONG |
 | 2.3 | rs-worker Running | `kubectl -n gitlab-runner get pod -l app=rs-worker` | `1/1 Running` |

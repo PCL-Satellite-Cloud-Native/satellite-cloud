@@ -12,7 +12,15 @@
 | `rs-worker/` | RS Worker Deployment（消费 `rs.jobs`） |
 | `kustomization.yaml` | Pilot：namespace=`gitlab-runner` |
 
-## Pilot 部署（推荐第一步）
+## GitLab CI 自动部署（阶段 2）
+
+在 GitLab 项目 Variables 设置 **`DEPLOY_PHASE1_PILOT=true`**，push `main` 后 pipeline job **`deploy-phase1-pilot`** 会在 `deploy` 之后自动 apply 本目录。
+
+关闭：设 `DEPLOY_PHASE1_PILOT=false` 或删除变量（job 会 skip）。
+
+**阶段 3**（backend 切 Redis 入队）**不在 CI 中**，须手动 `switch-backend-to-redis-mode.sh`。
+
+## Pilot 部署（手动）
 
 **前置**：Phase 0 已闭合；`satellite-backend` 仍 `SATELLITE_USE_INPROCESS_PIPELINE=true`（默认），rs-worker 仅验证 Redis 连通与镜像内二进制。
 

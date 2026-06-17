@@ -161,6 +161,8 @@
 
 ### 阶段 1 — API 与 RS 计算分离（1～2 周）【优先开发】
 
+**状态（2026-06-17）**：**进行中** — Pilot 骨架已合入（Redis/rs-worker K8s、`cmd/rs-worker`）；见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)、归档 [archives/2026-06-17_phase1-kickoff.md](./archives/2026-06-17_phase1-kickoff.md)。
+
 | 项 | 内容 |
 |----|------|
 | 目标 | API 不跑 Python；多 task 可并行 RS |

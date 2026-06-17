@@ -72,6 +72,11 @@ func main() {
 		zap.String("output_subdir", cfg.ObjectDetection.OutputSubdir),
 		zap.Int("stage_timeout_seconds", cfg.ObjectDetection.StageTimeoutSec),
 	)
+	zapLogger.Info("Pipeline queue configured",
+		zap.Bool("use_inprocess_pipeline", cfg.Queue.UseInProcessPipeline),
+		zap.String("redis_addr", cfg.Queue.RedisAddr),
+		zap.String("stream_rs", cfg.Queue.StreamRS),
+	)
 
 	// 独立检测 API 保留供后续 K8s 微服务拆分；主流程已并入遥感串行流水线
 	objectDetectionService := objectdetection.NewObjectDetectionService(db, zapLogger, cfg.ObjectDetection)
@@ -182,7 +187,10 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 
-	remoteSensingService := remotesensing.NewRemoteSensingService(db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection)
+	remoteSensingService := remotesensing.NewRemoteSensingService(
+		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection,
+		remotesensing.DefaultOptions(cfg.Queue),
+	)
 
 	// API 路由
 	api := router.Group("/api")

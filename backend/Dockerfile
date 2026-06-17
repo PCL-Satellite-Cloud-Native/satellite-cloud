@@ -12,6 +12,7 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/rs-worker ./cmd/rs-worker && \
     CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/import_topology ./tools
 
 # 构建阶段：编译 yolov8s（Linux + CGO + 内嵌字体）
@@ -65,8 +66,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
-# 从构建阶段复制二进制文件（server + 拓扑导入 CLI）
+# 从构建阶段复制二进制文件（server + rs-worker + 拓扑导入 CLI）
 COPY --from=builder /build/bin/server .
+COPY --from=builder /build/bin/rs-worker .
 COPY --from=builder /build/bin/import_topology .
 
 # 复制 GitLab CI 拉取的遥感项目源码

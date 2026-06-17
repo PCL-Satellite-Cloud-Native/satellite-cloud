@@ -1,6 +1,8 @@
 # K8s Baseline 实施手册（RS 1～9 + 目标识别第 10 阶段）
 
 > **文档定位**：15 节点集群 **1～10 全链路 baseline** 的 **单一入口（SSOT）**——含操作步骤、CI/NFS/仓库机、故障排查，以及 **2026-06 实际部署记录**（附录 A）。  
+> **Phase 0 历史快照**（只读）：[archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md) — 三次 benchmark 完整表。  
+> **Phase 1 活跃手册**：[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)  
 > **文档索引**：[DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md)（三仓归类与阅读路线）。  
 > **目标**：单 Pod `satellite-backend` 跑通 RS + 目标识别，**暂不拆微服务、不上 Redis/Argo**。  
 > **关联**：[REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md)、[REMOTE_SENSING_REPO_MIRROR.md](./REMOTE_SENSING_REPO_MIRROR.md)、[OBJECT_DETECTION_REPO_MIRROR.md](./OBJECT_DETECTION_REPO_MIRROR.md)、[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 0；**Phase 0 收口**见 **§11**。
@@ -409,8 +411,8 @@ kubectl -n gitlab-runner exec "$POD" -- ls /opt/object-detection/output_detectio
 ## 11. Phase 0 收口 Checklist
 
 > **用途**：首次全链路跑通（附录 A）之后，用本清单把 baseline **可复现、可交接、可对照** 地「封口」，再评审是否进入 [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) Phase 1。  
-> **建议负责人**：运维 1 人 + 开发 1 人；预计 **1～3 个工作日**（含 3 次全链路跑数）。  
-> **固定输入**（三次必须相同）：`GF2_PMS1_E118.6_N37.4_20160826_L1A0001792619`；`enable_detection=true`；检测类别留空（全类）。
+> **状态（2026-06-17）**：**已闭合** — 完整数据见 [archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md)。  
+> **后继**：Phase 1 见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)。
 
 ### 11.1 总览进度
 
@@ -655,9 +657,10 @@ curl -s "<API_HOST>/api/remote-sensing/tasks/<TASK_ID>/detection-stats"
 
 **Phase 1 启动前建议（1～2 天，可与开发并行）**：
 
-- [ ] 238 上 `:18080` 改 systemd 或 nginx `/static`（§5.2 方案 B）
-- [ ] Redis 选型与 namespace 规划（`satellite-control` / `satellite-compute-rs`）
-- [ ] 保留 `SATELLITE_USE_INPROCESS_PIPELINE=true` 回滚开关（见微服务方案）
+- [ ] 238 上 `:18080` 改 systemd（`scripts/ops/install-static-http-18080.sh`）或 nginx `/static`
+- [ ] 部署 Redis + rs-worker Pilot（[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md) §3）
+- [ ] 实现 API 入队 + rs-worker RunPipeline
+- [ ] 保留 `SATELLITE_USE_INPROCESS_PIPELINE=true` 回滚开关直至 P1-05 验收
 
 **不建议现在做**：Argo DAG（Phase 3）、120 节点扩缩、MinIO 替换 NFS（除非 NFS 已成为明确瓶颈）。
 

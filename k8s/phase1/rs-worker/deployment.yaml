@@ -117,6 +117,16 @@ spec:
               value: "serial4"
             - name: SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS
               value: "2"
+            - name: SATELLITE_OBJECT_DETECTION_ROOT
+              value: "/opt/object-detection"
+            - name: SATELLITE_OBJECT_DETECTION_RUNNER
+              value: "/opt/object-detection/yolov8s"
+            - name: SATELLITE_OBJECT_DETECTION_DEVICE
+              value: "cpu"
+            - name: SATELLITE_OBJECT_DETECTION_STAGE_TIMEOUT_SECONDS
+              value: "14400"
+            - name: SATELLITE_OBJECT_DETECTION_OUTPUT_SUBDIR
+              value: "output_detection"
           resources:
             requests:
               memory: "2Gi"
@@ -138,6 +148,12 @@ spec:
             - name: remote-sensing-data
               mountPath: /opt/remote-sensing-data/dem
               subPath: dem
+            - name: remote-sensing-data
+              mountPath: /opt/object-detection/output_detection
+              subPath: object_detection_output
+            - name: remote-sensing-data
+              mountPath: /opt/object-detection/yolov8m-obb.onnx
+              subPath: models/yolov8m-obb.onnx
       volumes:
         - name: remote-sensing-data
           persistentVolumeClaim:

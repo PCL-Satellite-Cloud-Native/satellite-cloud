@@ -1,0 +1,14 @@
+# 冒烟：验证 gitlab-runner 可跑 Workflow + Harbor argoexec
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: hello-
+  namespace: gitlab-runner
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      container:
+        image: 192.168.10.238/library/alpine:3.19-amd64-r1
+        command: [sh, -c]
+        args: ["echo hello-argo && sleep 2"]

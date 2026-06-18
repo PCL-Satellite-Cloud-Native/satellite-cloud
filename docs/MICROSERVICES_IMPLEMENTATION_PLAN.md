@@ -182,7 +182,7 @@
 
 ### 阶段 2 — OD 独立 Pod（1～2 周）
 
-**状态（2026-06-18）**：**实施中** — `cmd/od-worker`、`internal/queue/od.go`、`k8s/phase2/`、`deploy-phase2-pilot` 已合入；集群 P2-03 验收待执行。见 [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)。
+**状态（2026-06-18）**：**已闭合** — P2-03 通过（task 141；rs-worker 1～9 + od-worker stage 10）；P2-04/GPU 可选。运维 [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)；归档 [archives/2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)。
 
 | 项 | 内容 |
 |----|------|
@@ -196,7 +196,9 @@
 
 ---
 
-### 阶段 3 — Argo Workflows DAG（2～3 周）
+### 阶段 3 — Argo Workflows DAG（2～3 周）【下一阶段】
+
+**状态（2026-06-18）**：**实施中** — manifest + rs-worker Argo 客户端已合入（`feat/phase3-argo-pan-rpc`）；P3-03 验收待 `USE_ARGO_PAN_RPC=true`。
 
 | 项 | 内容 |
 |----|------|
@@ -404,15 +406,17 @@ resources:
 
 ## 11. 开发优先级（Next Actions）
 
-**Phase 1（2026-06-18 已闭合）**：Redis + rs-worker + deployment.yaml env — 见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)。
+**Phase 1（2026-06-18 已闭合）**：见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)。
 
-**Phase 2 起**：
+**Phase 2（2026-06-18 已闭合）**：od-worker + od.jobs — 见 [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)。
 
-1. **`cmd/od-worker`**：检测独立 Pod；队列 `od.jobs`；RS 阶段 9 成功后入队。
-2. **GPU 池**：`od-worker` 资源声明与 device plugin。
-3. **DB 迁移**（若未做）：`remote_sensing_tasks.satellite_id`（1～120）。
-4. **并行压测（可选 P1-04/P1-05）**：`rs-worker replicas=3` + 3 并行 GF2。
-5. **目标态 namespace**：`satellite-control` / `satellite-compute-rs`（Pilot 仍用 `gitlab-runner`）。
+**Phase 3 起**：
+
+1. **Argo Workflows**：按 [PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md) 步骤 1 安装；PAN RPC Template + rs-worker 集成。
+2. **GPU 池（可选 Phase 2+）**：od-worker `device=gpu` + 节点池。
+3. **并行压测（可选）**：rs-worker / od-worker replicas>1。
+4. **DB / 拓扑**：`satellite_id`、120 星高亮（Phase 5）。
+5. **目标态 namespace** 迁移（Pilot 仍用 `gitlab-runner`）。
 
 ---
 

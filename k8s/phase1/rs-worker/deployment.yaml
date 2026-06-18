@@ -16,6 +16,7 @@ spec:
       labels:
         app: rs-worker
     spec:
+      serviceAccountName: rs-worker
       initContainers:
         - name: init-remote-sensing-dirs
           image: 192.168.10.238/library/alpine:3.19-amd64-r1
@@ -73,6 +74,14 @@ spec:
               value: "false"
             - name: SATELLITE_USE_OD_WORKER
               value: "true"
+            - name: SATELLITE_USE_ARGO_PAN_RPC
+              value: "false"
+            - name: SATELLITE_ARGO_NAMESPACE
+              value: "gitlab-runner"
+            - name: SATELLITE_ARGO_PAN_RPC_TEMPLATE
+              value: "rs-pan-rpc-parallel"
+            - name: SATELLITE_RS_WORKFLOW_IMAGE
+              value: "192.168.10.238/satellite/backend:latest"
             - name: SATELLITE_REMOTE_SENSING_ROOT
               value: "/opt/remote-sensing"
             - name: SATELLITE_REMOTE_SENSING_PYTHON

@@ -1,0 +1,124 @@
+# PAN RPC 4 路并行 — 与 rs-worker executePanRpc 参数对齐；产物写在 NFS persist 路径供 rs-worker 合并
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: rs-pan-rpc-parallel
+  namespace: gitlab-runner
+  labels:
+    satellite.io/phase: phase3-pilot
+spec:
+  entrypoint: pan-rpc-parallel
+  arguments:
+    parameters:
+      - name: task_id
+      - name: file_prefix
+      - name: rs_image
+        value: 192.168.10.238/satellite/backend:latest
+  templates:
+    - name: rs-volume-mounts
+      inputs:
+        parameters:
+          - name: rs_image
+      script:
+        image: "{{inputs.parameters.rs_image}}"
+        imagePullPolicy: Always
+        command: [/bin/sh]
+        source: |
+          set -e
+          mkdir -p /opt/remote-sensing/persist_output_preprocessing/pan_warp_quarters/workers/group{1,2,3,4}
+          chmod -R 0777 /opt/remote-sensing/persist_output_preprocessing/pan_warp_quarters
+        volumeMounts: &rs_volume_mounts
+          - name: remote-sensing-data
+            mountPath: /opt/remote-sensing/input
+            subPath: input
+          - name: remote-sensing-data
+            mountPath: /opt/remote-sensing/persist_output_preprocessing
+            subPath: output_preprocessing
+          - name: remote-sensing-data
+            mountPath: /opt/remote-sensing-data/dem
+            subPath: dem
+      volumes: &rs_volumes
+        - name: remote-sensing-data
+          persistentVolumeClaim:
+            claimName: remote-sensing-data
+
+    - name: pan-rpc-step
+      inputs:
+        parameters:
+          - name: area_indexes
+          - name: group_id
+          - name: file_prefix
+          - name: rs_image
+      container:
+        image: "{{inputs.parameters.rs_image}}"
+        imagePullPolicy: Always
+        workingDir: /opt/remote-sensing
+        command: [/opt/remote-sensing/.venv/bin/python]
+        args:
+          - pan_rpc_warp_quarters.py
+          - --file_prefix
+          - "{{inputs.parameters.file_prefix}}"
+          - --input_dir
+          - persist_output_preprocessing/pan_rad_toa
+          - --output_dir
+          - "persist_output_preprocessing/pan_warp_quarters/workers/group{{inputs.parameters.group_id}}"
+          - --area_indexes
+          - "{{inputs.parameters.area_indexes}}"
+          - --dem_file
+          - /opt/remote-sensing-data/dem/GMTED2010.jp2
+          - --cpu_threads
+          - "1"
+          - --warp_mem_mb
+          - "512"
+          - --resample_alg
+          - near
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: "500m"
+          limits:
+            memory: 4Gi
+            cpu: "2000m"
+        volumeMounts: *rs_volume_mounts
+      volumes: *rs_volumes
+
+    - name: pan-rpc-parallel
+      steps:
+        - - name: init-dirs
+            template: rs-volume-mounts
+            arguments:
+              parameters:
+                - name: rs_image
+                  value: "{{workflow.parameters.rs_image}}"
+        - - name: area1
+            template: pan-rpc-step
+            arguments:
+              parameters:
+                - { name: area_indexes, value: "1" }
+                - { name: group_id, value: "1" }
+                - { name: file_prefix, value: "{{workflow.parameters.file_prefix}}" }
+                - { name: rs_image, value: "{{workflow.parameters.rs_image}}" }
+            - name: area2
+            template: pan-rpc-step
+            arguments:
+              parameters:
+                - { name: area_indexes, value: "2" }
+                - { name: group_id, value: "2" }
+                - { name: file_prefix, value: "{{workflow.parameters.file_prefix}}" }
+                - { name: rs_image, value: "{{workflow.parameters.rs_image}}" }
+            - name: area3
+            template: pan-rpc-step
+            arguments:
+              parameters:
+                - { name: area_indexes, value: "3" }
+                - { name: group_id, value: "3" }
+                - { name: file_prefix, value: "{{workflow.parameters.file_prefix}}" }
+                - { name: rs_image, value: "{{workflow.parameters.rs_image}}" }
+            - name: area4
+            template: pan-rpc-step
+            arguments:
+              parameters:
+                - { name: area_indexes, value: "4" }
+                - { name: group_id, value: "4" }
+                - { name: file_prefix, value: "{{workflow.parameters.file_prefix}}" }
+                - { name: rs_image, value: "{{workflow.parameters.rs_image}}" }

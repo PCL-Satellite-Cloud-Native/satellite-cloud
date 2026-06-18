@@ -208,6 +208,30 @@ deploy-phase2-pilot:
   only:
     - main
 
+# Phase 3：Argo WorkflowTemplate + rs-worker Argo 集成（USE_ARGO_PAN_RPC 默认 false，验收后改 true）
+# push main 后自动执行（P3-03 验收通过后改 when: manual，与 deploy-phase1-pilot 一致）
+deploy-phase3-pilot:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  script:
+    - echo "Phase 3 Pilot：Argo controller 对齐 + WorkflowTemplate + rs-worker SA/RBAC"
+    - kubectl apply -k k8s/phase3/argo/
+    - kubectl -n argo rollout status deployment/workflow-controller --timeout=180s
+    - kubectl apply -k k8s/phase3/
+    - kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-submitter.yaml
+    - kubectl apply -k k8s/phase1/
+    - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
+    - kubectl -n gitlab-runner get workflowtemplate rs-pan-rpc-parallel
+    - echo "启用 Argo：kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_USE_ARGO_PAN_RPC=true"
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - deploy-phase2-pilot
+  only:
+    - main
+
 sync-topology-csv-to-nfs:
   stage: topology-sync
   image: "$CI_ALPINE_IMAGE"

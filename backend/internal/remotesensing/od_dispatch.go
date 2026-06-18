@@ -1,0 +1,121 @@
+package remotesensing
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"go.uber.org/zap"
+
+	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/model"
+	"satellite-cloud/backend/internal/queue"
+)
+
+// ODWorkerOptions od-worker 进程选项（仅消费 od.jobs）
+func ODWorkerOptions(queueCfg config.QueueConfig) Options {
+	queueCfg.UseInProcessPipeline = false
+	return Options{Queue: queueCfg, BootstrapPending: false}
+}
+
+func fusionDatRelPersist(cfg config.RemoteSensingConfig, filePrefix string) string {
+	return filepath.Join(cfg.PersistOutputDir, "fusion_envi", fmt.Sprintf("%s-MSS1-fusion.dat", filePrefix))
+}
+
+func createTaskRequestFromODJob(job queue.ODJobPayload) CreateTaskRequest {
+	return CreateTaskRequest{
+		FilePrefix:          job.FilePrefix,
+		DetectionClasses:    job.DetectionClasses,
+		DetectionDrawLabels: job.DetectionDrawLabels,
+		EnableDetection:     true,
+	}
+}
+
+func (s *RemoteSensingService) enqueueOD(ctx context.Context, taskID uint, req CreateTaskRequest, fusionDatRel string) error {
+	client, err := s.getRedisClient()
+	if err != nil {
+		return err
+	}
+	streamID, err := client.EnqueueODJob(ctx, s.queueCfg.StreamOD, queue.ODJobPayload{
+		TaskID:              taskID,
+		FilePrefix:          req.FilePrefix,
+		FusionDatRel:        fusionDatRel,
+		DetectionClasses:    req.DetectionClasses,
+		DetectionDrawLabels: req.DetectionDrawLabels,
+		EnqueuedAt:          time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return err
+	}
+	s.logger.Info("检测任务已入队 Redis",
+		zap.Uint("task_id", taskID),
+		zap.String("stream", s.queueCfg.StreamOD),
+		zap.String("stream_id", streamID),
+		zap.String("fusion_dat_rel", fusionDatRel),
+	)
+	return nil
+}
+
+// RunDetectionFromJob od-worker 消费 od.jobs 后执行阶段 10
+func (s *RemoteSensingService) RunDetectionFromJob(ctx context.Context, job queue.ODJobPayload) {
+	taskID := job.TaskID
+	req := createTaskRequestFromODJob(job)
+	req.FusionDatRel = job.FusionDatRel
+	def := stageDefinition{Name: StageObjectDetection, Title: "YOLOv8 目标识别", Order: 10}
+
+	if err := s.runStage(ctx, taskID, def, req); err != nil {
+		s.finishTaskWithError(taskID, fmt.Sprintf("阶段 %s 失败: %v", def.Name, err))
+		return
+	}
+	s.finishTaskCompleted(taskID)
+}
+
+// persistFusionArtifactsSync 阶段 9 完成后同步持久化融合产物（od-worker 跨 Pod 需读 NFS）
+func (s *RemoteSensingService) persistFusionArtifactsSync(taskID uint, filePrefix string) error {
+	finalDatName := fmt.Sprintf("%s-MSS1-fusion.dat", filePrefix)
+	finalHdrName := fmt.Sprintf("%s-MSS1-fusion.hdr", filePrefix)
+	previewName := fmt.Sprintf("%s-MSS1-fusion.png", filePrefix)
+
+	scratchFinalDatRel := filepath.Join("output_preprocessing", "fusion_envi", finalDatName)
+	scratchFinalHdrRel := filepath.Join("output_preprocessing", "fusion_envi", finalHdrName)
+	scratchPreviewRel := filepath.Join("output_preprocessing", "imgshow", previewName)
+
+	persistFinalDatRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalDatName)
+	persistFinalHdrRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalHdrName)
+	persistPreviewRel := filepath.Join(s.cfg.PersistOutputDir, "imgshow", previewName)
+
+	persistFusionDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "fusion_envi")
+	persistPreviewDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "imgshow")
+	if err := os.MkdirAll(persistFusionDir, 0o755); err != nil {
+		return fmt.Errorf("持久化目录创建失败: %w", err)
+	}
+	if err := os.MkdirAll(persistPreviewDir, 0o755); err != nil {
+		return fmt.Errorf("持久化目录创建失败: %w", err)
+	}
+
+	s.log(taskID, StageFusionStack, "info", fmt.Sprintf("同步持久化开始: %s", persistFinalDatRel))
+	if err := copyFile(filepath.Join(s.cfg.RootPath, scratchFinalDatRel), filepath.Join(s.cfg.RootPath, persistFinalDatRel)); err != nil {
+		return fmt.Errorf("持久化 dat 失败: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(s.cfg.RootPath, scratchFinalHdrRel)); err == nil {
+		if err := copyFile(filepath.Join(s.cfg.RootPath, scratchFinalHdrRel), filepath.Join(s.cfg.RootPath, persistFinalHdrRel)); err != nil {
+			return fmt.Errorf("持久化 hdr 失败: %w", err)
+		}
+	}
+	if err := copyFile(filepath.Join(s.cfg.RootPath, scratchPreviewRel), filepath.Join(s.cfg.RootPath, persistPreviewRel)); err != nil {
+		return fmt.Errorf("持久化预览图失败: %w", err)
+	}
+
+	ctx := context.Background()
+	_ = s.db.WithContext(ctx).Model(&model.RemoteSensingTaskArtifact{}).
+		Where("task_id = ? AND path = ?", taskID, scratchFinalDatRel).
+		Update("path", persistFinalDatRel).Error
+	_ = s.db.WithContext(ctx).Model(&model.RemoteSensingTaskArtifact{}).
+		Where("task_id = ? AND path = ?", taskID, scratchPreviewRel).
+		Update("path", persistPreviewRel).Error
+
+	s.log(taskID, StageFusionStack, "info", "同步持久化完成")
+	return nil
+}

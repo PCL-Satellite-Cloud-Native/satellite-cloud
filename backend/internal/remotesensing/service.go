@@ -84,6 +84,7 @@ type CreateTaskRequest struct {
 	EnableDetection     bool   `json:"enableDetection"`
 	DetectionClasses    string `json:"detectionClasses"`
 	DetectionDrawLabels bool   `json:"detectionDrawLabels"`
+	FusionDatRel        string `json:"-"` // Phase 2：od-worker 指定 NFS 融合路径
 }
 
 type stageExecutionResult struct {
@@ -416,6 +417,13 @@ func (s *RemoteSensingService) runPipeline(ctx context.Context, taskID uint, req
 			}
 			continue
 		}
+		if def.Name == StageObjectDetection && req.EnableDetection && s.queueCfg.UseODWorker {
+			if err := s.enqueueOD(ctx, taskID, req, fusionDatRelPersist(s.cfg, req.FilePrefix)); err != nil {
+				s.finishTaskWithError(taskID, fmt.Sprintf("检测入队失败: %v", err))
+				return
+			}
+			return
+		}
 		if err := s.runStage(ctx, taskID, def, req); err != nil {
 			s.finishTaskWithError(taskID, fmt.Sprintf("阶段 %s 失败: %v", def.Name, err))
 			return
@@ -472,7 +480,13 @@ func (s *RemoteSensingService) runStage(ctx context.Context, taskID uint, def st
 		}
 	}
 	if def.Name == StageFusionStack {
-		s.persistFusionArtifactsAsync(taskID, req.FilePrefix)
+		if s.queueCfg.UseODWorker && req.EnableDetection {
+			if err := s.persistFusionArtifactsSync(taskID, req.FilePrefix); err != nil {
+				s.log(taskID, StageFusionStack, "warn", fmt.Sprintf("同步持久化失败: %v", err))
+			}
+		} else {
+			s.persistFusionArtifactsAsync(taskID, req.FilePrefix)
+		}
 	}
 	return nil
 }

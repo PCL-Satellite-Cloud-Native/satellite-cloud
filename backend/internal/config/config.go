@@ -43,14 +43,17 @@ type LogConfig struct {
 	Output string // stdout, file path
 }
 
-// QueueConfig Redis Stream 与 Phase 1 流水线开关
+// QueueConfig Redis Stream 与 Phase 1/2 流水线开关
 type QueueConfig struct {
 	RedisAddr            string
 	StreamRS             string
 	StreamOD             string
 	ConsumerGroup        string
+	ODConsumerGroup      string
 	RSWorkerConcurrency  int
+	ODWorkerConcurrency  int
 	UseInProcessPipeline bool
+	UseODWorker          bool
 }
 
 type RemoteSensingConfig struct {
@@ -230,8 +233,11 @@ func setDefaults() {
 	viper.SetDefault("queue.stream_rs", "rs.jobs")
 	viper.SetDefault("queue.stream_od", "od.jobs")
 	viper.SetDefault("queue.consumer_group", "rs-workers")
+	viper.SetDefault("queue.od_consumer_group", "od-workers")
 	viper.SetDefault("queue.rs_worker_concurrency", 1)
+	viper.SetDefault("queue.od_worker_concurrency", 1)
 	viper.SetDefault("queue.use_inprocess_pipeline", true)
+	viper.SetDefault("queue.use_od_worker", false)
 }
 
 func queueConfigFromEnvOrViper() QueueConfig {
@@ -249,8 +255,11 @@ func queueConfigFromEnvOrViper() QueueConfig {
 		StreamRS:             get("SATELLITE_REDIS_STREAM_RS", "queue.stream_rs", "rs.jobs"),
 		StreamOD:             get("SATELLITE_REDIS_STREAM_OD", "queue.stream_od", "od.jobs"),
 		ConsumerGroup:        get("SATELLITE_REDIS_CONSUMER_GROUP", "queue.consumer_group", "rs-workers"),
+		ODConsumerGroup:      get("SATELLITE_REDIS_OD_CONSUMER_GROUP", "queue.od_consumer_group", "od-workers"),
 		RSWorkerConcurrency:  getInt("SATELLITE_RS_WORKER_CONCURRENCY", "queue.rs_worker_concurrency", 1),
+		ODWorkerConcurrency:  getInt("SATELLITE_OD_WORKER_CONCURRENCY", "queue.od_worker_concurrency", 1),
 		UseInProcessPipeline: getBool("SATELLITE_USE_INPROCESS_PIPELINE", "queue.use_inprocess_pipeline", true),
+		UseODWorker:          getBool("SATELLITE_USE_OD_WORKER", "queue.use_od_worker", false),
 	}
 }
 

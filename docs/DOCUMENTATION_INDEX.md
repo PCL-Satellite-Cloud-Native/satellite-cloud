@@ -20,6 +20,7 @@
 | **CI 构建 ORT/字体失败** | [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) §5.2、§8 | 10 分钟 |
 | **记录 Phase 0 baseline / 收口** | [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) **§11** / [archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md) | 已闭合 |
 | **Phase 1 Redis + rs-worker** | [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md) | 已闭合；日常运维 |
+| **Phase 2 od-worker** | [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md) | 实施中 |
 | **Phase 1 收口数据** | [archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md) | task 140 等 |
 | **规划微服务 / 多星协同** | [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) | 45 分钟 |
 | **历史归档索引** | [archives/ARCHIVE_INDEX.md](./archives/ARCHIVE_INDEX.md) | 2 分钟 |
@@ -223,7 +224,7 @@ flowchart LR
 |----------|----------|
 | 集群部署流程、CI 变量、首次验收 | `K8S_BASELINE_RUNBOOK.md`（含附录 A） |
 | Phase 0 收口（3× benchmark、签字） | `K8S_BASELINE_RUNBOOK.md` **§11** / `archives/2026-06-17_phase0-closure.md` |
-| Phase 1 Pilot（Redis、rs-worker） | `PHASE1_RUNBOOK.md`、`archives/2026-06-18_phase1-closure.md`、`k8s/phase1/` |
+| Phase 2 od-worker | `PHASE2_RUNBOOK.md`、`k8s/phase2/` |
 | 文档大更新归档 | `archives/ARCHIVE_INDEX.md`、`scripts/archive_docs_snapshot.sh` |
 | Deployment env / 资源 / 挂载 | `REMOTE_SENSING_K8S_DEPLOYMENT.md` + runbook 交叉引用 |
 | RS/OD 容器内路径或 config | 各仓 `K8S_RUNTIME_PREP.md` |

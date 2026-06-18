@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gorm.io/datatypes"
 
@@ -17,7 +18,10 @@ func (s *RemoteSensingService) executeObjectDetection(ctx context.Context, taskI
 		return nil, fmt.Errorf("目标识别未配置（缺少 SATELLITE_OBJECT_DETECTION_ROOT）")
 	}
 
-	fusionRel := filepath.Join("output_preprocessing", "fusion_envi", fmt.Sprintf("%s-MSS1-fusion.dat", req.FilePrefix))
+	fusionRel := strings.TrimSpace(req.FusionDatRel)
+	if fusionRel == "" {
+		fusionRel = filepath.Join("output_preprocessing", "fusion_envi", fmt.Sprintf("%s-MSS1-fusion.dat", req.FilePrefix))
+	}
 	inputPath := objectdetection.FusionDatPathForRunner(s.cfg.RootPath, fusionRel)
 	outDir := filepath.Join(s.detectionCfg.OutputSubdir, fmt.Sprintf("rs_task_%d", taskID))
 

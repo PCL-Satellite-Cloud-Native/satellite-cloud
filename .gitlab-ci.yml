@@ -23,8 +23,6 @@ variables:
   # 内网 GitLab Object-Detection 仓库（与遥感类似，HTTPS）
   OBJECT_DETECTION_REPO_URL: ""
   OBJECT_DETECTION_REPO_REF: "main"
-  # Phase 1 Pilot：设为 true 时 deploy 后自动 apply Redis + rs-worker（阶段 2，不切 backend Redis 模式）
-  DEPLOY_PHASE1_PILOT: "false"
 
 # 构建并推送后端镜像
 build-backend:
@@ -162,17 +160,13 @@ deploy:
     - main
 
 # Phase 1 阶段 2：Redis + rs-worker Pilot（不修改 satellite-backend 流水线模式）
-# 启用：GitLab CI/CD Variables 设 DEPLOY_PHASE1_PILOT=true（或在下方 variables 改为 "true"）
+# 默认不自动执行：在 GitLab Pipeline 页面手动点击 deploy-phase1-pilot
 deploy-phase1-pilot:
   stage: deploy
   image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
   script:
-    - |
-      if [ "${DEPLOY_PHASE1_PILOT:-false}" != "true" ]; then
-        echo "跳过 deploy-phase1-pilot（DEPLOY_PHASE1_PILOT!=true）"
-        echo "阶段 2 手动：kubectl apply -k k8s/phase1/"
-        exit 0
-      fi
     - echo "Phase 1 Pilot：部署 Redis + rs-worker 到 namespace=gitlab-runner"
     - kubectl apply -f k8s/phase1/namespaces.yaml || true
     - kubectl apply -k k8s/phase1/
@@ -182,9 +176,9 @@ deploy-phase1-pilot:
     - |
       RPOD=$(kubectl -n gitlab-runner get pod -l app=redis -o jsonpath='{.items[0].metadata.name}')
       kubectl -n gitlab-runner exec "$RPOD" -- redis-cli ping
-    - kubectl -n gitlab-runner get deploy,pod -l 'satellite.io/phase=phase1-pilot' || kubectl -n gitlab-runner get deploy redis rs-worker
+    - kubectl -n gitlab-runner get deploy redis rs-worker
     - kubectl -n gitlab-runner logs deployment/rs-worker --tail=20
-    - echo "注意：satellite-backend 仍为 in-process，阶段 3 需手动 switch-backend-to-redis-mode.sh"
+    - echo "backend Redis 入队 env 已固化于 k8s/backend/deployment.yaml，由 deploy job apply"
   tags:
     - k8s-cluster-runner
   needs:

@@ -2,7 +2,8 @@
 
 > **文档定位**：15 节点集群 **1～10 全链路 baseline** 的 **单一入口（SSOT）**——含操作步骤、CI/NFS/仓库机、故障排查，以及 **2026-06 实际部署记录**（附录 A）。  
 > **Phase 0 历史快照**（只读）：[archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md) — 三次 benchmark 完整表。  
-> **Phase 1 活跃手册**：[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)  
+> **Phase 1 历史快照**（只读）：[archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md) — Redis + rs-worker 收口。  
+> **Phase 1 活跃运维**：[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)  
 > **文档索引**：[DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md)（三仓归类与阅读路线）。  
 > **目标**：单 Pod `satellite-backend` 跑通 RS + 目标识别，**暂不拆微服务、不上 Redis/Argo**。  
 > **关联**：[REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md)、[REMOTE_SENSING_REPO_MIRROR.md](./REMOTE_SENSING_REPO_MIRROR.md)、[OBJECT_DETECTION_REPO_MIRROR.md](./OBJECT_DETECTION_REPO_MIRROR.md)、[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 0；**Phase 0 收口**见 **§11**。
@@ -377,15 +378,17 @@ kubectl -n gitlab-runner exec "$POD" -- ls -la /opt/object-detection/output_dete
 
 **本手册完成后你应达到**：单 Pod backend 跑通 **10 阶段**，产物在 NFS，前端可预览/下载/统计。
 
-**Phase 0 正式闭合**（3 次可复现、报告归档、运维可持续）：按 **§11 Checklist** 逐项勾选，再进入微服务评审。
+**Phase 0 正式闭合**（3 次可复现、报告归档、运维可持续）：按 **§11 Checklist** 逐项勾选。
 
-**此时仍不要做**（见微服务方案 Phase 1+）：
+**Phase 1 已闭合**（2026-06-18）：Redis 入队 + rs-worker；日常运维见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)，历史见 [archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md)。
 
-- Redis 队列、rs-worker / od-worker 拆分
+**本手册仍适用**：Phase 0 单 Pod 部署、CI/NFS/238 前置、故障排查；当前生产路径为 Phase 1（backend 入队 + rs-worker 算 RS）。
+
+**尚未做**（见微服务方案 Phase 2+）：
+
+- od-worker 独立 Pod + GPU 池
 - Argo Workflow DAG
 - 120 节点扩缩与多星协同压测
-
-下一步：用 Phase 0 数据评审是否进入 [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) 的 Phase 1（API 与 Worker 分离）。
 
 ---
 
@@ -412,7 +415,7 @@ kubectl -n gitlab-runner exec "$POD" -- ls /opt/object-detection/output_detectio
 
 > **用途**：首次全链路跑通（附录 A）之后，用本清单把 baseline **可复现、可交接、可对照** 地「封口」，再评审是否进入 [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) Phase 1。  
 > **状态（2026-06-17）**：**已闭合** — 完整数据见 [archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md)。  
-> **后继**：Phase 1 见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)。
+> **后继**：Phase 1 已闭合 — 运维 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)；归档 [archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md)。
 
 ### 11.1 总览进度
 
@@ -655,12 +658,14 @@ curl -s "<API_HOST>/api/remote-sensing/tasks/<TASK_ID>/detection-stats"
 2. 当前瓶颈在 **单 Pod 串行 + CPU 检测**；Phase 1 解决 **API 与 RS 计算分离、多 task 并行**，不依赖 GPU。
 3. 检测耗时优化留 **Phase 2（od-worker + GPU）** 或并行路线图 [REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md](./REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md)，不必阻塞 Phase 1。
 
-**Phase 1 启动前建议（1～2 天，可与开发并行）**：
+**Phase 1 启动前建议（1～2 天，可与开发并行）** — **均已完成（2026-06-18）**：
 
-- [ ] 238 上 `:18080` 改 systemd（`scripts/ops/install-static-http-18080.sh`）或 nginx `/static`
-- [ ] 部署 Redis + rs-worker Pilot（[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md) §3）
-- [ ] 实现 API 入队 + rs-worker RunPipeline
-- [ ] 保留 `SATELLITE_USE_INPROCESS_PIPELINE=true` 回滚开关直至 P1-05 验收
+- [x] 238 上 `:18080` 改 systemd（`scripts/ops/install-static-http-18080.sh`）
+- [x] 部署 Redis + rs-worker Pilot（[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md) §3）
+- [x] 实现 API 入队 + rs-worker RunPipeline；env 固化于 `k8s/backend/deployment.yaml`
+- [x] P1-03 全链路验收（task 140）；P1-04/P1-05 并行压测留 Phase 1+
+
+**Phase 1 收口**：见 [archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md)。
 
 **不建议现在做**：Argo DAG（Phase 3）、120 节点扩缩、MinIO 替换 NFS（除非 NFS 已成为明确瓶颈）。
 

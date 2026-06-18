@@ -161,7 +161,7 @@
 
 ### 阶段 1 — API 与 RS 计算分离（1～2 周）【优先开发】
 
-**状态（2026-06-17）**：**进行中** — Pilot 骨架已合入（Redis/rs-worker K8s、`cmd/rs-worker`）；见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)、归档 [archives/2026-06-17_phase1-kickoff.md](./archives/2026-06-17_phase1-kickoff.md)。
+**状态（2026-06-18）**：**已闭合** — P1-01～P1-03 通过（Redis 入队、rs-worker、task 140 全链路）；P1-04/P1-05 并行压测可选。运维 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)；归档 [archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md)。
 
 | 项 | 内容 |
 |----|------|
@@ -402,13 +402,15 @@ resources:
 
 ## 11. 开发优先级（Next Actions）
 
-1. **DB 迁移**：`remote_sensing_tasks` 增加 `satellite_id`（uint, 1～120）、可选 `scenario_id`。
-2. **Redis**：Helm/bitnami 部署到 `satellite-control`；API 配置 `SATELLITE_REDIS_*`。
-3. **`cmd/rs-worker`**：从现有 `runPipeline` 抽出，消费 `rs.jobs`。
-4. **Feature flag**：`SATELLITE_USE_INPROCESS_PIPELINE` 默认 `true`，K8s 设为 `false`。
-5. **K8s**：`k8s/rs-worker/deployment.yaml`、`k8s/redis/` 初版。
-6. **文档**：CI 增加 `rs-worker` 镜像 build（RS 仓库或 cloud 多阶段 Dockerfile）。
-7. **脚本**：`scripts/third_party/run_all.sh` 骨架。
+**Phase 1（2026-06-18 已闭合）**：Redis + rs-worker + deployment.yaml env — 见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)。
+
+**Phase 2 起**：
+
+1. **`cmd/od-worker`**：检测独立 Pod；队列 `od.jobs`；RS 阶段 9 成功后入队。
+2. **GPU 池**：`od-worker` 资源声明与 device plugin。
+3. **DB 迁移**（若未做）：`remote_sensing_tasks.satellite_id`（1～120）。
+4. **并行压测（可选 P1-04/P1-05）**：`rs-worker replicas=3` + 3 并行 GF2。
+5. **目标态 namespace**：`satellite-control` / `satellite-compute-rs`（Pilot 仍用 `gitlab-runner`）。
 
 ---
 

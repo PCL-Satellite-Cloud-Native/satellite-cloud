@@ -1,10 +1,5 @@
-# rs-worker ServiceAccount：在 gitlab-runner 提交 / 监视 Workflow
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: rs-worker
-  namespace: gitlab-runner
----
+# rs-worker 在 gitlab-runner 提交 / 监视 Workflow（Role + Binding）
+# ServiceAccount 定义在 k8s/phase1/rs-worker/serviceaccount.yaml（phase1 apply 时创建）
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

@@ -6,6 +6,7 @@ namespace: gitlab-runner
 
 resources:
   - redis/deployment.yaml
+  - rs-worker/serviceaccount.yaml
   - rs-worker/deployment.yaml
 
 labels:

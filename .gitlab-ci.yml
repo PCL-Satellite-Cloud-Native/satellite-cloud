@@ -209,11 +209,10 @@ deploy-phase2-pilot:
     - main
 
 # Phase 3：Argo WorkflowTemplate + rs-worker Argo 集成（USE_ARGO_PAN_RPC 默认 false，验收后改 true）
+# push main 后自动执行（P3-03 验收通过后改 when: manual，与 deploy-phase1-pilot 一致）
 deploy-phase3-pilot:
   stage: deploy
   image: "$CI_KUBECTL_IMAGE"
-  when: manual
-  allow_failure: true
   script:
     - echo "Phase 3 Pilot：Argo controller 对齐 + WorkflowTemplate + rs-worker SA/RBAC"
     - kubectl apply -k k8s/phase3/argo/
@@ -229,7 +228,7 @@ deploy-phase3-pilot:
   tags:
     - k8s-cluster-runner
   needs:
-    - deploy
+    - deploy-phase2-pilot
   only:
     - main
 

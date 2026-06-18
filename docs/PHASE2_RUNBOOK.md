@@ -1,6 +1,6 @@
 # Phase 2 运维手册（od-worker 独立检测）
 
-> **状态（2026-06-18）**：**实施中** — 代码与 K8s 骨架已合入；集群验收待执行。  
+> **状态（2026-06-18）**：**Phase 2 已闭合** — 历史见 [archives/2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)（task 141）。  
 > **前置**：[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)（Phase 1 已闭合）。  
 > **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 2。
 

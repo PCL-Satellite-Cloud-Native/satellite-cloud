@@ -135,6 +135,7 @@ type RemoteSensingService struct {
 	cfg             config.RemoteSensingConfig
 	detectionCfg    config.ObjectDetectionConfig
 	queueCfg        config.QueueConfig
+	argoCfg         config.ArgoConfig
 	redisClient     *queue.Client
 	redisMu         sync.Mutex
 	detectionRunner *objectdetection.Runner
@@ -148,7 +149,7 @@ type pipelineJob struct {
 	Req    CreateTaskRequest
 }
 
-func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig, detectionCfg config.ObjectDetectionConfig, opts Options) *RemoteSensingService {
+func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig, detectionCfg config.ObjectDetectionConfig, argoCfg config.ArgoConfig, opts Options) *RemoteSensingService {
 	queueSize := cfg.WorkerQueueSize
 	if queueSize <= 0 {
 		queueSize = 64
@@ -163,6 +164,7 @@ func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteS
 		queue:        make(chan pipelineJob, queueSize),
 	}
 	s.initDetectionRunner()
+	s.initArgoFromConfig(argoCfg, logger)
 
 	if opts.Queue.UseInProcessPipeline {
 		workerN := cfg.WorkerConcurrency
@@ -710,6 +712,9 @@ func (s *RemoteSensingService) executePanRadToa(ctx context.Context, taskID uint
 }
 
 func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	if s.argoCfg.UseArgoPanRPC {
+		return s.executePanRpcViaArgo(ctx, taskID, req)
+	}
 	outputDir := filepath.Join("output_preprocessing", "pan_warp_quarters")
 	demFile := s.cfg.DemFile
 	cpuThreads := effectiveParallelism(s.cfg.PanRPCCPUThreads, 1, 4)

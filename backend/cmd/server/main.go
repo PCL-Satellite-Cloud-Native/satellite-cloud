@@ -188,7 +188,7 @@ func main() {
 	})
 
 	remoteSensingService := remotesensing.NewRemoteSensingService(
-		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection,
+		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection, cfg.Argo,
 		remotesensing.DefaultOptions(cfg.Queue),
 	)
 

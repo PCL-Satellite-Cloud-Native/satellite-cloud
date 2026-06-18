@@ -21,6 +21,7 @@ type Config struct {
 	Queue           QueueConfig
 	RemoteSensing   RemoteSensingConfig
 	ObjectDetection ObjectDetectionConfig
+	Argo            ArgoConfig
 }
 
 type ServerConfig struct {
@@ -54,6 +55,14 @@ type QueueConfig struct {
 	ODWorkerConcurrency  int
 	UseInProcessPipeline bool
 	UseODWorker          bool
+}
+
+// ArgoConfig Phase 3 Argo Workflows（PAN RPC 并行 Pilot）
+type ArgoConfig struct {
+	UseArgoPanRPC  bool
+	Namespace      string
+	PanRPCTemplate string
+	WorkflowImage  string
 }
 
 type RemoteSensingConfig struct {
@@ -136,6 +145,7 @@ func Load() *Config {
 		Queue:           queueConfigFromEnvOrViper(),
 		RemoteSensing:   remoteSensingConfigFromEnvOrViper(),
 		ObjectDetection: objectDetectionConfigFromEnvOrViper(),
+		Argo:            argoConfigFromEnvOrViper(),
 	}
 
 	return config
@@ -238,6 +248,11 @@ func setDefaults() {
 	viper.SetDefault("queue.od_worker_concurrency", 1)
 	viper.SetDefault("queue.use_inprocess_pipeline", true)
 	viper.SetDefault("queue.use_od_worker", false)
+
+	viper.SetDefault("argo.use_pan_rpc", false)
+	viper.SetDefault("argo.namespace", "gitlab-runner")
+	viper.SetDefault("argo.pan_rpc_template", "rs-pan-rpc-parallel")
+	viper.SetDefault("argo.workflow_image", "")
 }
 
 func queueConfigFromEnvOrViper() QueueConfig {
@@ -260,6 +275,24 @@ func queueConfigFromEnvOrViper() QueueConfig {
 		ODWorkerConcurrency:  getInt("SATELLITE_OD_WORKER_CONCURRENCY", "queue.od_worker_concurrency", 1),
 		UseInProcessPipeline: getBool("SATELLITE_USE_INPROCESS_PIPELINE", "queue.use_inprocess_pipeline", true),
 		UseODWorker:          getBool("SATELLITE_USE_OD_WORKER", "queue.use_od_worker", false),
+	}
+}
+
+func argoConfigFromEnvOrViper() ArgoConfig {
+	get := func(envKey, viperKey, defaultVal string) string {
+		if v := os.Getenv(envKey); v != "" {
+			return v
+		}
+		if v := viper.GetString(viperKey); v != "" {
+			return v
+		}
+		return defaultVal
+	}
+	return ArgoConfig{
+		UseArgoPanRPC:  getBool("SATELLITE_USE_ARGO_PAN_RPC", "argo.use_pan_rpc", false),
+		Namespace:      get("SATELLITE_ARGO_NAMESPACE", "argo.namespace", "gitlab-runner"),
+		PanRPCTemplate: get("SATELLITE_ARGO_PAN_RPC_TEMPLATE", "argo.pan_rpc_template", "rs-pan-rpc-parallel"),
+		WorkflowImage:  get("SATELLITE_RS_WORKFLOW_IMAGE", "argo.workflow_image", ""),
 	}
 }
 

@@ -3,7 +3,8 @@
 > **文档定位**：15 节点集群 **1～10 全链路 baseline** 的 **单一入口（SSOT）**——含操作步骤、CI/NFS/仓库机、故障排查，以及 **2026-06 实际部署记录**（附录 A）。  
 > **Phase 0 历史快照**（只读）：[archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md) — 三次 benchmark 完整表。  
 > **Phase 1 历史快照**（只读）：[archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md) — Redis + rs-worker 收口。  
-> **Phase 1 活跃运维**：[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)  
+> **Phase 2 历史快照**（只读）：[archives/2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md) — od-worker 收口。  
+> **活跃运维**：[PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)（Phase 2）、[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)（Phase 1）  
 > **文档索引**：[DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md)（三仓归类与阅读路线）。  
 > **目标**：单 Pod `satellite-backend` 跑通 RS + 目标识别，**暂不拆微服务、不上 Redis/Argo**。  
 > **关联**：[REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md)、[REMOTE_SENSING_REPO_MIRROR.md](./REMOTE_SENSING_REPO_MIRROR.md)、[OBJECT_DETECTION_REPO_MIRROR.md](./OBJECT_DETECTION_REPO_MIRROR.md)、[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 0；**Phase 0 收口**见 **§11**。
@@ -380,15 +381,15 @@ kubectl -n gitlab-runner exec "$POD" -- ls -la /opt/object-detection/output_dete
 
 **Phase 0 正式闭合**（3 次可复现、报告归档、运维可持续）：按 **§11 Checklist** 逐项勾选。
 
-**Phase 1 已闭合**（2026-06-18）：Redis 入队 + rs-worker；日常运维见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)，历史见 [archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md)。
+**Phase 2 已闭合**（2026-06-18）：od-worker 独立检测；运维 [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)，历史 [archives/2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)。
 
-**本手册仍适用**：Phase 0 单 Pod 部署、CI/NFS/238 前置、故障排查；当前生产路径为 Phase 1（backend 入队 + rs-worker 算 RS）。
+**本手册仍适用**：Phase 0 单 Pod 部署、CI/NFS/238 前置、故障排查。当前生产路径：**backend → rs.jobs → rs-worker（1～9）→ od.jobs → od-worker（10）**。
 
-**尚未做**（见微服务方案 Phase 2+）：
+**尚未做**（见 [PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md)）：
 
-- od-worker 独立 Pod + GPU 池
-- Argo Workflow DAG
-- 120 节点扩缩与多星协同压测
+- Argo Workflow DAG（阶段 4 PAN RPC 并行 Pilot）
+- GPU 池 / 120 节点扩缩
+- MinIO、多星协同压测
 
 ---
 

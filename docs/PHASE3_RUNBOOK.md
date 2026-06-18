@@ -44,7 +44,7 @@ backend ──rs.jobs──► rs-worker
 | **1** | Argo 安装 + RBAC | [INSTALL_CHECKLIST.md](../k8s/phase3/argo/INSTALL_CHECKLIST.md) 全部勾选 | ☑ 集群已装 |
 | **2** | WorkflowTemplate | `k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml` | ☑ |
 | **3** | rs-worker 集成 | `SATELLITE_USE_ARGO_PAN_RPC`；`internal/argo/` | ☑ 默认 false |
-| **4** | CI | `deploy-phase3-pilot` job（push main **自动**；验收后改 manual） | ☑ |
+| **4** | CI | `deploy-phase3-pilot` job（manual） | ☑ |
 | **5** | **P3-03 验收** | 同 GF2；stage 4 墙钟 **≤152 s**（↓25%） | ☐ |
 | **6** | 归档 | `archives/YYYY-MM-DD_phase3-closure.md` | ☐ |
 
@@ -56,12 +56,29 @@ backend ──rs.jobs──► rs-worker
 
 完整清单见 **[k8s/phase3/argo/INSTALL_CHECKLIST.md](../k8s/phase3/argo/INSTALL_CHECKLIST.md)**。
 
+**首次部署前（k8s-master，root，一次性）**：
+
+```bash
+cd ~/code/satellite-cloud && git pull origin main
+bash scripts/ops/install_argo_crds.sh
+kubectl apply -f k8s/gitlab-runner-ci-rbac-phase3.yaml
+kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
+kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-submitter.yaml
+kubectl apply -k k8s/phase3/argo/
+kubectl apply -f k8s/phase3/argo/rbac/controller-clusterrole.yaml
+kubectl apply -f k8s/phase3/argo/gitlab-runner-ci-rbac-argo-ns.yaml
+kubectl apply -k k8s/phase3/
+```
+
+之后 GitLab CI `deploy-phase2-pilot` / `deploy-phase3-pilot` 方可正常 apply。
+
 ```bash
 # 238：镜像入 Harbor
 bash scripts/ops/mirror_argo_workflows_images.sh
 
-# k8s-master：安装 controller + CRD
+# CI 或手动：controller + template
 kubectl apply -k k8s/phase3/argo/
+kubectl apply -k k8s/phase3/
 
 # 验收
 kubectl -n argo get deploy,pod
@@ -112,26 +129,18 @@ kubectl apply -k k8s/phase1/   # rs-worker env USE_ARGO_PAN_RPC=false
 ## 5. 步骤 4 — CI
 
 ```text
-build-backend → deploy → deploy-phase2-pilot（自动）→ deploy-phase3-pilot（自动）
+build-backend → deploy → deploy-phase2-pilot（自动）
+deploy-phase3-pilot（manual，需时点击）
 ```
 
-`deploy-phase3-pilot` 在 `deploy-phase2-pilot` 之后执行（保证 od-worker + rs-worker 镜像已更新），再 apply Argo / WorkflowTemplate / Argo RBAC，并再次 `apply -k k8s/phase1/` 写入 Phase 3 env（`USE_ARGO_PAN_RPC=false` 等）。
-
-> **P3-03 验收通过后**：在 `.gitlab-ci.yml` 为 `deploy-phase3-pilot` 增加 `when: manual`（与 `deploy-phase1-pilot` 一致）。
+`deploy-phase3-pilot` 建议在 `deploy-phase2-pilot` 绿了之后手动触发（Argo / WorkflowTemplate / Argo RBAC + rs-worker Phase 3 env）。
 
 ```yaml
-# .gitlab-ci.yml — deploy-phase3-pilot（初版自动，稳定后改 manual）
+# .gitlab-ci.yml — deploy-phase3-pilot（manual）
 deploy-phase3-pilot:
+  when: manual
   needs:
     - deploy-phase2-pilot
-  script:
-    - kubectl apply -k k8s/phase3/argo/
-    - kubectl -n argo rollout status deployment/workflow-controller
-    - kubectl apply -k k8s/phase3/
-    - kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-submitter.yaml
-    - kubectl apply -k k8s/phase1/
-    - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
-    - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
 ```
 
 ---

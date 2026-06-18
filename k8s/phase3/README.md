@@ -38,4 +38,4 @@ kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_USE_ARGO_PAN_RPC
 kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_RS_WORKFLOW_IMAGE=192.168.10.238/satellite/backend:<SHA>
 ```
 
-GitLab：Pipeline push `main` 后 **`deploy-phase3-pilot` 自动**（在 `deploy-phase2-pilot` 之后；P3-03 验收后可改 manual）
+GitLab：Pipeline 手动 **`deploy-phase3-pilot`**（在 `deploy-phase2-pilot` 之后）

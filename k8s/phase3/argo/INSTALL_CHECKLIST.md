@@ -7,6 +7,24 @@
 
 ## 0. 版本与范围
 
+> **GitLab CI 前置（集群管理员一次性）**  
+> CI 使用的 `gitlab-runner` ServiceAccount **默认无权** 创建 `ServiceAccount` / `ClusterRole`。首次 Phase 3 部署前在 **k8s-master** 执行：
+>
+> ```bash
+> cd ~/code/satellite-cloud
+> git pull origin main
+> bash scripts/ops/install_argo_crds.sh          # CRD 未装时
+> kubectl apply -f k8s/gitlab-runner-ci-rbac-phase3.yaml
+> kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
+> kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-submitter.yaml
+> kubectl apply -k k8s/phase3/argo/                # 创建 argo ns + controller（需 root）
+> kubectl apply -f k8s/phase3/argo/rbac/controller-clusterrole.yaml
+> kubectl apply -f k8s/phase3/argo/gitlab-runner-ci-rbac-argo-ns.yaml
+> kubectl apply -k k8s/phase3/
+> ```
+>
+> 之后 `deploy-phase2-pilot` / `deploy-phase3-pilot` 方可正常 apply。
+
 | 项 | 选定值 |
 |----|--------|
 | Argo Workflows | **v3.5.12**（稳定版；可随 Harbor 镜像 tag 调整） |

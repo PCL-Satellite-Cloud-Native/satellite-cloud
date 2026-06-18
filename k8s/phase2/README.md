@@ -9,7 +9,7 @@
 ```bash
 # GitLab Pipeline 自动 deploy-phase2-pilot，或：
 kubectl apply -k k8s/phase2/
-kubectl apply -f k8s/phase1/rs-worker/deployment.yaml
+kubectl apply -k k8s/phase1/
 kubectl -n gitlab-runner set image deployment/od-worker od-worker=192.168.10.238/satellite/backend:<SHA>
 kubectl -n gitlab-runner set image deployment/rs-worker rs-worker=192.168.10.238/satellite/backend:<SHA>
 ```
@@ -17,7 +17,7 @@ kubectl -n gitlab-runner set image deployment/rs-worker rs-worker=192.168.10.238
 ## 回滚
 
 ```bash
-# rs-worker manifest 中 SATELLITE_USE_OD_WORKER=false 后 apply
-kubectl apply -f k8s/phase1/rs-worker/deployment.yaml
+# rs-worker：apply -k phase1 且 manifest 中 SATELLITE_USE_OD_WORKER=false
+kubectl apply -k k8s/phase1/
 kubectl -n gitlab-runner scale deployment/od-worker --replicas=0
 ```

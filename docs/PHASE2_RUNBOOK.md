@@ -48,7 +48,9 @@ build-backend → deploy → deploy-phase2-pilot（自动）
 `deploy-phase2-pilot` 与 Phase 1 的 `deploy-phase1-pilot` 同模式：
 
 - `kubectl apply -k k8s/phase2/` + 更新 od-worker 镜像
-- `kubectl apply` rs-worker manifest（`SATELLITE_USE_OD_WORKER=true`）+ 更新 rs-worker 镜像
+- `kubectl apply -k k8s/phase1/` 更新 rs-worker（含 `SATELLITE_USE_OD_WORKER=true`）+ 更新镜像
+
+> **勿** `kubectl apply -f k8s/phase1/rs-worker/deployment.yaml`：rs-worker 由 kustomize 创建，selector 含 `satellite.io/phase` 标签，裸 apply 会触发 selector 不可变错误。
 
 > 后续若需改为手动触发，在 `.gitlab-ci.yml` 的 `deploy-phase2-pilot` 增加 `when: manual`（与当前 `deploy-phase1-pilot` 一致）。
 
@@ -57,7 +59,7 @@ build-backend → deploy → deploy-phase2-pilot（自动）
 ```bash
 cd ~/code/satellite-cloud
 kubectl apply -k k8s/phase2/
-kubectl apply -f k8s/phase1/rs-worker/deployment.yaml
+kubectl apply -k k8s/phase1/
 kubectl -n gitlab-runner set image deployment/od-worker od-worker=192.168.10.238/satellite/backend:<SHA>
 kubectl -n gitlab-runner set image deployment/rs-worker rs-worker=192.168.10.238/satellite/backend:<SHA>
 kubectl -n gitlab-runner rollout status deployment/od-worker
@@ -99,7 +101,7 @@ kubectl -n gitlab-runner exec deploy/redis -- redis-cli XINFO GROUPS od.jobs
 编辑 `k8s/phase1/rs-worker/deployment.yaml`：`SATELLITE_USE_OD_WORKER=false`，然后：
 
 ```bash
-kubectl apply -f k8s/phase1/rs-worker/deployment.yaml
+kubectl apply -k k8s/phase1/
 kubectl -n gitlab-runner scale deployment/od-worker --replicas=0
 kubectl -n gitlab-runner rollout status deployment/rs-worker
 ```

@@ -195,7 +195,7 @@ deploy-phase2-pilot:
     - kubectl apply -k k8s/phase2/
     - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
-    - kubectl apply -f k8s/phase1/rs-worker/deployment.yaml
+    - kubectl apply -k k8s/phase1/
     - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
     - kubectl -n gitlab-runner get deploy od-worker rs-worker

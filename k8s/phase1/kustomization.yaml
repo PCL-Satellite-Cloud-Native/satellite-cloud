@@ -8,5 +8,7 @@ resources:
   - redis/deployment.yaml
   - rs-worker/deployment.yaml
 
-commonLabels:
-  satellite.io/phase: phase1-pilot
+labels:
+  - includeSelectors: true
+    pairs:
+      satellite.io/phase: phase1-pilot

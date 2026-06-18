@@ -66,6 +66,15 @@ spec:
                   key: dbname
             - name: SATELLITE_LOG_LEVEL
               value: "info"
+            # Phase 1：API 仅入队 Redis；RS+检测在 rs-worker 执行（回滚见 PHASE1_RUNBOOK §5）
+            - name: SATELLITE_USE_INPROCESS_PIPELINE
+              value: "false"
+            - name: SATELLITE_REDIS_ADDR
+              value: "redis:6379"
+            - name: SATELLITE_REDIS_STREAM_RS
+              value: "rs.jobs"
+            - name: SATELLITE_REDIS_CONSUMER_GROUP
+              value: "rs-workers"
             - name: SATELLITE_TOPOLOGY_AUTO_IMPORT
               valueFrom:
                 secretKeyRef:

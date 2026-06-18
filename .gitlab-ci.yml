@@ -186,6 +186,28 @@ deploy-phase1-pilot:
   only:
     - main
 
+# Phase 2：od-worker Pilot — 与 deploy-phase1-pilot 相同模式，push main 后自动执行（后续可改 when: manual）
+deploy-phase2-pilot:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  script:
+    - echo "Phase 2 Pilot：部署 od-worker + 更新 rs-worker（OD 分离）"
+    - kubectl apply -k k8s/phase2/
+    - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
+    - kubectl apply -f k8s/phase1/rs-worker/deployment.yaml
+    - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
+    - kubectl -n gitlab-runner get deploy od-worker rs-worker
+    - kubectl -n gitlab-runner logs deployment/od-worker --tail=20
+    - echo "验收：提交 GF2+检测 task，rs-worker 无 yolov8s 日志，od-worker 有"
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - deploy
+  only:
+    - main
+
 sync-topology-csv-to-nfs:
   stage: topology-sync
   image: "$CI_ALPINE_IMAGE"

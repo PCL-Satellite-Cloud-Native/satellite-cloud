@@ -71,6 +71,8 @@ spec:
               value: "1"
             - name: SATELLITE_USE_INPROCESS_PIPELINE
               value: "false"
+            - name: SATELLITE_USE_OD_WORKER
+              value: "true"
             - name: SATELLITE_REMOTE_SENSING_ROOT
               value: "/opt/remote-sensing"
             - name: SATELLITE_REMOTE_SENSING_PYTHON

@@ -182,6 +182,8 @@
 
 ### 阶段 2 — OD 独立 Pod（1～2 周）
 
+**状态（2026-06-18）**：**实施中** — `cmd/od-worker`、`internal/queue/od.go`、`k8s/phase2/`、`deploy-phase2-pilot` 已合入；集群 P2-03 验收待执行。见 [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)。
+
 | 项 | 内容 |
 |----|------|
 | 目标 | 检测与 API/RS 隔离；预留 GPU 池 |

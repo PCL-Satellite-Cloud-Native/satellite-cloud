@@ -6,5 +6,7 @@ namespace: gitlab-runner
 resources:
   - od-worker/deployment.yaml
 
-commonLabels:
-  satellite.io/phase: phase2-pilot
+labels:
+  - includeSelectors: true
+    pairs:
+      satellite.io/phase: phase2-pilot

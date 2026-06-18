@@ -1,0 +1,31 @@
+# 授权 gitlab-runner ServiceAccount 在 gitlab-runner namespace 管理 SA / Role / RoleBinding
+# （Phase 3 rs-worker ServiceAccount + Argo submitter RBAC 由 CI apply）
+#
+# 【必须】Phase 3 首次启用 CI 部署前，由集群管理员执行一次：
+#   kubectl apply -f k8s/gitlab-runner-ci-rbac-phase3.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-runner-ci-k8s
+  namespace: gitlab-runner
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitlab-runner-ci-k8s
+  namespace: gitlab-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gitlab-runner-ci-k8s
+subjects:
+  - kind: ServiceAccount
+    name: gitlab-runner
+    namespace: gitlab-runner

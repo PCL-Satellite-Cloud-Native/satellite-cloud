@@ -209,16 +209,19 @@ deploy-phase2-pilot:
     - main
 
 # Phase 3：Argo WorkflowTemplate + rs-worker Argo 集成（USE_ARGO_PAN_RPC 默认 false，验收后改 true）
-# push main 后自动执行（P3-03 验收通过后改 when: manual，与 deploy-phase1-pilot 一致）
+# 默认不自动执行：在 GitLab Pipeline 页面手动点击 deploy-phase3-pilot
 deploy-phase3-pilot:
   stage: deploy
   image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
   script:
-    - echo "Phase 3 Pilot：Argo controller 对齐 + WorkflowTemplate + rs-worker SA/RBAC"
+    - echo "Phase 3 Pilot：Argo controller + WorkflowTemplate + rs-worker RBAC"
+    - kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
+    - kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-submitter.yaml
     - kubectl apply -k k8s/phase3/argo/
     - kubectl -n argo rollout status deployment/workflow-controller --timeout=180s
     - kubectl apply -k k8s/phase3/
-    - kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-submitter.yaml
     - kubectl apply -k k8s/phase1/
     - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"

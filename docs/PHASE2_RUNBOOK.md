@@ -1,6 +1,7 @@
 # Phase 2 运维手册（od-worker 独立检测）
 
-> **状态（2026-06-18）**：**Phase 2 已闭合** — 历史见 [archives/2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)（task 141）。  
+> **状态（2026-06-22）**：**Phase 2 已闭合** — 首次收口 [2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)（task 141）；生产复验 [2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)（task **143**）。  
+> **下一阶段**：[PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md)（Argo PAN RPC 并行）。
 > **前置**：[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)（Phase 1 已闭合）。  
 > **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 2。
 
@@ -158,3 +159,14 @@ nodeSelector: { ... }
 | 任务卡在 stage 9 后不动 | 查 `USE_OD_WORKER=true`；od-worker Running；`XINFO GROUPS od.jobs` |
 | od-worker 报融合文件不存在 | rs-worker 同步持久化失败；查 NFS `output_preprocessing/fusion_envi/` |
 | 检测仍在 rs-worker | `USE_OD_WORKER=false` 或未 rollout rs-worker |
+| rs-worker **Evicted** / DiskPressure | 节点 **ephemeral-storage** 不足（scratch emptyDir 40Gi）；清理 NFS 中间产物；cordon 紧张节点；见 [2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md) §5 |
+| Evicted 后 DB task 仍 running | 手工将旧 task 标 `failed`；重新提交 GF2 |
+
+---
+
+## 9. 验收记录（归档索引）
+
+| 日期 | task | benchmark | 归档 |
+|------|------|-----------|------|
+| 2026-06-18 | 141 | `artifacts/benchmarks/phase2-test1/report.txt` | [phase2-closure](./archives/2026-06-18_phase2-closure.md) |
+| 2026-06-22 | **143** | `artifacts/benchmarks/phase2-test3/report.txt` | [production-validation](./archives/2026-06-22_phase2-production-validation.md) |

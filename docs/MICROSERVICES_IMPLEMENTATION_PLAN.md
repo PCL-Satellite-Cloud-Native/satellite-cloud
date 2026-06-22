@@ -408,9 +408,9 @@ resources:
 
 **Phase 1（2026-06-18 已闭合）**：见 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)。
 
-**Phase 2（2026-06-18 已闭合）**：od-worker + od.jobs — 见 [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)。
+**Phase 2（2026-06-18 已闭合；2026-06-22 生产复验 task 143）**：od-worker + od.jobs — 见 [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)、[archives/2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)。
 
-**Phase 3 起**：
+**Phase 3（2026-06-22 起，实施中）**：
 
 1. **Argo Workflows**：按 [PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md) 步骤 1 安装；PAN RPC Template + rs-worker 集成。
 2. **GPU 池（可选 Phase 2+）**：od-worker `device=gpu` + 节点池。

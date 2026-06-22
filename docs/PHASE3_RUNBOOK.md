@@ -1,9 +1,18 @@
 # Phase 3 运维手册（Argo Workflows — 阶段内并行）
 
-> **状态（2026-06-18）**：**实施中** — 分支 `feat/phase3-argo-pan-rpc`：manifest + rs-worker 集成已合入；`USE_ARGO_PAN_RPC` 默认 **false**，验收后启用。  
-> **前置**：[PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)（Phase 2 已闭合，task 141）。  
+> **状态（2026-06-22）**：**实施中** — 分支 `feat/phase3-argo-pan-rpc`：manifest + rs-worker 集成已合入；`USE_ARGO_PAN_RPC` 默认 **false**，P3-03 验收后启用。  
+> **前置**：[PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)（Phase 2 已闭合；生产复验 task **143** — [archives/2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)）。  
 > **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 3。  
 > **Argo 安装**：[k8s/phase3/argo/INSTALL_CHECKLIST.md](../k8s/phase3/argo/INSTALL_CHECKLIST.md)
+
+### 当前行动（Phase 2 → Phase 3 切换）
+
+Phase 2 **task 143 已通过**；集群保持 `SATELLITE_USE_ARGO_PAN_RPC=false`，按序执行：
+
+1. **代码**：`git pull origin feat/phase3-argo-pan-rpc`（或 merge 到 `main` 后 pull `main`）
+2. **一次性引导**（若 Argo 未装或未更新）：见 §3 命令块
+3. **GitLab**：手动触发 **`deploy-phase3-pilot`**
+4. **P3-03**：提交 1 条 GF2 + 检测；验收 stage 4 **≤131 s** 后启用 Argo（§4.3）
 
 ---
 
@@ -40,15 +49,15 @@ backend ──rs.jobs──► rs-worker
 
 | 步骤 | 内容 | 产出 | 状态 |
 |------|------|------|------|
-| **0** | 基线 | task 141 `pan_rpc` **203.9 s**（`phase2-test1/report.txt`） | ☑ |
+| **0** | 基线 | task **143** `pan_rpc` **174.6 s**（`phase2-test3/report.txt`）；task 141 为历史 **203.9 s** | ☑ |
 | **1** | Argo 安装 + RBAC | [INSTALL_CHECKLIST.md](../k8s/phase3/argo/INSTALL_CHECKLIST.md) 全部勾选 | ☑ 集群已装 |
 | **2** | WorkflowTemplate | `k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml` | ☑ |
 | **3** | rs-worker 集成 | `SATELLITE_USE_ARGO_PAN_RPC`；`internal/argo/` | ☑ 默认 false |
 | **4** | CI | `deploy-phase3-pilot` job（manual） | ☑ |
-| **5** | **P3-03 验收** | 同 GF2；stage 4 墙钟 **≤152 s**（↓25%） | ☐ |
+| **5** | **P3-03 验收** | 同 GF2；stage 4 墙钟 **≤131 s**（相对 174.6 s ↓25%） | ☐ **当前步骤** |
 | **6** | 归档 | `archives/YYYY-MM-DD_phase3-closure.md` | ☐ |
 
-> 步骤 2～4 未合入前，集群保持 Phase 2 行为；`USE_ARGO_PAN_RPC=false`（默认）。
+> 步骤 5 保守通过线：**≤152 s**（相对 task 141 的 203.9 s）；**主基线以 task 143 的 174.6 s 为准**。
 
 ---
 
@@ -163,7 +172,7 @@ kubectl -n gitlab-runner logs deploy/rs-worker --since=2h | grep -E "$TASK_ID|Wo
 | Argo | Workflow **Succeeded**；4 个 PAN RPC step 均完成 |
 | rs-worker | stage 4 由 Argo 驱动；**无** 进程内 680s 级 pan_rpc 日志块 |
 | 端到端 | 10 阶段 completed；前端正常 |
-| **性能** | stage 4 墙钟 **≤ 152 s**（相对 203.9 s 基线 ↓25%） |
+| **性能** | stage 4 墙钟 **≤ 131 s**（相对 task 143 基线 174.6 s ↓25%）；保守线 **≤ 152 s**（相对 task 141 203.9 s） |
 
 ### 6.2 Benchmark 记录
 

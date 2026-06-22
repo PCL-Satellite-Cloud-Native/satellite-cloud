@@ -699,16 +699,20 @@ func (s *RemoteSensingService) executeTiffToEnvi(ctx context.Context, taskID uin
 }
 
 func (s *RemoteSensingService) executePanRadToa(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
+	outputDir := s.panRadToaOutputDir()
+	if s.argoCfg.UseArgoPanRPC {
+		s.log(taskID, StagePanRadToa, "info", "Argo 路径：pan_rad_toa 直接写入 NFS persist")
+	}
 	args := []string{
 		"--file_prefix", req.FilePrefix,
 		"--input_dir", filepath.Join("output_preprocessing", "tiff_to_envi"),
-		"--output_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
+		"--output_dir", outputDir,
 		"--radiance_unit_scale", "10000",
 	}
 	if _, err := s.runPython(ctx, taskID, StagePanRadToa, "pan_rad_toa.py", args); err != nil {
 		return nil, err
 	}
-	return &stageExecutionResult{OutputPath: filepath.Join("output_preprocessing", "pan_rad_toa"), Message: "全色辐射定标完成"}, nil
+	return &stageExecutionResult{OutputPath: outputDir, Message: "全色辐射定标完成"}, nil
 }
 
 func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
@@ -844,7 +848,7 @@ func (s *RemoteSensingService) executePanMerge(ctx context.Context, taskID uint,
 	outputDir := filepath.Join("output_preprocessing", "pan_merge_warp_square")
 	args := []string{
 		"--file_prefix", req.FilePrefix,
-		"--input_dir", filepath.Join("output_preprocessing", "pan_warp_quarters"),
+		"--input_dir", s.panWarpQuartersInputDir(),
 		"--output_dir", outputDir,
 	}
 	if _, err := s.runPython(ctx, taskID, StagePanMerge, "pan_merge_warp_square.py", args); err != nil {

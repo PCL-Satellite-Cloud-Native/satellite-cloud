@@ -3,10 +3,6 @@ kind: ConfigMap
 metadata:
   name: workflow-controller-configmap
   namespace: argo
-data:
-  config: |
-    containerRuntimeExecutor: emissary
-    executor:
-      image: 192.168.10.238/library/argoexec:3.5.12-amd64-r1
-    workflowNamespaces:
-      - gitlab-runner
+# v3.5+：ConfigMap 勿用 containerRuntimeExecutor / workflowNamespaces（已移除）
+# executor 镜像由 Deployment --executor-image 指定；Pilot 工作流 namespace 用 --managed-namespace
+data: {}

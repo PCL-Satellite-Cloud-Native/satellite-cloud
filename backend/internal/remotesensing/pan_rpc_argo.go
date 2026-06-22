@@ -25,26 +25,32 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 		return nil, fmt.Errorf("Argo 客户端: %w", err)
 	}
 
-	outputDir := filepath.Join("output_preprocessing", "pan_warp_quarters")
+	outputDir := filepath.Join(s.cfg.PersistOutputDir, "pan_warp_quarters")
 	persistOutputDir := filepath.Join(s.cfg.PersistOutputDir, "pan_warp_quarters")
-	persistRadDir := filepath.Join(s.cfg.PersistOutputDir, "pan_rad_toa")
-	scratchRadDir := filepath.Join("output_preprocessing", "pan_rad_toa")
 
-	s.log(taskID, StagePanRpcWarp, "info", "Argo PAN RPC：同步 pan_rad_toa 至 NFS")
-	if err := s.syncDirToPersist(scratchRadDir, persistRadDir); err != nil {
-		return nil, fmt.Errorf("同步 pan_rad_toa: %w", err)
+	cpuThreads := effectiveParallelism(s.cfg.PanRPCCPUThreads, 1, 4)
+	warpMemMB := s.cfg.PanRPCWarpMemMB
+	if warpMemMB <= 0 {
+		warpMemMB = 512
+	}
+	resampleAlg := s.cfg.PanRPCResampleAlg
+	if resampleAlg == "" {
+		resampleAlg = "near"
 	}
 
-	absoluteOutputDir := filepath.Join(s.cfg.RootPath, outputDir)
-	if err := os.MkdirAll(absoluteOutputDir, 0o755); err != nil {
-		return nil, fmt.Errorf("创建 PAN RPC 输出目录失败: %w", err)
-	}
-	persistWorkers := filepath.Join(s.cfg.RootPath, persistOutputDir, "workers")
-	if err := os.RemoveAll(persistWorkers); err != nil {
-		s.log(taskID, StagePanRpcWarp, "warn", fmt.Sprintf("清理 persist workers: %v", err))
+	if err := s.preparePanRpcPersistWorkerDirs(persistOutputDir); err != nil {
+		return nil, fmt.Errorf("准备 PAN RPC persist 目录: %w", err)
 	}
 
-	wfName, err := argoClient.SubmitPanRPCWorkflow(ctx, s.argoCfg.PanRPCTemplate, taskID, req.FilePrefix, s.argoCfg.WorkflowImage)
+	wfName, err := argoClient.SubmitPanRPCWorkflow(ctx, argo.PanRPCWorkflowParams{
+		TemplateName: s.argoCfg.PanRPCTemplate,
+		TaskID:       taskID,
+		FilePrefix:   req.FilePrefix,
+		RSImage:      s.argoCfg.WorkflowImage,
+		CPUThreads:   cpuThreads,
+		WarpMemMB:    warpMemMB,
+		ResampleAlg:  resampleAlg,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +63,7 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 	}
 	s.log(taskID, StagePanRpcWarp, "info", fmt.Sprintf("Argo Workflow 完成: %s", wfName))
 
-	if err := s.mergePanRpcFromPersist(taskID, req.FilePrefix, persistOutputDir, outputDir); err != nil {
+	if err := s.mergePanRpcOnPersist(taskID, req.FilePrefix, persistOutputDir); err != nil {
 		return nil, err
 	}
 
@@ -65,68 +71,82 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 		"area_indexes": []int{1, 2, 3, 4},
 		"completed":    4,
 		"total":        4,
-		"parallelism":  4,
+		"parallelism":  2,
+		"cpu_threads":  cpuThreads,
+		"warp_mem_mb":  warpMemMB,
+		"resample_alg": resampleAlg,
 		"mode":         "argo_workflow_parallel",
 		"workflow":     wfName,
+		"p3_04":        true,
 	}
 	return &stageExecutionResult{
 		Details:    details,
 		OutputPath: outputDir,
-		Message:    "RPC 分块完成（Argo 4 路并行）",
+		Message:    "RPC 分块完成（Argo 2×2 并行）",
 	}, nil
 }
 
-func (s *RemoteSensingService) syncDirToPersist(scratchRel, persistRel string) error {
-	src := filepath.Join(s.cfg.RootPath, scratchRel)
-	dst := filepath.Join(s.cfg.RootPath, persistRel)
-	if err := os.MkdirAll(dst, 0o755); err != nil {
+func (s *RemoteSensingService) preparePanRpcPersistWorkerDirs(persistOutputRel string) error {
+	base := filepath.Join(s.cfg.RootPath, persistOutputRel)
+	if err := os.MkdirAll(base, 0o755); err != nil {
 		return err
 	}
-	return copyDirContents(src, dst)
-}
-
-func copyDirContents(srcDir, dstDir string) error {
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
+	workers := filepath.Join(base, "workers")
+	if err := os.RemoveAll(workers); err != nil {
 		return err
 	}
-	for _, e := range entries {
-		src := filepath.Join(srcDir, e.Name())
-		dst := filepath.Join(dstDir, e.Name())
-		if e.IsDir() {
-			if err := os.MkdirAll(dst, 0o755); err != nil {
-				return err
-			}
-			if err := copyDirContents(src, dst); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := copyFile(src, dst); err != nil {
+	for group := 1; group <= 2; group++ {
+		if err := os.MkdirAll(filepath.Join(workers, fmt.Sprintf("group%d", group)), 0o755); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *RemoteSensingService) mergePanRpcFromPersist(taskID uint, filePrefix, persistOutputRel, scratchOutputRel string) error {
-	persistBase := filepath.Join(s.cfg.RootPath, persistOutputRel, "workers")
-	scratchBase := filepath.Join(s.cfg.RootPath, scratchOutputRel)
+func (s *RemoteSensingService) mergePanRpcOnPersist(taskID uint, filePrefix, persistOutputRel string) error {
+	workersBase := filepath.Join(s.cfg.RootPath, persistOutputRel, "workers")
+	destBase := filepath.Join(s.cfg.RootPath, persistOutputRel)
 	for area := 1; area <= 4; area++ {
 		partName := fmt.Sprintf("%s-PAN1-wrap-part%d.tif", filePrefix, area)
-		src := filepath.Join(persistBase, fmt.Sprintf("group%d", area), partName)
-		dst := filepath.Join(scratchBase, partName)
-		if _, err := os.Stat(src); os.IsNotExist(err) {
-			return fmt.Errorf("Argo 产物缺失: %s", src)
+		src, err := findPanRpcPartOnPersist(workersBase, partName)
+		if err != nil {
+			return fmt.Errorf("Argo 产物缺失 area%d: %w", area, err)
 		}
-		if err := copyFile(src, dst); err != nil {
-			return fmt.Errorf("合并 area%d: %w", area, err)
+		dst := filepath.Join(destBase, partName)
+		if err := os.Rename(src, dst); err != nil {
+			if err := copyFile(src, dst); err != nil {
+				return fmt.Errorf("合并 area%d: %w", area, err)
+			}
 		}
 	}
-	if err := os.RemoveAll(persistBase); err != nil {
+	if err := os.RemoveAll(workersBase); err != nil {
 		s.log(taskID, StagePanRpcWarp, "warn", fmt.Sprintf("清理 persist workers: %v", err))
 	}
 	return nil
+}
+
+func findPanRpcPartOnPersist(workersBase, partName string) (string, error) {
+	for group := 1; group <= 4; group++ {
+		candidate := filepath.Join(workersBase, fmt.Sprintf("group%d", group), partName)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("%s", partName)
+}
+
+func (s *RemoteSensingService) panWarpQuartersInputDir() string {
+	if s.argoCfg.UseArgoPanRPC {
+		return filepath.Join(s.cfg.PersistOutputDir, "pan_warp_quarters")
+	}
+	return filepath.Join("output_preprocessing", "pan_warp_quarters")
+}
+
+func (s *RemoteSensingService) panRadToaOutputDir() string {
+	if s.argoCfg.UseArgoPanRPC {
+		return filepath.Join(s.cfg.PersistOutputDir, "pan_rad_toa")
+	}
+	return filepath.Join("output_preprocessing", "pan_rad_toa")
 }
 
 func (s *RemoteSensingService) initArgoFromConfig(cfg config.ArgoConfig, logger *zap.Logger) {

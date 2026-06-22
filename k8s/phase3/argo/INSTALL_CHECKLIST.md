@@ -108,7 +108,7 @@ kubectl -n argo logs deploy/workflow-controller --tail=30
 
 | 配置 | 建议值 | 说明 |
 |------|--------|------|
-| `workflowNamespaces` | `gitlab-runner` | Pilot 仅允许在该 ns 跑 Workflow |
+| `workflowNamespaces` | — | **勿写入 ConfigMap**（v3.5 已移除）；用 Deployment `--managed-namespace=gitlab-runner` |
 | `executor` 镜像 | Harbor `argoexec` | 与 mirror 脚本 tag 一致 |
 | `parallelism` | `10`（可调） | 集群级最大并行 Workflow 数 |
 | `resourceRateLimit` | 可选 | 防 NFS / CPU 被打满 |
@@ -116,9 +116,9 @@ kubectl -n argo logs deploy/workflow-controller --tail=30
 ConfigMap 示例键（具体文件见 `k8s/phase3/argo/controller/configmap.yaml`）：
 
 ```yaml
-containerRuntimeExecutor: emissary
-artifactRepository: |
-  # Phase 3 Pilot：不用 S3；step 产物走 NFS PVC 挂载，artifact 走 emptyDir
+# v3.5+ ConfigMap 可为空 data: {}；限制 workflow namespace 见 controller Deployment：
+#   --managed-namespace gitlab-runner
+# executor 镜像：--executor-image（勿写 containerRuntimeExecutor）
 ```
 
 - [ ] executor 镜像指向 Harbor  

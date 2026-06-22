@@ -410,13 +410,14 @@ resources:
 
 **Phase 2（2026-06-18 已闭合；2026-06-22 生产复验 task 143）**：od-worker + od.jobs — 见 [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)、[archives/2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)。
 
-**Phase 3（2026-06-22 起，实施中）**：
+**Phase 3（2026-06-22 功能 Pilot 已闭合；P3-04 性能待跟进）**：
 
-1. **Argo Workflows**：按 [PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md) 步骤 1 安装；PAN RPC Template + rs-worker 集成。
-2. **GPU 池（可选 Phase 2+）**：od-worker `device=gpu` + 节点池。
-3. **并行压测（可选）**：rs-worker / od-worker replicas>1。
-4. **DB / 拓扑**：`satellite_id`、120 星高亮（Phase 5）。
-5. **目标态 namespace** 迁移（Pilot 仍用 `gitlab-runner`）。
+1. **Argo PAN RPC**：task 144 全链路 — 见 [PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md)、[archives/2026-06-22_phase3-closure.md](./archives/2026-06-22_phase3-closure.md)。
+2. **P3-04 性能**：stage 4 目标 ≤131 s（当前 212.7 s）。
+3. **GPU 池（可选 Phase 2+）**：od-worker `device=gpu` + 节点池。
+4. **并行压测（可选）**：rs-worker / od-worker replicas>1。
+5. **DB / 拓扑**：`satellite_id`、120 星高亮（Phase 5）。
+6. **目标态 namespace** 迁移（Pilot 仍用 `gitlab-runner`）。
 
 ---
 

@@ -27,6 +27,8 @@ spec:
             - workflow-controller-configmap
             - --executor-image
             - 192.168.10.238/library/argoexec:3.5.12-amd64-r1
+            - --managed-namespace
+            - gitlab-runner
           env:
             - name: LEADER_ELECTION_DISABLE
               value: "true"

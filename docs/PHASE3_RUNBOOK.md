@@ -1,18 +1,47 @@
 # Phase 3 运维手册（Argo Workflows — 阶段内并行）
 
-> **状态（2026-06-22）**：**实施中** — 分支 `feat/phase3-argo-pan-rpc`：manifest + rs-worker 集成已合入；`USE_ARGO_PAN_RPC` 默认 **false**，P3-03 验收后启用。  
-> **前置**：[PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)（Phase 2 已闭合；生产复验 task **143** — [archives/2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)）。  
+> **状态（2026-06-22）**：**功能 Pilot 已闭合** — task **144** Argo 全链路通过；stage 4 性能 **212.7 s**（未达 ≤131 s，见 [archives/2026-06-22_phase3-closure.md](./archives/2026-06-22_phase3-closure.md)）。  
+> **生产开关**：`SATELLITE_USE_ARGO_PAN_RPC=true`（可回滚 false）。  
+> **前置**：[PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)（Phase 2 已闭合；task **143** 基线 174.6 s）。  
 > **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 3。  
 > **Argo 安装**：[k8s/phase3/argo/INSTALL_CHECKLIST.md](../k8s/phase3/argo/INSTALL_CHECKLIST.md)
 
-### 当前行动（Phase 2 → Phase 3 切换）
+## 实施路线图（Phase 2 → Phase 3 收口）
 
-Phase 2 **task 143 已通过**；集群保持 `SATELLITE_USE_ARGO_PAN_RPC=false`，按序执行：
+![Phase 3 实施路线图](./images/phase3-roadmap.png)
 
-1. **代码**：`git pull origin feat/phase3-argo-pan-rpc`（或 merge 到 `main` 后 pull `main`）
-2. **一次性引导**（若 Argo 未装或未更新）：见 §3 命令块
-3. **GitLab**：手动触发 **`deploy-phase3-pilot`**
-4. **P3-03**：提交 1 条 GF2 + 检测；验收 stage 4 **≤131 s** 后启用 Argo（§4.3）
+```mermaid
+flowchart TB
+    subgraph done["已完成"]
+        P2["Phase 2 基线 ✓<br/>rs-worker 1～9 · od-worker 阶段 10<br/>task 143 · pan_rpc 174.6 s"]
+    end
+
+    S1["① 集群 & CI 就绪<br/>gitlab-runner RBAC · rs-worker SA<br/>Phase2 deploy 绿"]
+    S2["② 部署 Phase 3 组件<br/>Argo Controller · WorkflowTemplate<br/>手动 deploy-phase3-pilot"]
+    S3["③ 启用 Argo 阶段 4<br/>USE_ARGO_PAN_RPC=true<br/>4 路 PAN RPC 并行 Pod"]
+    S4["④ P3-03 验收 ✓<br/>task 144 · Workflow Succeeded<br/>stage 4 212.7 s（性能待 P3-04）"]
+    S5["⑤ Phase 3 功能闭合 ✓<br/>phase3-test1 · 归档文档"]
+
+    P2 --> S1
+    S1 --> S2 --> S3 --> S4 --> S5
+
+    style P2 fill:#e8f5e9,stroke:#2e7d32
+    style S1 fill:#e8f5e9,stroke:#2e7d32
+    style S2 fill:#e8f5e9,stroke:#2e7d32
+    style S3 fill:#e8f5e9,stroke:#2e7d32
+    style S4 fill:#fff3e0,stroke:#ef6c00
+    style S5 fill:#e8f5e9,stroke:#2e7d32
+```
+
+| 步骤 | 做什么 | 关键产出 |
+|------|--------|----------|
+| **① 集群就绪** | 一次性 RBAC + SA；Phase 2 CI 稳定 | rs-worker 正常 Running |
+| **② 部署 Phase 3** | Argo + Template + rs-worker 集成（默认 Argo **关**） | `workflow-controller` Running |
+| **③ 启用 Argo** | 打开 `USE_ARGO_PAN_RPC` | 阶段 4 走 4 并行 step Pod |
+| **④ P3-03 验收** | 同 GF2；功能 + 端到端 | task 144 ✅；stage 4 212.7 s（性能 ⚠️） |
+| **⑤ 功能闭合** | benchmark + 归档 | [2026-06-22_phase3-closure.md](./archives/2026-06-22_phase3-closure.md) |
+
+> **当前位置**：功能 Pilot 已闭合；**P3-04 性能优化**待跟进。
 
 ---
 
@@ -54,10 +83,17 @@ backend ──rs.jobs──► rs-worker
 | **2** | WorkflowTemplate | `k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml` | ☑ |
 | **3** | rs-worker 集成 | `SATELLITE_USE_ARGO_PAN_RPC`；`internal/argo/` | ☑ 默认 false |
 | **4** | CI | `deploy-phase3-pilot` job（manual） | ☑ |
-| **5** | **P3-03 验收** | 同 GF2；stage 4 墙钟 **≤131 s**（相对 174.6 s ↓25%） | ☐ **当前步骤** |
-| **6** | 归档 | `archives/YYYY-MM-DD_phase3-closure.md` | ☐ |
+| **5** | **P3-03 验收** | task 144 功能 ✅；stage 4 **212.7 s**（性能 ⚠️） | ☑ |
+| **6** | 功能闭合 | [2026-06-22_phase3-closure.md](./archives/2026-06-22_phase3-closure.md) | ☑ |
+| **7** | **P3-04 性能** | stage 4 **≤131 s**（相对 143 的 174.6 s ↓25%） | ☐ 后续 |
 
-> 步骤 5 保守通过线：**≤152 s**（相对 task 141 的 203.9 s）；**主基线以 task 143 的 174.6 s 为准**。
+> 性能目标：**≤131 s**（主基线 task 143 **174.6 s**）；保守线 ≤152 s（task 141 **203.9 s**）。task 144 **未达标**，见归档 §4。
+
+### 当前状态
+
+- **生产**：`USE_ARGO_PAN_RPC=true`（task 144 验证通过）
+- **性能跟进**：P3-04（init-dirs 合并、NFS 策略、资源调度）
+- **回滚**：§4.4 `USE_ARGO_PAN_RPC=false`
 
 ---
 
@@ -169,7 +205,7 @@ kubectl -n gitlab-runner logs deploy/rs-worker --since=2h | grep -E "$TASK_ID|Wo
 
 | 项 | 通过标准 |
 |----|----------|
-| Argo | Workflow **Succeeded**；4 个 PAN RPC step 均完成 |
+| Argo | Workflow **Succeeded**；2 个 PAN RPC step（2×2 分组）均完成 |
 | rs-worker | stage 4 由 Argo 驱动；**无** 进程内 680s 级 pan_rpc 日志块 |
 | 端到端 | 10 阶段 completed；前端正常 |
 | **性能** | stage 4 墙钟 **≤ 131 s**（相对 task 143 基线 174.6 s ↓25%）；保守线 **≤ 152 s**（相对 task 141 203.9 s） |
@@ -183,7 +219,31 @@ artifacts/benchmarks/phase3-test1/report.txt
 
 ---
 
-## 7. 故障排查
+## 7. P3-04 性能优化（2026-06-22）
+
+相对 task 144（212.7 s）的改动：
+
+| 优化 | 说明 |
+|------|------|
+| 阶段 3 直写 persist | `pan_rad_toa` 不再 scratch→NFS 同步（省 ~16 s） |
+| 去掉 init-dirs | rs-worker 预建 `workers/group{1,2}`（省 ~14 s） |
+| persist 上 merge | `rename` 替代 scratch 回拷（省 ~7 s） |
+| 2×2 分组 | 2 Pod 各处理 2 区，共享 VRT；降低 NFS 4 路争用 |
+| step CPU 4 核 | 与 rs-worker limit 对齐 |
+
+**部署**（master 无 git 时）：
+
+```bash
+kubectl apply -f k8s/phase3/bundle/workflowtemplate-pan-rpc.yaml
+# CI 构建新 backend 镜像后 rollout rs-worker
+kubectl -n gitlab-runner rollout restart deploy/rs-worker
+```
+
+**验收**：提交 GF2 任务 → `artifacts/benchmarks/phase3-test2/report.txt`；stage 4 目标 **≤131 s**。
+
+---
+
+## 8. 故障排查
 
 | 现象 | 处理 |
 |------|------|
@@ -195,7 +255,7 @@ artifacts/benchmarks/phase3-test1/report.txt
 
 ---
 
-## 8. 相关路径
+## 9. 相关路径
 
 | 路径 | 说明 |
 |------|------|
@@ -206,7 +266,7 @@ artifacts/benchmarks/phase3-test1/report.txt
 
 ---
 
-## 9. 不在 Phase 3 范围
+## 10. 不在 Phase 3 范围
 
 - 全 10 阶段 Argo 化（后续扩展）
 - 替换 Redis 队列

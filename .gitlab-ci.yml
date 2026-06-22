@@ -220,6 +220,7 @@ deploy-phase3-pilot:
     - echo "Phase 3 Pilot：Argo controller + WorkflowTemplate + rs-worker RBAC"
     - kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
     - kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-submitter.yaml
+    - kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-executor.yaml
     - kubectl apply -k k8s/phase3/argo/
     - kubectl -n argo rollout status deployment/workflow-controller --timeout=180s
     - kubectl apply -k k8s/phase3/

@@ -40,10 +40,30 @@ func NewInCluster(namespace string) (*Client, error) {
 	return &Client{namespace: namespace, dyn: dyn}, nil
 }
 
+// PanRPCWorkflowParams 与 rs-worker PAN RPC 配置及 WorkflowTemplate 参数对齐
+type PanRPCWorkflowParams struct {
+	TemplateName string
+	TaskID       uint
+	FilePrefix   string
+	RSImage      string
+	CPUThreads   int
+	WarpMemMB    int
+	ResampleAlg  string
+}
+
 // SubmitPanRPCWorkflow 基于 WorkflowTemplate 提交 PAN RPC 并行任务
-func (c *Client) SubmitPanRPCWorkflow(ctx context.Context, templateName string, taskID uint, filePrefix, rsImage string) (string, error) {
+func (c *Client) SubmitPanRPCWorkflow(ctx context.Context, p PanRPCWorkflowParams) (string, error) {
+	if p.ResampleAlg == "" {
+		p.ResampleAlg = "near"
+	}
+	if p.WarpMemMB <= 0 {
+		p.WarpMemMB = 512
+	}
+	if p.CPUThreads <= 0 {
+		p.CPUThreads = 1
+	}
 	labels := map[string]interface{}{
-		"satellite.io/task-id": fmt.Sprintf("%d", taskID),
+		"satellite.io/task-id": fmt.Sprintf("%d", p.TaskID),
 		"satellite.io/stage":   "pan_rpc_warp_quarters",
 	}
 	wf := &unstructured.Unstructured{
@@ -51,19 +71,23 @@ func (c *Client) SubmitPanRPCWorkflow(ctx context.Context, templateName string, 
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Workflow",
 			"metadata": map[string]interface{}{
-				"generateName": fmt.Sprintf("rs-pan-rpc-%d-", taskID),
+				"generateName": fmt.Sprintf("rs-pan-rpc-%d-", p.TaskID),
 				"namespace":    c.namespace,
 				"labels":       labels,
 			},
 			"spec": map[string]interface{}{
+				"serviceAccountName": "argo-workflow",
 				"workflowTemplateRef": map[string]interface{}{
-					"name": templateName,
+					"name": p.TemplateName,
 				},
 				"arguments": map[string]interface{}{
 					"parameters": []interface{}{
-						map[string]interface{}{"name": "task_id", "value": fmt.Sprintf("%d", taskID)},
-						map[string]interface{}{"name": "file_prefix", "value": filePrefix},
-						map[string]interface{}{"name": "rs_image", "value": rsImage},
+						map[string]interface{}{"name": "task_id", "value": fmt.Sprintf("%d", p.TaskID)},
+						map[string]interface{}{"name": "file_prefix", "value": p.FilePrefix},
+						map[string]interface{}{"name": "rs_image", "value": p.RSImage},
+						map[string]interface{}{"name": "cpu_threads", "value": fmt.Sprintf("%d", p.CPUThreads)},
+						map[string]interface{}{"name": "warp_mem_mb", "value": fmt.Sprintf("%d", p.WarpMemMB)},
+						map[string]interface{}{"name": "resample_alg", "value": p.ResampleAlg},
 					},
 				},
 			},

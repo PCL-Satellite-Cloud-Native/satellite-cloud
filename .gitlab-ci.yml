@@ -169,7 +169,7 @@ deploy-phase1-pilot:
   script:
     - echo "Phase 1 Pilot：部署 Redis + rs-worker 到 namespace=gitlab-runner"
     - kubectl apply -f k8s/phase1/namespaces.yaml || true
-    - kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
+    # rs-worker ServiceAccount 须集群管理员一次性创建（见 k8s/gitlab-runner-ci-rbac-phase3.yaml 注释）
     - kubectl apply -k k8s/phase1/
     - kubectl -n gitlab-runner rollout status deployment/redis --timeout=180s
     - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
@@ -196,7 +196,6 @@ deploy-phase2-pilot:
     - kubectl apply -k k8s/phase2/
     - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
-    - kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
     - kubectl apply -k k8s/phase1/
     - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s

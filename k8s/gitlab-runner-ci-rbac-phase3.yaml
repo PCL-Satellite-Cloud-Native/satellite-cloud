@@ -1,8 +1,12 @@
 # 授权 gitlab-runner ServiceAccount 在 gitlab-runner namespace 管理 SA / Role / RoleBinding
-# （Phase 3 rs-worker ServiceAccount + Argo submitter RBAC 由 CI apply）
 #
-# 【必须】Phase 3 首次启用 CI 部署前，由集群管理员执行一次：
+# 【集群管理员一次性执行】在 k8s-master（root）：
+#   cd ~/code/satellite-cloud && git pull
 #   kubectl apply -f k8s/gitlab-runner-ci-rbac-phase3.yaml
+#   kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
+#
+# Phase 1/2 CI 不 apply ServiceAccount（避免 Forbidden）；
+# Phase 3 deploy-phase3-pilot 需本 Role 才能 apply Argo submitter RBAC。
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

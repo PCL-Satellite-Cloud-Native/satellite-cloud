@@ -68,6 +68,21 @@ kubectl -n gitlab-runner rollout status deployment/rs-worker
 
 > **前置**：Phase 1 的 redis + rs-worker 必须已 Running。
 
+### 3.3 CI 报错 `serviceaccounts "rs-worker" is forbidden`
+
+**原因**：GitLab CI 使用 `gitlab-runner` ServiceAccount，默认**无权** get/create `ServiceAccount`。Phase 2 job **不应** apply SA（rs-worker SA 在 Phase 1 首次部署前由管理员创建一次即可）。
+
+**在 k8s-master 执行（一次性）**：
+
+```bash
+cd ~/code/satellite-cloud && git pull
+kubectl apply -f k8s/gitlab-runner-ci-rbac-phase3.yaml   # 可选：供 Phase 3 CI apply Argo RBAC
+kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
+kubectl get sa rs-worker -n gitlab-runner
+```
+
+确认 SA 存在后，重新跑 Pipeline 的 `deploy-phase2-pilot`（无需 CI 再 apply SA）。
+
 ### 3.2 验证二进制
 
 ```bash

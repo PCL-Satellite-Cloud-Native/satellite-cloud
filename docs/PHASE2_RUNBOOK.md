@@ -1,6 +1,7 @@
 # Phase 2 运维手册（od-worker 独立检测）
 
-> **状态（2026-06-18）**：**Phase 2 已闭合** — 历史见 [archives/2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)（task 141）。  
+> **状态（2026-06-22）**：**Phase 2 已闭合** — 首次收口 [2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)（task 141）；生产复验 [2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)（task **143**）。  
+> **下一阶段**：[PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md)（Argo PAN RPC 并行）。
 > **前置**：[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)（Phase 1 已闭合）。  
 > **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 2。
 
@@ -67,6 +68,21 @@ kubectl -n gitlab-runner rollout status deployment/rs-worker
 ```
 
 > **前置**：Phase 1 的 redis + rs-worker 必须已 Running。
+
+### 3.3 CI 报错 `serviceaccounts "rs-worker" is forbidden`
+
+**原因**：GitLab CI 使用 `gitlab-runner` ServiceAccount，默认**无权** get/create `ServiceAccount`。Phase 2 job **不应** apply SA（rs-worker SA 在 Phase 1 首次部署前由管理员创建一次即可）。
+
+**在 k8s-master 执行（一次性）**：
+
+```bash
+cd ~/code/satellite-cloud && git pull
+kubectl apply -f k8s/gitlab-runner-ci-rbac-phase3.yaml   # 可选：供 Phase 3 CI apply Argo RBAC
+kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
+kubectl get sa rs-worker -n gitlab-runner
+```
+
+确认 SA 存在后，重新跑 Pipeline 的 `deploy-phase2-pilot`（无需 CI 再 apply SA）。
 
 ### 3.2 验证二进制
 
@@ -143,3 +159,14 @@ nodeSelector: { ... }
 | 任务卡在 stage 9 后不动 | 查 `USE_OD_WORKER=true`；od-worker Running；`XINFO GROUPS od.jobs` |
 | od-worker 报融合文件不存在 | rs-worker 同步持久化失败；查 NFS `output_preprocessing/fusion_envi/` |
 | 检测仍在 rs-worker | `USE_OD_WORKER=false` 或未 rollout rs-worker |
+| rs-worker **Evicted** / DiskPressure | 节点 **ephemeral-storage** 不足（scratch emptyDir 40Gi）；清理 NFS 中间产物；cordon 紧张节点；见 [2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md) §5 |
+| Evicted 后 DB task 仍 running | 手工将旧 task 标 `failed`；重新提交 GF2 |
+
+---
+
+## 9. 验收记录（归档索引）
+
+| 日期 | task | benchmark | 归档 |
+|------|------|-----------|------|
+| 2026-06-18 | 141 | `artifacts/benchmarks/phase2-test1/report.txt` | [phase2-closure](./archives/2026-06-18_phase2-closure.md) |
+| 2026-06-22 | **143** | `artifacts/benchmarks/phase2-test3/report.txt` | [production-validation](./archives/2026-06-22_phase2-production-validation.md) |

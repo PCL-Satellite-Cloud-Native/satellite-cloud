@@ -30,7 +30,8 @@
 | 2026-06-18 | [2026-06-18_phase1-closure.md](./2026-06-18_phase1-closure.md) | Phase 1 Redis 入队 + rs-worker 收口；task 140 全链路 ~28.3 min | [PHASE1_RUNBOOK.md](../PHASE1_RUNBOOK.md)、[MICROSERVICES_IMPLEMENTATION_PLAN.md](../MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 1 |
 | 2026-06-18 | [2026-06-18_phase2-closure.md](./2026-06-18_phase2-closure.md) | Phase 2 od-worker 独立检测；task 141；rs→od 双队列 | [PHASE2_RUNBOOK.md](../PHASE2_RUNBOOK.md)、[MICROSERVICES_IMPLEMENTATION_PLAN.md](../MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 2 |
 | 2026-06-22 | [2026-06-22_phase2-production-validation.md](./2026-06-22_phase2-production-validation.md) | Phase 2 生产复验 task 143；Eviction/CI SA 教训；pan_rpc 基线 174.6 s | [PHASE2_RUNBOOK.md](../PHASE2_RUNBOOK.md) §8 |
-| 2026-06-22 | [2026-06-22_phase3-closure.md](./2026-06-22_phase3-closure.md) | Phase 3 Argo PAN RPC 功能 Pilot；task 144 Workflow Succeeded；stage 4 212.7 s（性能未达 ≤131 s） | [PHASE3_RUNBOOK.md](../PHASE3_RUNBOOK.md)、[MICROSERVICES_IMPLEMENTATION_PLAN.md](../MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 3 |
+| 2026-06-22 | [2026-06-22_phase3-closure.md](./2026-06-22_phase3-closure.md) | Phase 3 Argo PAN RPC **功能** Pilot；task 144；stage 4 212.7 s | [PHASE3_RUNBOOK.md](../PHASE3_RUNBOOK.md) |
+| 2026-06-23 | [2026-06-23_phase3-performance-closure.md](./2026-06-23_phase3-performance-closure.md) | Phase 3 **全量闭合**；P3-04b task 146 stage 4 **165.4 s**（优于 143）；P3-04c 回退 | [PHASE3_RUNBOOK.md](../PHASE3_RUNBOOK.md) |
 
 ---
 

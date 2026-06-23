@@ -2,7 +2,7 @@
 
 > **归档日期**：2026-06-22  
 > **阶段**：Phase 3 — Argo Workflows 阶段 4 PAN RPC 4 路并行（Pilot）  
-> **状态**：**功能 Pilot 已闭合**（P3-03 功能通过；**性能未达** ≤131 s，留 P3-04）  
+> **状态**：**功能 Pilot 已闭合**（P3-03 task 144）；性能定稿见 [2026-06-23_phase3-performance-closure.md](./2026-06-23_phase3-performance-closure.md)  
 > **活跃运维**：[PHASE3_RUNBOOK.md](../PHASE3_RUNBOOK.md)  
 > **前置**：[2026-06-22_phase2-production-validation.md](./2026-06-22_phase2-production-validation.md)（task 143 基线）
 
@@ -114,14 +114,9 @@ RPC 分块完成（Argo 4 路并行） mode=argo_workflow_parallel
 
 ---
 
-## 6. 遗留 / 下一步（P3-04 性能）
+## 6. 后续（已转至性能归档）
 
-| 项 | 说明 |
-|----|------|
-| **P3-04 性能** | stage 4 目标 ≤131 s；task 144 为 212.7 s |
-| **已实现（待 task 145 验收）** | 阶段 3 直写 persist；去掉 init-dirs；persist rename merge；2×2 分组；step 4 CPU |
-| A/B | 可选 `USE_ARGO_PAN_RPC=false` 确认 Phase 2 基线 |
-| **Phase 4+** | 更多阶段 Argo 化、MinIO、120 星（见微服务方案 §5） |
+P3-04 性能优化与定稿见 **[2026-06-23_phase3-performance-closure.md](./2026-06-23_phase3-performance-closure.md)**（task 146 / P3-04b 定稿；stretch ≤131 s 未达）。
 
 ---
 

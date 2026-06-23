@@ -1,7 +1,7 @@
 # Phase 2 运维手册（od-worker 独立检测）
 
 > **状态（2026-06-22）**：**Phase 2 已闭合** — 首次收口 [2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)（task 141）；生产复验 [2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)（task **143**）。  
-> **下一阶段**：[PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md)（Argo PAN RPC — 功能 Pilot 已闭合，见 [archives/2026-06-22_phase3-closure.md](./archives/2026-06-22_phase3-closure.md)）。
+> **下一阶段**：[PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md)（Phase 3 已闭合，见 [archives/2026-06-23_phase3-performance-closure.md](./archives/2026-06-23_phase3-performance-closure.md)）。
 > **前置**：[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)（Phase 1 已闭合）。  
 > **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 2。
 

@@ -1,7 +1,7 @@
 # Phase 3 手动安装包（k8s-master 无 git 仓库时 scp 本文件后 apply）
 # 用法：
 #   kubectl apply -f phase3-manual-install.yaml
-#   kubectl apply -f workflowtemplate-pan-rpc.yaml
+#   kubectl apply -f ../workflows/workflowtemplate-pan-rpc.yaml
 #   kubectl -n argo rollout status deployment/workflow-controller --timeout=180s
 # 前置：install_argo_crds.sh 已执行；rs-worker SA 已存在
 ---

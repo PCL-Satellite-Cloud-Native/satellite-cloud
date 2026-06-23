@@ -205,7 +205,7 @@ kubectl -n gitlab-runner logs deploy/rs-worker --since=2h | grep -E "$TASK_ID|Wo
 
 | 项 | 通过标准 |
 |----|----------|
-| Argo | Workflow **Succeeded**；2 个 PAN RPC step（2×2 分组）均完成 |
+| Argo | Workflow **Succeeded**；4 个 PAN RPC step（4×1 并行）均完成 |
 | rs-worker | stage 4 由 Argo 驱动；**无** 进程内 680s 级 pan_rpc 日志块 |
 | 端到端 | 10 阶段 completed；前端正常 |
 | **性能** | stage 4 墙钟 **≤ 131 s**（相对 task 143 基线 174.6 s ↓25%）；保守线 **≤ 152 s**（相对 task 141 203.9 s） |
@@ -228,18 +228,48 @@ artifacts/benchmarks/phase3-test1/report.txt
 | 阶段 3 直写 persist | `pan_rad_toa` 不再 scratch→NFS 同步（省 ~16 s） |
 | 去掉 init-dirs | rs-worker 预建 `workers/group{1,2}`（省 ~14 s） |
 | persist 上 merge | `rename` 替代 scratch 回拷（省 ~7 s） |
-| 2×2 分组 | 2 Pod 各处理 2 区，共享 VRT；降低 NFS 4 路争用 |
+| ~~2×2 分组~~ | task 145 验证失败（285 s）；**改回 4×1** |
 | step CPU 4 核 | 与 rs-worker limit 对齐 |
+| 4×1 并行（P3-04b） | 保留直写 persist / 无 init-dirs / persist merge |
 
 **部署**（master 无 git 时）：
 
 ```bash
-kubectl apply -f k8s/phase3/bundle/workflowtemplate-pan-rpc.yaml
+kubectl apply -k k8s/phase3/
+# 或 master 无 git：kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml
 # CI 构建新 backend 镜像后 rollout rs-worker
 kubectl -n gitlab-runner rollout restart deploy/rs-worker
 ```
 
-**验收**：提交 GF2 任务 → `artifacts/benchmarks/phase3-test2/report.txt`；stage 4 目标 **≤131 s**。
+**验收**：task **146** `phase3-test3` → stage 4 **165.4 s**（优于 143 基线 174.6 s；未达 ≤131 s）。
+
+### P3-04c（task 147 待验）
+
+| 优化 | 说明 |
+|------|------|
+| step **直写** `pan_warp_quarters` | 去掉 workers + merge rename |
+| **cpu_threads≥2**、**warp_mem_mb≥1024** | 每 Pod 独立算力/内存（非进程内合计） |
+| **Pod 亲和** | 4 step 优先调度同一节点，减轻 NFS 多客户端争用 |
+| Workflow 轮询 | 5 s → 2 s |
+
+```bash
+kubectl apply -k k8s/phase3/
+# 或：kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml
+# 新 backend 镜像后 rollout rs-worker
+kubectl -n gitlab-runner rollout restart deploy/rs-worker
+./scripts/remote_sensing_stage1_benchmark.sh pre --run-id phase3-test4 --clean-scratch
+# GF2 + 检测 → post --task-id <id>
+```
+
+**查看 Workflow Pod 节点**（注意路径为 `.status.nodes`）：
+
+```bash
+WF=$(kubectl -n gitlab-runner get workflow -l satellite.io/task-id=<ID> -o jsonpath='{.items[0].metadata.name}')
+kubectl -n gitlab-runner get workflow "$WF" -o json | jq -r '
+  .status | "workflow: \(.startedAt) -> \(.finishedAt)",
+  (.nodes | to_entries[] | select(.value.type=="Pod") |
+    "\(.value.displayName)\t\(.value.startedAt)\t\(.value.finishedAt)\t\(.value.hostNodeName // "-")")'
+```
 
 ---
 

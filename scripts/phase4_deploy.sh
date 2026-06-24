@@ -43,6 +43,14 @@ echo "== Phase 4 deploy =="
 echo "namespace=${NAMESPACE}"
 echo "backend_image=${BACKEND_IMAGE}"
 
+if ! kubectl auth can-i create horizontalpodautoscalers.autoscaling \
+  --as=system:serviceaccount:${NAMESPACE}:gitlab-runner -n "${NAMESPACE}" 2>/dev/null | grep -q yes; then
+  echo ""
+  echo "WARN: gitlab-runner SA 无 HPA/ServiceMonitor 权限。"
+  echo "      集群管理员执行: kubectl apply -f k8s/gitlab-runner-ci-rbac-phase4.yaml"
+  echo ""
+fi
+
 kubectl apply -k k8s/phase1/
 kubectl apply -k k8s/phase2/
 kubectl -n "${NAMESPACE}" apply -f k8s/backend/deployment.yaml

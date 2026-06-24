@@ -11,10 +11,10 @@ usage() {
   scripts/phase4_verify_metrics.sh [--namespace gitlab-runner]
 
 检查:
-  - rs-worker-metrics / od-worker-metrics Service
+  - rs-worker-metrics / od-worker-metrics Service 与 Endpoints
   - ServiceMonitor satellite-workers / satellite-backend
   - HPA rs-worker / od-worker
-  - /metrics 含 satellite_ 前缀指标
+  - worker/backend /metrics 含 satellite_ 前缀指标（kubectl exec，适配 CI 无 TTY）
 EOF
 }
 
@@ -35,6 +35,34 @@ check() {
     echo "  FAIL ${name}"
     FAIL=1
   fi
+}
+
+wait_endpoints() {
+  local svc="$1"
+  local i=0
+  while [[ $i -lt 30 ]]; do
+    local n
+    n="$(kubectl -n "${NAMESPACE}" get endpoints "${svc}" -o jsonpath='{.subsets[0].addresses}' 2>/dev/null || true)"
+    if [[ -n "${n}" && "${n}" != "[]" && "${n}" != "" ]]; then
+      return 0
+    fi
+    sleep 2
+    i=$((i + 1))
+  done
+  return 1
+}
+
+fetch_metrics() {
+  local label="$1"
+  local url="$2"
+  local pod
+  pod="$(kubectl -n "${NAMESPACE}" get pod -l "${label}" \
+    -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}' 2>/dev/null | awk '{print $1}')"
+  if [[ -z "${pod}" ]]; then
+    return 1
+  fi
+  kubectl -n "${NAMESPACE}" exec "${pod}" -- \
+    curl -sf --max-time 10 "${url}" 2>/dev/null
 }
 
 echo "== Phase 4 metrics verify (namespace=${NAMESPACE}) =="
@@ -58,32 +86,55 @@ check "HPA od-worker" \
   kubectl -n "${NAMESPACE}" get hpa od-worker >/dev/null 2>&1
 
 echo ""
-echo "-- rs-worker /metrics (cluster DNS) --"
-RS_BODY="$(kubectl -n "${NAMESPACE}" run p4-verify-rs-"$(date +%s)" \
-  --rm -i --restart=Never --image=curlimages/curl -- \
-  curl -sf --max-time 15 http://rs-worker-metrics:9090/metrics 2>/dev/null || true)"
-if echo "${RS_BODY}" | grep -q 'satellite_queue_depth'; then
-  echo "  OK  rs-worker satellite_queue_depth"
-  echo "${RS_BODY}" | grep '^satellite_' | head -5
+echo "-- rs-worker Pod / Endpoints --"
+if kubectl -n "${NAMESPACE}" get deploy rs-worker >/dev/null 2>&1; then
+  kubectl -n "${NAMESPACE}" get deploy rs-worker -o wide
+  kubectl -n "${NAMESPACE}" get endpoints rs-worker-metrics 2>/dev/null || true
+fi
+
+if wait_endpoints rs-worker-metrics; then
+  echo "  OK  rs-worker-metrics endpoints ready"
 else
-  echo "  FAIL rs-worker metrics（无 satellite_ 指标；确认已部署含 metrics 的新镜像）"
+  echo "  FAIL rs-worker-metrics 无 endpoints（检查 rs-worker Pod 是否 Running）"
+  kubectl -n "${NAMESPACE}" get pod -l app=rs-worker 2>/dev/null || true
   FAIL=1
 fi
 
 echo ""
-echo "-- satellite-backend /metrics --"
-BE_POD="$(kubectl -n "${NAMESPACE}" get pod -l app=satellite-backend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-if [[ -n "${BE_POD}" ]]; then
-  BE_BODY="$(kubectl -n "${NAMESPACE}" exec "${BE_POD}" -- \
-    curl -sf --max-time 10 http://127.0.0.1:8080/metrics 2>/dev/null || true)"
-  if echo "${BE_BODY}" | grep -q 'satellite_queue_depth'; then
-    echo "  OK  backend satellite_queue_depth"
-  else
-    echo "  WARN backend 无 satellite_queue_depth（worker 指标仍可用；backend 需同镜像 rollout）"
-  fi
+echo "-- rs-worker /metrics (pod exec :9090) --"
+RS_BODY="$(fetch_metrics "app=rs-worker" "http://127.0.0.1:9090/metrics" || true)"
+if echo "${RS_BODY}" | grep -q 'satellite_queue_depth'; then
+  echo "  OK  rs-worker satellite_queue_depth"
+  echo "${RS_BODY}" | grep '^satellite_' | head -5
 else
-  echo "  WARN 未找到 satellite-backend Pod"
+  echo "  FAIL rs-worker metrics（无 satellite_ 指标）"
+  echo "  提示: 确认 rs-worker 与 backend 同镜像 tag；日志应有 metrics server listening port=9090"
+  kubectl -n "${NAMESPACE}" logs deployment/rs-worker --tail=15 2>/dev/null || true
+  FAIL=1
 fi
+
+echo ""
+echo "-- od-worker /metrics (pod exec :9090) --"
+OD_BODY="$(fetch_metrics "app=od-worker" "http://127.0.0.1:9090/metrics" || true)"
+if echo "${OD_BODY}" | grep -q 'satellite_queue_depth'; then
+  echo "  OK  od-worker satellite_queue_depth"
+else
+  echo "  WARN od-worker 无 satellite_queue_depth（与 rs-worker 同镜像时应一致）"
+  kubectl -n "${NAMESPACE}" logs deployment/od-worker --tail=10 2>/dev/null || true
+fi
+
+echo ""
+echo "-- satellite-backend /metrics --"
+BE_BODY="$(fetch_metrics "app=satellite-backend" "http://127.0.0.1:8080/metrics" || true)"
+if echo "${BE_BODY}" | grep -q 'satellite_queue_depth'; then
+  echo "  OK  backend satellite_queue_depth"
+else
+  echo "  WARN backend 无 satellite_queue_depth"
+fi
+
+echo ""
+echo "-- HPA 状态（CPU 可能短暂 unknown，minReplicas 应保持 ≥1）--"
+kubectl -n "${NAMESPACE}" get hpa rs-worker od-worker 2>/dev/null || true
 
 echo ""
 echo "-- Prometheus 采集（约 30～60s 后生效）--"
@@ -94,7 +145,9 @@ echo "  Grafana: http://<node-ip>:30001 → 导入 k8s/phase4/grafana/satellite-
 
 if [[ "${FAIL}" -ne 0 ]]; then
   echo ""
-  echo "验收未通过，请检查 rollout 镜像 tag 与 phase4 manifest。"
+  echo "验收未通过。常见原因:"
+  echo "  1) rs-worker 未 rollout 到含 metrics 的镜像（与 backend tag 应对齐）"
+  echo "  2) rs-worker Pod 未 Running（HPA/资源/调度）"
   exit 1
 fi
 

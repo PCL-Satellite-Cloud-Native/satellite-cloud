@@ -246,6 +246,7 @@ deploy-phase4-pilot:
   allow_failure: true
   script:
     - echo "Phase 4 Pilot：metrics Services + ServiceMonitor + HPA"
+    - echo "若 Forbidden HPA/ServiceMonitor：集群管理员一次性 kubectl apply -f k8s/gitlab-runner-ci-rbac-phase4.yaml"
     - kubectl apply -k k8s/phase1/
     - kubectl apply -k k8s/phase2/
     - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
@@ -261,6 +262,7 @@ deploy-phase4-pilot:
     - kubectl -n gitlab-runner get svc rs-worker-metrics od-worker-metrics
     - kubectl -n gitlab-runner get servicemonitor satellite-workers satellite-backend
     - kubectl -n gitlab-runner get hpa rs-worker od-worker
+    - sleep 10
     - sh scripts/phase4_verify_metrics.sh
   tags:
     - k8s-cluster-runner

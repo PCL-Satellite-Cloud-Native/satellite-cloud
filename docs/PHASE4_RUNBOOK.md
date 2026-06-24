@@ -36,6 +36,12 @@ GitLab Pipeline `build-backend` 完成后取 tag，例如 `192.168.10.238/satell
 
 ### Step 2 — 一键部署
 
+**前置（集群管理员一次性）**：若 CI 报 `Forbidden` on HPA / ServiceMonitor：
+
+```bash
+kubectl apply -f k8s/gitlab-runner-ci-rbac-phase4.yaml
+```
+
 ```bash
 cd ~/code/satellite-cloud   # 仓库根目录
 

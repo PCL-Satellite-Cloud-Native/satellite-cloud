@@ -1,0 +1,38 @@
+# kube-prometheus-stack：label release=kube-prometheus-stack 以被 Prometheus 选中
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: satellite-workers
+  labels:
+    release: kube-prometheus-stack
+    satellite.io/phase: phase4-pilot
+spec:
+  selector:
+    matchLabels:
+      satellite.io/metrics: "true"
+  namespaceSelector:
+    matchNames:
+      - gitlab-runner
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: satellite-backend
+  labels:
+    release: kube-prometheus-stack
+    satellite.io/phase: phase4-pilot
+spec:
+  selector:
+    matchLabels:
+      app: satellite-backend
+  namespaceSelector:
+    matchNames:
+      - gitlab-runner
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

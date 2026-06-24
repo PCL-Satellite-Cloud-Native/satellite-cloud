@@ -15,6 +15,7 @@ spec:
     metadata:
       labels:
         app: rs-worker
+        satellite.io/metrics: "true"
     spec:
       serviceAccountName: rs-worker
       initContainers:
@@ -37,7 +38,12 @@ spec:
           image: 192.168.10.238/satellite/backend:latest
           imagePullPolicy: Always
           command: ["./rs-worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
           env:
+            - name: SATELLITE_METRICS_PORT
+              value: "9090"
             - name: SATELLITE_LOG_LEVEL
               value: "info"
             - name: SATELLITE_DATABASE_HOST
@@ -75,7 +81,7 @@ spec:
             - name: SATELLITE_USE_OD_WORKER
               value: "true"
             - name: SATELLITE_USE_ARGO_PAN_RPC
-              value: "false"
+              value: "true"
             - name: SATELLITE_ARGO_NAMESPACE
               value: "gitlab-runner"
             - name: SATELLITE_ARGO_PAN_RPC_TEMPLATE

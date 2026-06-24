@@ -65,10 +65,24 @@ kubectl -n gitlab-runner rollout status deployment/rs-worker
 
 ---
 
-## 5. 下一步（Phase 4+）
+## 5. 生产签收（2026-06-23）
 
-- 更多阶段 Argo 化、MinIO、120 星（见 [MICROSERVICES_IMPLEMENTATION_PLAN.md](../MICROSERVICES_IMPLEMENTATION_PLAN.md) §5）
-- 若需冲击 ≤131 s：step 读 scratch / 节点亲和 / NFS 拓扑优化（非 Pilot 范围）
+| 项 | 值 |
+|----|-----|
+| 配置 | **P3-04b**；`USE_ARGO_PAN_RPC=true`（`k8s/phase1/rs-worker` manifest 默认定稿） |
+| 镜像 | `192.168.10.238/satellite/backend:dd4bc728` |
+| WorkflowTemplate | `workers/group{N}`；4×1 area step |
+| 定稿 benchmark | task **146** / `phase3-test3` / stage 4 **165.4 s** |
+| 冒烟 | `phase3-smoke`（部署后回归，进行中） |
+
+Phase 3 **正式归档**；后续工作见 [PHASE4_RUNBOOK.md](../PHASE4_RUNBOOK.md)（**无 GPU** 约束）。
+
+---
+
+## 6. 历史：stretch 与 Phase 4+
+
+- 原 stretch ≤131 s 未达；更多阶段 Argo 化 / NFS 拓扑优化 **非 Phase 4 阻塞项**
+- GPU od-worker：**延后**（集群暂无 GPU）
 
 ---
 

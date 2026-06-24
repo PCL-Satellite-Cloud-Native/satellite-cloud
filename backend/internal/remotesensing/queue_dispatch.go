@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/metrics"
 	"satellite-cloud/backend/internal/model"
 	"satellite-cloud/backend/internal/queue"
 )
@@ -15,7 +16,8 @@ import (
 // Options 控制 API / Worker 两种运行模式
 type Options struct {
 	Queue            config.QueueConfig
-	BootstrapPending bool // API 默认 true；rs-worker 设为 false
+	BootstrapPending bool   // API 默认 true；rs-worker 设为 false
+	MetricsWorker    string // rs-worker | od-worker | 空=不上报
 }
 
 // DefaultOptions API 进程默认选项
@@ -26,7 +28,7 @@ func DefaultOptions(queueCfg config.QueueConfig) Options {
 // WorkerOptions rs-worker 进程选项（仅消费 Redis，不启动内进程 worker）
 func WorkerOptions(queueCfg config.QueueConfig) Options {
 	queueCfg.UseInProcessPipeline = false
-	return Options{Queue: queueCfg, BootstrapPending: false}
+	return Options{Queue: queueCfg, BootstrapPending: false, MetricsWorker: "rs-worker"}
 }
 
 func createTaskRequestFromJob(job queue.RSJobPayload) CreateTaskRequest {
@@ -127,5 +129,27 @@ func (s *RemoteSensingService) RunPipeline(ctx context.Context, taskID uint, req
 
 // RunPipelineFromJob 从 Redis job payload 执行流水线
 func (s *RemoteSensingService) RunPipelineFromJob(ctx context.Context, job queue.RSJobPayload) {
+	if s.metricsWorker != "" {
+		metrics.WorkerJobsActive.WithLabelValues(s.metricsWorker).Inc()
+		defer metrics.WorkerJobsActive.WithLabelValues(s.metricsWorker).Dec()
+	}
+	start := time.Now()
+	defer s.recordWorkerMetrics(start, job.TaskID, true)
+
 	s.RunPipeline(ctx, job.TaskID, createTaskRequestFromJob(job))
+}
+
+func (s *RemoteSensingService) recordWorkerMetrics(start time.Time, taskID uint, rsPartial bool) {
+	if s.metricsWorker == "" {
+		return
+	}
+	var t model.RemoteSensingTask
+	if err := s.db.Select("status").First(&t, taskID).Error; err != nil {
+		return
+	}
+	outcome := t.Status
+	if rsPartial && s.metricsWorker == "rs-worker" && t.Status == TaskStatusRunning {
+		outcome = "od_enqueued"
+	}
+	metrics.ObserveWorkerTask(s.metricsWorker, outcome, time.Since(start))
 }

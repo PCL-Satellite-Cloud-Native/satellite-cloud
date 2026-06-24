@@ -1,10 +1,10 @@
 # Phase 3 运维手册（Argo Workflows — 阶段内并行）
 
-> **状态（2026-06-23）**：**Phase 3 全量闭合** — 功能 task **144**；性能定稿 task **146** stage 4 **165.4 s**（优于 143 基线 174.6 s）。详见 [archives/2026-06-23_phase3-performance-closure.md](./archives/2026-06-23_phase3-performance-closure.md)。  
-> **生产**：`SATELLITE_USE_ARGO_PAN_RPC=true`（**P3-04b**；P3-04c 已回退）。  
+> **状态（2026-06-23）**：**已归档（只读运维）** — 定稿 task **146** / P3-04b；生产 Argo 已启用。详见 [archives/2026-06-23_phase3-performance-closure.md](./archives/2026-06-23_phase3-performance-closure.md)。
 > **前置**：[PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)（Phase 2 已闭合；task **143** 基线 174.6 s）。  
 > **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 3。  
-> **Argo 安装**：[k8s/phase3/argo/INSTALL_CHECKLIST.md](../k8s/phase3/argo/INSTALL_CHECKLIST.md)
+> **Argo 安装**：[k8s/phase3/argo/INSTALL_CHECKLIST.md](../k8s/phase3/argo/INSTALL_CHECKLIST.md)  
+> **下一阶段**：[PHASE4_RUNBOOK.md](./PHASE4_RUNBOOK.md)（规划；**无 GPU**）。
 
 ## 实施路线图（Phase 2 → Phase 3 收口）
 

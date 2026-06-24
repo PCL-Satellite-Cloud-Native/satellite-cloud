@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/metrics"
 	"satellite-cloud/backend/internal/model"
 	"satellite-cloud/backend/internal/queue"
 )
@@ -17,7 +18,7 @@ import (
 // ODWorkerOptions od-worker 进程选项（仅消费 od.jobs）
 func ODWorkerOptions(queueCfg config.QueueConfig) Options {
 	queueCfg.UseInProcessPipeline = false
-	return Options{Queue: queueCfg, BootstrapPending: false}
+	return Options{Queue: queueCfg, BootstrapPending: false, MetricsWorker: "od-worker"}
 }
 
 func fusionDatRelPersist(cfg config.RemoteSensingConfig, filePrefix string) string {
@@ -60,6 +61,13 @@ func (s *RemoteSensingService) enqueueOD(ctx context.Context, taskID uint, req C
 
 // RunDetectionFromJob od-worker 消费 od.jobs 后执行阶段 10
 func (s *RemoteSensingService) RunDetectionFromJob(ctx context.Context, job queue.ODJobPayload) {
+	if s.metricsWorker != "" {
+		metrics.WorkerJobsActive.WithLabelValues(s.metricsWorker).Inc()
+		defer metrics.WorkerJobsActive.WithLabelValues(s.metricsWorker).Dec()
+	}
+	start := time.Now()
+	defer s.recordWorkerMetrics(start, job.TaskID, false)
+
 	taskID := job.TaskID
 	req := createTaskRequestFromODJob(job)
 	req.FusionDatRel = job.FusionDatRel

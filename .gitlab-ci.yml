@@ -198,6 +198,7 @@ deploy-phase2-pilot:
     - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
     - kubectl apply -k k8s/phase1/
     - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
     - kubectl -n gitlab-runner get deploy od-worker rs-worker
     - kubectl -n gitlab-runner logs deployment/od-worker --tail=20
@@ -209,7 +210,7 @@ deploy-phase2-pilot:
   only:
     - main
 
-# Phase 3：Argo WorkflowTemplate + rs-worker Argo 集成（USE_ARGO_PAN_RPC 默认 false，验收后改 true）
+# Phase 3：Argo WorkflowTemplate + rs-worker Argo 集成（manifest 默认 USE_ARGO_PAN_RPC=true）
 # 默认不自动执行：在 GitLab Pipeline 页面手动点击 deploy-phase3-pilot
 deploy-phase3-pilot:
   stage: deploy
@@ -230,6 +231,37 @@ deploy-phase3-pilot:
     - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
     - kubectl -n gitlab-runner get workflowtemplate rs-pan-rpc-parallel
     - echo "启用 Argo：kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_USE_ARGO_PAN_RPC=true"
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - deploy-phase2-pilot
+  only:
+    - main
+
+# Phase 4：Prometheus 指标 + ServiceMonitor + HPA（手动 Pilot）
+deploy-phase4-pilot:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  script:
+    - echo "Phase 4 Pilot：metrics Services + ServiceMonitor + HPA"
+    - kubectl apply -k k8s/phase1/
+    - kubectl apply -k k8s/phase2/
+    - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner apply -f k8s/backend/deployment.yaml
+    - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_USE_ARGO_PAN_RPC=true
+    - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
+    - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
+    - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
+    - kubectl apply -k k8s/phase4/
+    - kubectl -n gitlab-runner get svc rs-worker-metrics od-worker-metrics
+    - kubectl -n gitlab-runner get servicemonitor satellite-workers satellite-backend
+    - kubectl -n gitlab-runner get hpa rs-worker od-worker
+    - sh scripts/phase4_verify_metrics.sh
   tags:
     - k8s-cluster-runner
   needs:

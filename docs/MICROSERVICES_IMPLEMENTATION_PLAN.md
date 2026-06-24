@@ -196,9 +196,9 @@
 
 ---
 
-### 阶段 3 — Argo Workflows DAG（2～3 周）【下一阶段】
+### 阶段 3 — Argo Workflows DAG（2～3 周）
 
-**状态（2026-06-18）**：**实施中** — manifest + rs-worker Argo 客户端已合入（`feat/phase3-argo-pan-rpc`）；P3-03 验收待 `USE_ARGO_PAN_RPC=true`。
+**状态（2026-06-23）**：**已闭合** — P3-04b 生产定稿 task **146** stage 4 **165.4 s**；运维 [PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md)；归档 [archives/2026-06-23_phase3-performance-closure.md](./archives/2026-06-23_phase3-performance-closure.md)。
 
 | 项 | 内容 |
 |----|------|
@@ -211,7 +211,9 @@
 
 ---
 
-### 阶段 4 — 多星协同与可观测（1 周）
+### 阶段 4 — 多星协同与可观测（1 周）【下一阶段】
+
+**状态（2026-06-23）**：**规划阶段** — 运维 [PHASE4_RUNBOOK.md](./PHASE4_RUNBOOK.md)。**约束：集群暂无 GPU**，od-worker 保持 CPU；GPU 池延后。
 
 | 项 | 内容 |
 |----|------|
@@ -410,14 +412,14 @@ resources:
 
 **Phase 2（2026-06-18 已闭合；2026-06-22 生产复验 task 143）**：od-worker + od.jobs — 见 [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)、[archives/2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)。
 
-**Phase 3（2026-06-23 全量闭合）**：
+**Phase 4（2026-06-23 规划启动；无 GPU）**：
 
-1. **Argo PAN RPC**：功能 task 144；性能定稿 task **146** stage 4 **165.4 s**（P3-04b）— 见 [PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md)、[archives/2026-06-23_phase3-performance-closure.md](./archives/2026-06-23_phase3-performance-closure.md)。
-2. **Stretch 目标**：原 ≤131 s 未达；留 Phase 4+（NFS 拓扑 / 更多阶段 Argo 化）。
-3. **GPU 池（可选 Phase 2+）**：od-worker `device=gpu` + 节点池。
-4. **并行压测（可选）**：rs-worker / od-worker replicas>1。
-5. **DB / 拓扑**：`satellite_id`、120 星高亮（Phase 5）。
-6. **目标态 namespace** 迁移（Pilot 仍用 `gitlab-runner`）。
+1. **可观测 + 多 task 压测** — Prometheus / Grafana / HPA / N 路脚本 — 见 [PHASE4_RUNBOOK.md](./PHASE4_RUNBOOK.md)。
+2. **GPU 池**：**延后**（集群暂无 GPU；od-worker 保持 `device=cpu`）。
+3. **并行压测**：rs-worker / od-worker replicas>1（Phase 4 验收项）。
+4. **DB / 拓扑**：`satellite_id`、120 星高亮（Phase 5）。
+5. **MinIO / 120 Node**（Phase 6）。
+6. **可选**：更多阶段 Argo 化；namespace 迁移。
 
 ---
 
@@ -427,7 +429,7 @@ resources:
 |----|------|
 | 120 卫星 Node 与 120 路由 Node 是否 **同一 K8s 集群** 内 | 当前按「是」撰写 |
 | 第三方测试 **必须通过项** 的硬性数字 | 本文 §8 为建议值，需机构确认 |
-| GPU 型号与驱动 / device plugin | 影响 od-worker 资源声明 |
+| GPU 型号与驱动 / device plugin | **延后** — 当前集群无 GPU；Phase 4 不验收 GPU |
 | MinIO 是否与现有 NFS 同机 | 影响网络规划 |
 
 ---

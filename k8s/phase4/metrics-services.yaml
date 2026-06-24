@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rs-worker-metrics
+  labels:
+    app: rs-worker
+    satellite.io/metrics: "true"
+spec:
+  selector:
+    app: rs-worker
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: od-worker-metrics
+  labels:
+    app: od-worker
+    satellite.io/metrics: "true"
+spec:
+  selector:
+    app: od-worker
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics

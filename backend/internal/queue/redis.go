@@ -115,6 +115,15 @@ func (c *Client) AckRSJob(ctx context.Context, streamID string) error {
 	return c.rdb.XAck(ctx, c.streamRS, c.consumerGroup, streamID).Err()
 }
 
+// StreamGroupPending 消费者组待处理消息数（XPENDING count）
+func (c *Client) StreamGroupPending(ctx context.Context, stream, group string) (int64, error) {
+	info, err := c.rdb.XPending(ctx, stream, group).Result()
+	if err != nil {
+		return 0, err
+	}
+	return info.Count, nil
+}
+
 // ParseRSJobMessage 从 Stream 消息 values 解析 payload
 func ParseRSJobMessage(values map[string]interface{}) (RSJobPayload, error) {
 	var p RSJobPayload

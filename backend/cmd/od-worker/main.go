@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/metrics"
 	"satellite-cloud/backend/internal/queue"
 	"satellite-cloud/backend/internal/remotesensing"
 	"satellite-cloud/backend/pkg/database"
@@ -49,6 +50,9 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	metrics.StartServer(ctx, zapLogger)
+	go metrics.RunQueueCollector(ctx, cfg.Queue, zapLogger)
 
 	if err := qClient.EnsureODConsumerGroup(ctx, cfg.Queue.StreamOD, cfg.Queue.ODConsumerGroup); err != nil {
 		zapLogger.Fatal("Failed to ensure od consumer group", zap.Error(err))

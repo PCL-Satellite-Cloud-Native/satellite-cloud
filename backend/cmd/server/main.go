@@ -12,12 +12,14 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"go.uber.org/zap"
 
 	"satellite-cloud/backend/internal/api/handlers"
 	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/metrics"
 	"satellite-cloud/backend/internal/objectdetection"
 	"satellite-cloud/backend/internal/remotesensing"
 	"satellite-cloud/backend/internal/topology"
@@ -186,6 +188,9 @@ func main() {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
+
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	go metrics.RunQueueCollector(context.Background(), cfg.Queue, zapLogger)
 
 	remoteSensingService := remotesensing.NewRemoteSensingService(
 		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection, cfg.Argo,

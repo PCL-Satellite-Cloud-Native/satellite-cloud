@@ -136,6 +136,7 @@ type RemoteSensingService struct {
 	detectionCfg    config.ObjectDetectionConfig
 	queueCfg        config.QueueConfig
 	argoCfg         config.ArgoConfig
+	metricsWorker   string
 	redisClient     *queue.Client
 	redisMu         sync.Mutex
 	detectionRunner *objectdetection.Runner
@@ -159,8 +160,9 @@ func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteS
 		logger:       logger,
 		cfg:          cfg,
 		detectionCfg: detectionCfg,
-		queueCfg:     opts.Queue,
-		subscribers:  make(map[uint][]chan RemoteSensingStageEvent),
+		queueCfg:      opts.Queue,
+		metricsWorker: opts.MetricsWorker,
+		subscribers:   make(map[uint][]chan RemoteSensingStageEvent),
 		queue:        make(chan pipelineJob, queueSize),
 	}
 	s.initDetectionRunner()

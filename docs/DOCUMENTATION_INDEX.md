@@ -2,7 +2,7 @@
 
 > **用途**：帮助你和同事在 **satellite-cloud**、**Satellite-Remote-Sensing**、**Object-Detection** 之间快速找到该读的文档，避免重复、遗漏或读错版本。  
 > **仓库关系**：`satellite-cloud` 是编排与部署中心；RS / OD 是载荷算法仓，由 CI 打入 backend 镜像或在本地/WSL 联调。  
-> **最后更新**：2026-06-23（Phase 3 全量闭合；task 146 stage 4 165.4 s / P3-04b 定稿）
+> **最后更新**：2026-06-23（Phase 3 归档；**Phase 4 规划启动**，无 GPU）
 
 ---
 
@@ -21,7 +21,8 @@
 | **记录 Phase 0 baseline / 收口** | [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md) **§11** / [archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md) | 已闭合 |
 | **Phase 1 Redis + rs-worker** | [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md) | 已闭合；日常运维 |
 | **Phase 2 od-worker** | [PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md) | 已闭合；复验 task 143 |
-| **Phase 3 Argo DAG** | [PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md) | **已闭合**（P3-04b task 146）；[archives/2026-06-23_phase3-performance-closure.md](./archives/2026-06-23_phase3-performance-closure.md) |
+| **Phase 3 Argo DAG** | [PHASE3_RUNBOOK.md](./PHASE3_RUNBOOK.md) | **已归档**；[archives/2026-06-23_phase3-performance-closure.md](./archives/2026-06-23_phase3-performance-closure.md) |
+| **Phase 4 可观测 / 多 task** | [PHASE4_RUNBOOK.md](./PHASE4_RUNBOOK.md) | **规划中**；无 GPU |
 | **Phase 1 收口数据** | [archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md) | task 140 |
 | **Phase 2 收口 / 复验** | [archives/2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)（141）、[2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)（143） | P2-03 通过 |
 | **规划微服务 / 多星协同** | [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) | 45 分钟 |
@@ -227,7 +228,8 @@ flowchart LR
 | 集群部署流程、CI 变量、首次验收 | `K8S_BASELINE_RUNBOOK.md`（含附录 A） |
 | Phase 0 收口（3× benchmark、签字） | `K8S_BASELINE_RUNBOOK.md` **§11** / `archives/2026-06-17_phase0-closure.md` |
 | Phase 2 od-worker | `PHASE2_RUNBOOK.md`、`archives/2026-06-18_phase2-closure.md`、`archives/2026-06-22_phase2-production-validation.md`、`k8s/phase2/` |
-| Phase 3 Argo | `PHASE3_RUNBOOK.md`、`k8s/phase3/argo/INSTALL_CHECKLIST.md` |
+| Phase 3 Argo | `PHASE3_RUNBOOK.md`、`k8s/phase3/argo/INSTALL_CHECKLIST.md`（已归档） |
+| Phase 4 规划 | `PHASE4_RUNBOOK.md` |
 | 文档大更新归档 | `archives/ARCHIVE_INDEX.md`、`scripts/archive_docs_snapshot.sh` |
 | Deployment env / 资源 / 挂载 | `REMOTE_SENSING_K8S_DEPLOYMENT.md` + runbook 交叉引用 |
 | RS/OD 容器内路径或 config | 各仓 `K8S_RUNTIME_PREP.md` |

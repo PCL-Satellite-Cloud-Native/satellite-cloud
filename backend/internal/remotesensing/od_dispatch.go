@@ -39,8 +39,13 @@ func (s *RemoteSensingService) enqueueOD(ctx context.Context, taskID uint, req C
 	if err != nil {
 		return err
 	}
+	satID := uint(0)
+	if req.SatelliteID != nil {
+		satID = *req.SatelliteID
+	}
 	streamID, err := client.EnqueueODJob(ctx, s.queueCfg.StreamOD, queue.ODJobPayload{
 		TaskID:              taskID,
+		SatelliteID:         satID,
 		FilePrefix:          req.FilePrefix,
 		FusionDatRel:        fusionDatRel,
 		DetectionClasses:    req.DetectionClasses,

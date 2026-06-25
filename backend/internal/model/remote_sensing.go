@@ -17,6 +17,8 @@ type RemoteSensingTask struct {
 	EnableDetection    bool       `gorm:"not null;default:true" json:"enable_detection"`
 	DetectionClasses   string     `gorm:"type:varchar(255)" json:"detection_classes,omitempty"`
 	DetectionDrawLabels bool      `gorm:"not null;default:false" json:"detection_draw_labels"`
+	ScenarioID          *uint     `gorm:"index" json:"scenario_id,omitempty"`
+	SatelliteID         *uint     `gorm:"index" json:"satellite_id,omitempty"`
 	CurrentStage       string     `gorm:"type:varchar(64)" json:"current_stage,omitempty"`
 	ErrorMessage   string     `gorm:"type:text" json:"error_message,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`

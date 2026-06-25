@@ -42,7 +42,26 @@ func (h *RemoteSensingHandler) CreateTask(c *gin.Context) {
 }
 
 func (h *RemoteSensingHandler) ListTasks(c *gin.Context) {
-	tasks, err := h.svc.ListTasks(c.Request.Context())
+	filter := remotesensing.TaskListFilter{Status: c.Query("status")}
+	if v := c.Query("scenario_id"); v != "" {
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario_id"})
+			return
+		}
+		u := uint(id)
+		filter.ScenarioID = &u
+	}
+	if v := c.Query("satellite_id"); v != "" {
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid satellite_id"})
+			return
+		}
+		u := uint(id)
+		filter.SatelliteID = &u
+	}
+	tasks, err := h.svc.ListTasks(c.Request.Context(), filter)
 	if err != nil {
 		h.logger.Error("拉取任务列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -1,7 +1,7 @@
 # Phase 4 运维手册（多星协同与可观测）
 
-> **状态（2026-06-23）**：**实施中** — 集群已清理；执行 P4-01～04，归档 P4-05 待压测通过后。  
-> **前置**：Phase 3 已闭合；冒烟 task **148**（stage 4 **185.6 s**）。  
+> **状态（2026-06-24）**：**已收口** — 见 [archives/2026-06-24_phase4-closure.md](./archives/2026-06-24_phase4-closure.md)  
+> **前置**：Phase 3 已闭合；Phase 4 定稿 benchmark **phase4-test10**（task 173–182，10/10 completed）。  
 > **监控 SSOT**：`monitoring/kube-prometheus-stack` — Grafana **30001**，Prometheus **30090**（不用 istio-system:30300）。
 
 ---
@@ -11,7 +11,7 @@
 | 阶段 | 内容 | 门禁 |
 |------|------|------|
 | **执行** | 部署 metrics 镜像 + phase4 manifest + 压测 | A: `satellite_queue_depth` 可查 → B: phase4-test1 通过 → C: phase4-test10 通过 |
-| **归档** | `docs/archives/2026-06-xx_phase4-closure.md` | 仅 C 通过后写 |
+| **归档** | `docs/archives/2026-06-24_phase4-closure.md` | ✅ 已完成 |
 
 ---
 
@@ -84,7 +84,13 @@ kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090:909
 
 ### Step 5 — 3 路压测（门禁 B）
 
+**注意**：同 `filePrefix` 时脚本默认 **`--max-in-flight 1`**（串行）。3 路 = 依次跑 3 条，测稳定性而非并发写 NFS。  
+若需 3 路**同时** running，须 Phase 5+ 按 task_id 隔离目录（当前架构不支持）。
+
 ```bash
+kubectl -n gitlab-runner scale deploy/rs-worker --replicas=1
+kubectl -n gitlab-runner patch hpa rs-worker -p '{"spec":{"maxReplicas":1}}'
+
 kubectl -n gitlab-runner port-forward svc/satellite-backend 8080:8080 &
 
 bash scripts/submit_n_remote_sensing_tasks.sh \
@@ -93,20 +99,49 @@ bash scripts/submit_n_remote_sensing_tasks.sh \
   --api-base http://127.0.0.1:8080
 ```
 
-观察 Grafana：`satellite_queue_depth` 上升、`satellite_worker_jobs_active` ≥ 1。  
-结果：`artifacts/benchmarks/phase4-test1/summary.csv`
+### 2.1 共享 NFS 路径（同 filePrefix 冲突根因）
+
+| 路径 | 冲突 |
+|------|------|
+| `persist_output_preprocessing/pan_rad_toa/` | 多 task 同前缀 |
+| `persist_output_preprocessing/pan_warp_quarters/` | Argo 四块 + merge 输入 |
+| `preparePanRpcPersistWorkerDirs` | 新 task 进 stage 4 会 **RemoveAll(workers/)** |
+
+**burst / max-in-flight>1 失败后**建议清理 scratch（在 backend Pod 内）：
+
+```bash
+BE=$(kubectl -n gitlab-runner get pod -l app=satellite-backend -o jsonpath='{.items[0].metadata.name}')
+kubectl -n gitlab-runner exec "$BE" -- sh -lc '
+  rm -rf /opt/remote-sensing/output_preprocessing/*
+  rm -rf /opt/remote-sensing/persist_output_preprocessing/pan_warp_quarters/workers
+'
+```
 
 ### Step 6 — 10 路压测（门禁 C → 归档）
 
+**验收定义**：提交 10 条任务、**串行完成**（默认 in-flight=1），期间 Prometheus/Grafana 可见指标；**不是** 10 路同时写同一 GF2 前缀。
+
 ```bash
+bash scripts/phase4_abort_benchmark.sh --tasks 170   # 若有卡住 task
+
+kubectl -n gitlab-runner scale deploy/rs-worker --replicas=1
+kubectl -n gitlab-runner patch hpa rs-worker -p '{"spec":{"maxReplicas":1}}'
+
 bash scripts/submit_n_remote_sensing_tasks.sh \
   --run-id phase4-test10 \
   --count 10 \
+  --max-in-flight 1 \
   --api-base http://127.0.0.1:8080 \
-  --timeout 14400
+  --timeout 28800
 ```
 
-通过后写 `docs/archives/2026-06-xx_phase4-closure.md`。
+墙钟约 **10 × 25 min ≈ 4h+**；`--timeout 28800`（8h）更稳妥。
+
+**中止残留**：
+
+```bash
+bash scripts/phase4_abort_benchmark.sh --tasks 170
+```
 
 ---
 
@@ -153,4 +188,4 @@ kubectl -n gitlab-runner get hpa rs-worker od-worker -w
 
 - GPU / MinIO / 120 星拓扑 / istio-monitoring 栈合并
 
-*归档文档仅在门禁 C 通过后创建。*
+*Phase 4 已于 2026-06-24 收口；详见 [archives/2026-06-24_phase4-closure.md](./archives/2026-06-24_phase4-closure.md)。*

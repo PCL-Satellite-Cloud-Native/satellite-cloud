@@ -67,13 +67,15 @@ var stageDefinitions = []stageDefinition{
 }
 
 type RemoteSensingStageEvent struct {
-	TaskID     uint                   `json:"task_id"`
-	StageName  string                 `json:"stage_name,omitempty"`
-	Status     string                 `json:"status"`
-	Message    string                 `json:"message,omitempty"`
-	Details    map[string]interface{} `json:"details,omitempty"`
-	TaskStatus string                 `json:"task_status,omitempty"`
-	UpdatedAt  time.Time              `json:"updated_at"`
+	TaskID      uint                   `json:"task_id"`
+	StageName   string                 `json:"stage_name,omitempty"`
+	Status      string                 `json:"status"`
+	Message     string                 `json:"message,omitempty"`
+	Details     map[string]interface{} `json:"details,omitempty"`
+	TaskStatus  string                 `json:"task_status,omitempty"`
+	ScenarioID  *uint                  `json:"scenario_id,omitempty"`
+	SatelliteID *uint                  `json:"satellite_id,omitempty"`
+	UpdatedAt   time.Time              `json:"updated_at"`
 }
 
 type CreateTaskRequest struct {
@@ -84,7 +86,16 @@ type CreateTaskRequest struct {
 	EnableDetection     bool   `json:"enableDetection"`
 	DetectionClasses    string `json:"detectionClasses"`
 	DetectionDrawLabels bool   `json:"detectionDrawLabels"`
+	ScenarioID          *uint  `json:"scenarioId,omitempty"`
+	SatelliteID         *uint  `json:"satelliteId,omitempty"`
 	FusionDatRel        string `json:"-"` // Phase 2：od-worker 指定 NFS 融合路径
+}
+
+// TaskListFilter 列表查询（Phase 5）
+type TaskListFilter struct {
+	ScenarioID  *uint
+	SatelliteID *uint
+	Status      string
 }
 
 type stageExecutionResult struct {
@@ -200,6 +211,9 @@ func (s *RemoteSensingService) CreateTask(ctx context.Context, req CreateTaskReq
 	if strings.TrimSpace(req.FilePrefix) == "" || strings.TrimSpace(req.InputDirectory) == "" {
 		return nil, fmt.Errorf("filePrefix 和 inputDirectory 为必填项")
 	}
+	if err := s.validateTaskTopology(ctx, req.ScenarioID, req.SatelliteID); err != nil {
+		return nil, err
+	}
 	name := req.Name
 	if strings.TrimSpace(name) == "" {
 		name = req.FilePrefix
@@ -213,6 +227,8 @@ func (s *RemoteSensingService) CreateTask(ctx context.Context, req CreateTaskReq
 		EnableDetection:     req.EnableDetection,
 		DetectionClasses:    strings.TrimSpace(req.DetectionClasses),
 		DetectionDrawLabels: req.DetectionDrawLabels,
+		ScenarioID:          req.ScenarioID,
+		SatelliteID:         req.SatelliteID,
 	}
 	if err := s.db.WithContext(ctx).Create(task).Error; err != nil {
 		return nil, err
@@ -266,9 +282,19 @@ func (s *RemoteSensingService) bootstrapPendingTasks() {
 	}
 }
 
-func (s *RemoteSensingService) ListTasks(ctx context.Context) ([]model.RemoteSensingTask, error) {
+func (s *RemoteSensingService) ListTasks(ctx context.Context, filter TaskListFilter) ([]model.RemoteSensingTask, error) {
 	var tasks []model.RemoteSensingTask
-	err := s.db.WithContext(ctx).Order("created_at DESC").Find(&tasks).Error
+	q := s.db.WithContext(ctx)
+	if filter.ScenarioID != nil {
+		q = q.Where("scenario_id = ?", *filter.ScenarioID)
+	}
+	if filter.SatelliteID != nil {
+		q = q.Where("satellite_id = ?", *filter.SatelliteID)
+	}
+	if strings.TrimSpace(filter.Status) != "" {
+		q = q.Where("status = ?", strings.TrimSpace(filter.Status))
+	}
+	err := q.Order("created_at DESC").Find(&tasks).Error
 	return tasks, err
 }
 
@@ -580,7 +606,7 @@ func (s *RemoteSensingService) finishTaskWithError(taskID uint, reason string) {
 		}).Error; err != nil {
 		s.logger.Error("更新失败任务状态失败", zap.Error(err))
 	}
-	s.publishStageEvent(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusFailed, Message: reason, UpdatedAt: now})
+	s.publishStageEvent(taskID, s.eventWithTaskTopology(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusFailed, Message: reason, UpdatedAt: now}))
 }
 
 func (s *RemoteSensingService) finishTaskCompleted(taskID uint) {
@@ -595,7 +621,45 @@ func (s *RemoteSensingService) finishTaskCompleted(taskID uint) {
 		}).Error; err != nil {
 		s.logger.Error("更新完成任务状态失败", zap.Error(err))
 	}
-	s.publishStageEvent(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusCompleted, UpdatedAt: now})
+	s.publishStageEvent(taskID, s.eventWithTaskTopology(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusCompleted, UpdatedAt: now}))
+}
+
+func (s *RemoteSensingService) eventWithTaskTopology(taskID uint, event RemoteSensingStageEvent) RemoteSensingStageEvent {
+	var t model.RemoteSensingTask
+	if err := s.db.Select("scenario_id", "satellite_id").First(&t, taskID).Error; err == nil {
+		event.ScenarioID = t.ScenarioID
+		event.SatelliteID = t.SatelliteID
+	}
+	return event
+}
+
+func (s *RemoteSensingService) validateTaskTopology(ctx context.Context, scenarioID, satelliteID *uint) error {
+	if scenarioID == nil && satelliteID == nil {
+		return nil
+	}
+	if scenarioID != nil {
+		var n int64
+		if err := s.db.WithContext(ctx).Model(&model.Scenario{}).Where("id = ?", *scenarioID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("scenarioId %d 不存在", *scenarioID)
+		}
+	}
+	if satelliteID == nil {
+		return nil
+	}
+	var sat model.Satellite
+	if err := s.db.WithContext(ctx).First(&sat, *satelliteID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("satelliteId %d 不存在", *satelliteID)
+		}
+		return err
+	}
+	if scenarioID != nil && sat.ScenarioID != *scenarioID {
+		return fmt.Errorf("satelliteId %d 不属于 scenarioId %d", *satelliteID, *scenarioID)
+	}
+	return nil
 }
 
 func (s *RemoteSensingService) publishStageEvent(taskID uint, event RemoteSensingStageEvent) {

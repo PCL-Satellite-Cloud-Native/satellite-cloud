@@ -40,6 +40,7 @@ func createTaskRequestFromJob(job queue.RSJobPayload) CreateTaskRequest {
 		EnableDetection:     job.EnableDetection,
 		DetectionClasses:    job.DetectionClasses,
 		DetectionDrawLabels: job.DetectionDrawLabels,
+		SatelliteID:         uintPtrOrNil(job.SatelliteID),
 	}
 }
 
@@ -52,7 +53,17 @@ func createTaskRequestFromModel(t model.RemoteSensingTask) CreateTaskRequest {
 		EnableDetection:     t.EnableDetection,
 		DetectionClasses:    t.DetectionClasses,
 		DetectionDrawLabels: t.DetectionDrawLabels,
+		ScenarioID:          t.ScenarioID,
+		SatelliteID:         t.SatelliteID,
 	}
+}
+
+func uintPtrOrNil(v uint) *uint {
+	if v == 0 {
+		return nil
+	}
+	u := v
+	return &u
 }
 
 func (s *RemoteSensingService) getRedisClient() (*queue.Client, error) {
@@ -83,8 +94,13 @@ func (s *RemoteSensingService) enqueueRedis(ctx context.Context, taskID uint, re
 	if err != nil {
 		return err
 	}
+	satID := uint(0)
+	if req.SatelliteID != nil {
+		satID = *req.SatelliteID
+	}
 	streamID, err := client.EnqueueRSJob(ctx, queue.RSJobPayload{
 		TaskID:              taskID,
+		SatelliteID:         satID,
 		Name:                req.Name,
 		FilePrefix:          req.FilePrefix,
 		InputDirectory:      req.InputDirectory,

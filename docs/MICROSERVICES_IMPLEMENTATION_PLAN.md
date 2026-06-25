@@ -211,27 +211,29 @@
 
 ---
 
-### 阶段 4 — 多星协同与可观测（1 周）【下一阶段】
+### 阶段 4 — 多星协同与可观测（1 周）
 
-**状态（2026-06-23）**：**规划阶段** — 运维 [PHASE4_RUNBOOK.md](./PHASE4_RUNBOOK.md)。**约束：集群暂无 GPU**，od-worker 保持 CPU；GPU 池延后。
+**状态（2026-06-24）**：**已闭合** — [PHASE4_RUNBOOK.md](./PHASE4_RUNBOOK.md)、[archives/2026-06-24_phase4-closure.md](./archives/2026-06-24_phase4-closure.md)。
 
 | 项 | 内容 |
 |----|------|
 | Prometheus | `task_duration_seconds`、`queue_depth`、`worker_active` |
-| Grafana | 并发 3/5/10 task 仪表盘 |
-| HPA | `rs-worker` / `od-worker` 按 CPU 或自定义指标（队列深度） |
-
-**验收**：第三方脚本可一键提交 N 路 task 并导出 CSV 报告。
+| Grafana | 并发 task 仪表盘 |
+| HPA | `rs-worker` / `od-worker` 按 CPU |
 
 ---
 
-### 阶段 5 — 拓扑关联（后续，非阻塞）
+### 阶段 5 — 拓扑关联（进行中）
+
+**状态（2026-06-24）**：**P5-01 已实施** — [PHASE5_RUNBOOK.md](./PHASE5_RUNBOOK.md)。
 
 | 项 | 内容 |
 |----|------|
-| DB | `remote_sensing_tasks.satellite_id`、`scenario_id`（迁移） |
-| 事件 | `task.completed` → 拓扑服务 / 前端 Cesium 高亮 + footprint |
-| 复杂度 | v1 仅高亮 + 产物链接；v2 footprint |
+| DB | `remote_sensing_tasks.satellite_id`、`scenario_id`（migration 000008） |
+| API | CreateTask `scenarioId` / `satelliteId`；List 过滤 |
+| 事件 | SSE completed 含拓扑字段 |
+| 前端 / 调度 | P5-02～04 待实施 |
+| task 路径隔离 | P5-05 可选（同 prefix 并行前置） |
 
 ---
 

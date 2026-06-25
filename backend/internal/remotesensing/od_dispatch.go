@@ -73,6 +73,7 @@ func (s *RemoteSensingService) RunDetectionFromJob(ctx context.Context, job queu
 	start := time.Now()
 	defer s.recordWorkerMetrics(start, job.TaskID, false)
 
+	s.recordTaskPlacement(ctx, job.TaskID)
 	taskID := job.TaskID
 	req := createTaskRequestFromODJob(job)
 	req.FusionDatRel = job.FusionDatRel

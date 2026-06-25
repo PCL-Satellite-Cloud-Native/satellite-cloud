@@ -18,8 +18,8 @@
         <form class="task-form card" @submit.prevent="submitTask">
           <h2>创建任务</h2>
 
-          <fieldset class="form-section">
-            <legend>拓扑绑定（可选）</legend>
+          <fieldset class="form-section form-section--optional">
+            <legend>指定调度（可选，一般留空由 K8s 自动分配节点）</legend>
             <label>
               仿真场景
               <select v-model="form.scenarioId" @change="onScenarioChange">
@@ -36,7 +36,7 @@
                 </option>
               </select>
             </label>
-            <p class="form-hint">绑定后可在拓扑页高亮对应卫星，并支持按卫星筛选任务列表。</p>
+            <p class="form-hint">留空时任务由 rs-worker 调度到任意节点；拓扑页将高亮<strong>实际执行</strong>的那颗星。</p>
           </fieldset>
 
           <fieldset class="form-section">
@@ -120,7 +120,7 @@
                 <p class="task-meta">
                   状态：{{ statusText(task.status) }}
                   · 阶段：{{ stageNameText(task.current_stage) || '等待中' }}
-                  <span v-if="task.satellite_id"> · 卫星：{{ satelliteLabel(task.satellite_id) }}</span>
+                  <span v-if="taskExecutionLabel(task)"> · {{ taskExecutionLabel(task) }}</span>
                   <span v-if="task.enable_detection === false"> · 未启用检测</span>
                 </p>
               </div>
@@ -134,15 +134,19 @@
               <div v-if="task.enable_detection !== false && task.detection_classes !== undefined">
                 检测类别：{{ formatDetectionClasses(task.detection_classes) }}
               </div>
-              <div v-if="task.scenario_id">场景 ID：{{ task.scenario_id }}</div>
-              <div v-if="task.satellite_id" class="task-topology-row">
-                绑定卫星：{{ satelliteLabel(task.satellite_id) }}
+              <div v-if="task.executed_sat_id || task.host_node_name" class="task-topology-row">
+                执行卫星：{{ satNameFromSatId(task.executed_sat_id) || '—' }}
+                <span v-if="task.host_node_name" class="task-node-hint"> · 部署节点 {{ task.host_node_name }}</span>
                 <router-link
+                  v-if="task.executed_sat_id"
                   class="topology-link"
-                  :to="{ path: '/simulation/topology', query: { satelliteId: task.satellite_id } }"
+                  :to="{ path: '/simulation/topology', query: { satId: task.executed_sat_id } }"
                 >
                   拓扑高亮
                 </router-link>
+              </div>
+              <div v-else-if="task.status === 'running'" class="task-topology-row muted">
+                等待 worker 上报执行节点…
               </div>
               <div>创建：{{ formatTime(task.created_at) }}</div>
             </div>
@@ -183,21 +187,19 @@
             <span>检测类别</span>
             <strong>{{ formatDetectionClasses(selectedTask.detection_classes) }}</strong>
           </article>
-          <article class="summary-item" v-if="selectedTask.satellite_id">
-            <span>绑定卫星</span>
+          <article class="summary-item" v-if="selectedTask.executed_sat_id || selectedTask.host_node_name">
+            <span>执行卫星</span>
             <strong>
-              {{ satelliteLabel(selectedTask.satellite_id) }}
+              {{ selectedTask.executed_sat_id ? satNameFromSatId(selectedTask.executed_sat_id) : '—' }}
+              <span v-if="selectedTask.host_node_name" class="task-node-hint"> · 节点 {{ selectedTask.host_node_name }}</span>
               <router-link
+                v-if="selectedTask.executed_sat_id"
                 class="topology-link inline"
-                :to="{ path: '/simulation/topology', query: { satelliteId: selectedTask.satellite_id } }"
+                :to="{ path: '/simulation/topology', query: { satId: selectedTask.executed_sat_id } }"
               >
                 拓扑
               </router-link>
             </strong>
-          </article>
-          <article class="summary-item" v-if="selectedTask.scenario_id">
-            <span>场景</span>
-            <strong>{{ scenarioName(selectedTask.scenario_id) }}</strong>
           </article>
           <article class="summary-item" v-if="selectedTask.error_message">
             <span>失败原因</span>
@@ -362,6 +364,7 @@ import {
   detectionTilesArchiveUrl,
 } from '../api/remoteSensing'
 import { getScenarios, getSatellitesByScenario, getSatellite } from '../api/satellite'
+import { displaySatName, satNameFromSatId } from '../utils/satNaming'
 
 const route = useRoute()
 
@@ -437,10 +440,17 @@ function scenarioName(scenarioId) {
   return found ? found.name : `场景 #${scenarioId}`
 }
 
+function taskExecutionLabel(task) {
+  if (task.executed_sat_id) return `执行于 ${satNameFromSatId(task.executed_sat_id)}`
+  if (task.status === 'running') return '等待识别执行卫星'
+  if (task.satellite_id) return `指定 ${satelliteLabel(task.satellite_id)}`
+  return ''
+}
+
 function satelliteLabel(satelliteId) {
   const info = satelliteLookup.value.get(satelliteId)
   if (!info) return `#${satelliteId}`
-  return `${info.sat_id} (${info.stk_name})`
+  return displaySatName(info, info.stk_name)
 }
 
 async function loadScenarios() {
@@ -1007,10 +1017,6 @@ async function submitTask() {
 
 onMounted(async () => {
   await loadScenarios()
-  if (scenarios.value.length && form.scenarioId == null) {
-    form.scenarioId = scenarios.value[0].id
-    await loadSatellitesForScenario(form.scenarioId)
-  }
   const preferredId = route.query.task ? Number(route.query.task) : undefined
   await loadTasks(preferredId)
   nowTickTimer.value = setInterval(() => {
@@ -1265,6 +1271,20 @@ onBeforeUnmount(() => {
 
 .topology-link.inline {
   margin-left: 0.35rem;
+}
+
+.task-node-hint {
+  font-size: 0.82rem;
+  color: #6b758a;
+}
+
+.task-topology-row.muted {
+  color: #8a94a8;
+  font-style: italic;
+}
+
+.form-section--optional legend {
+  color: #6b758a;
 }
 
 .form-actions {

@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"satellite-cloud/backend/internal/model"
+	"satellite-cloud/backend/internal/pilotcluster"
 )
 
 type SatelliteHandler struct {
@@ -42,7 +43,7 @@ func (h *SatelliteHandler) List(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, satellites)
+	c.JSON(http.StatusOK, filterPilotSatellites(satellites))
 }
 
 // Get 获取卫星详情

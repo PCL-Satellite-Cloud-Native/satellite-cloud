@@ -111,5 +111,5 @@ func (h *ScenarioHandler) GetSatellites(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, satellites)
+	c.JSON(http.StatusOK, filterPilotSatellites(satellites))
 }

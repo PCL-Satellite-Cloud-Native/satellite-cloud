@@ -1,0 +1,22 @@
+# rs-worker / od-worker 读取节点 satellite.io/id 标签（集群管理员一次性 apply）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: satellite-worker-node-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rs-worker-node-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: satellite-worker-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: rs-worker
+    namespace: gitlab-runner

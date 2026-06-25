@@ -73,9 +73,11 @@ type RemoteSensingStageEvent struct {
 	Message     string                 `json:"message,omitempty"`
 	Details     map[string]interface{} `json:"details,omitempty"`
 	TaskStatus  string                 `json:"task_status,omitempty"`
-	ScenarioID  *uint                  `json:"scenario_id,omitempty"`
-	SatelliteID *uint                  `json:"satellite_id,omitempty"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ScenarioID    *uint                  `json:"scenario_id,omitempty"`
+	SatelliteID   *uint                  `json:"satellite_id,omitempty"`
+	HostNodeName  string                 `json:"host_node_name,omitempty"`
+	ExecutedSatID string                 `json:"executed_sat_id,omitempty"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
 type CreateTaskRequest struct {
@@ -626,9 +628,11 @@ func (s *RemoteSensingService) finishTaskCompleted(taskID uint) {
 
 func (s *RemoteSensingService) eventWithTaskTopology(taskID uint, event RemoteSensingStageEvent) RemoteSensingStageEvent {
 	var t model.RemoteSensingTask
-	if err := s.db.Select("scenario_id", "satellite_id").First(&t, taskID).Error; err == nil {
+	if err := s.db.Select("scenario_id", "satellite_id", "host_node_name", "executed_sat_id").First(&t, taskID).Error; err == nil {
 		event.ScenarioID = t.ScenarioID
 		event.SatelliteID = t.SatelliteID
+		event.HostNodeName = t.HostNodeName
+		event.ExecutedSatID = t.ExecutedSatID
 	}
 	return event
 }

@@ -152,6 +152,7 @@ func (s *RemoteSensingService) RunPipelineFromJob(ctx context.Context, job queue
 	start := time.Now()
 	defer s.recordWorkerMetrics(start, job.TaskID, true)
 
+	s.recordTaskPlacement(ctx, job.TaskID)
 	s.RunPipeline(ctx, job.TaskID, createTaskRequestFromJob(job))
 }
 

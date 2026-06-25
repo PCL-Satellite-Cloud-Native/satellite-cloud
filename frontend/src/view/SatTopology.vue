@@ -6,7 +6,7 @@
 
         <div class="small" v-if="loading">正在加载 CSV… {{ loadProgress }}</div>
         <div class="small" v-else-if="ready">
-          已加载: {{ sats.length }} 颗卫星<br />
+          已加载: {{ sats.length }} 颗卫星（Pilot 15 节点）<br />
           T0时刻: <span class="mono">{{ t0Label }}</span>
         </div>
         <div class="small" v-else>数据未加载</div>
@@ -31,27 +31,27 @@
       </div>
 
       <div class="card">
-        <div class="h">遥感任务高亮</div>
-        <div class="small" v-if="completedTasksLoading">正在加载已完成任务…</div>
-        <div v-else-if="completedTasks.length === 0" class="small">暂无已完成的遥感任务。</div>
+        <div class="h">正在执行任务的卫星</div>
+        <div class="small" v-if="activeTasksLoading">正在刷新运行中任务…</div>
+        <div v-else-if="activeTasks.length === 0" class="small">当前无运行中的遥感任务。</div>
         <ul v-else class="task-highlight-list">
-          <li v-for="task in completedTasks" :key="task.id">
-            <button type="button" class="task-highlight-btn" @click="focusCompletedTask(task)">
+          <li v-for="task in activeTasks" :key="task.id">
+            <button type="button" class="task-highlight-btn running" @click="focusActiveTask(task)">
               <span class="mono">#{{ task.id }}</span>
-              <span>{{ taskHighlightLabel(task) }}</span>
+              <span>{{ taskActiveLabel(task) }}</span>
+              <span class="task-node" v-if="task.host_node_name">节点 {{ task.host_node_name }}</span>
             </button>
-            <router-link class="task-result-link" :to="{ path: '/remote-sensing', query: { task: task.id } }">
-              查看产物
-            </router-link>
           </li>
         </ul>
-        <div class="small">已完成任务对应卫星在 3D 视图中以绿色高亮显示。</div>
+        <div class="small">3D 视图中<strong>绿色</strong>高亮 = 该卫星正在执行任务（按实际部署节点识别）。</div>
       </div>
 
       <div class="card">
         <div class="h">当前选中卫星</div>
         <div v-if="selected">
-          <div class="kv"><b>ID</b><span class="mono">{{ selected.id }}</span></div>
+          <div class="kv"><b>卫星</b><span class="mono">{{ selected.displayName || satNameFromSatId(selected.id) }}</span></div>
+          <div class="kv"><b>sat_id</b><span class="mono">{{ selected.id }}</span></div>
+          <div class="kv" v-if="selected.hostNode"><b>部署节点</b><span class="mono">{{ selected.hostNode }}</span></div>
           <div class="kv"><b>轨道 (Orbit)</b><span>{{ selected.orbit }}</span></div>
           <div class="kv"><b>槽位 (Slot)</b><span>{{ selected.slot }}</span></div>
           <div class="divider"></div>
@@ -117,6 +117,7 @@ import { onMounted, onBeforeUnmount, ref, reactive, watch, markRaw } from "vue";
 import { useRoute } from "vue-router";
 import { listRemoteSensingTasks } from "../api/remoteSensing";
 import { getSatellite } from "../api/satellite";
+import { satNameFromSatId } from "../utils/satNaming";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
@@ -128,83 +129,66 @@ import 'v-network-graph/lib/style.css'
 
 const route = useRoute();
 
-const completedTasks = ref<Array<{ id: number; satellite_id?: number; scenario_id?: number; file_prefix?: string }>>([]);
-const completedTasksLoading = ref(false);
+const activeTasks = ref<Array<{
+  id: number
+  executed_sat_id?: string
+  host_node_name?: string
+  current_stage?: string
+  file_prefix?: string
+}>>([]);
+const activeTasksLoading = ref(false);
 const taskHighlightSatIds = ref<Set<string>>(new Set());
-const satelliteMetaById = ref<Map<number, { sat_id: string; stk_name: string }>>(new Map());
-let completedTasksTimer: ReturnType<typeof setInterval> | null = null;
+let activeTasksTimer: ReturnType<typeof setInterval> | null = null;
 
-async function loadCompletedTasks() {
-  completedTasksLoading.value = true;
+async function loadActiveTasks() {
+  activeTasksLoading.value = true;
   try {
-    const tasks = await listRemoteSensingTasks({ status: "completed" });
-    const recent = (tasks ?? []).slice(0, 12);
-    completedTasks.value = recent;
-
-    const nextMeta = new Map(satelliteMetaById.value);
-    const satDbIds = [...new Set(recent.map((t) => t.satellite_id).filter(Boolean))] as number[];
-    await Promise.all(
-      satDbIds.map(async (id) => {
-        if (nextMeta.has(id)) return;
-        try {
-          const sat = await getSatellite(id);
-          nextMeta.set(id, { sat_id: sat.sat_id, stk_name: sat.stk_name });
-        } catch {
-          /* ignore */
-        }
-      })
-    );
-    satelliteMetaById.value = nextMeta;
+    const tasks = await listRemoteSensingTasks({ status: "running" });
+    activeTasks.value = tasks ?? [];
 
     const nextHighlight = new Set<string>();
-    for (const task of recent) {
-      if (!task.satellite_id) continue;
-      const meta = nextMeta.get(task.satellite_id);
-      if (meta?.sat_id) nextHighlight.add(meta.sat_id);
+    for (const task of activeTasks.value) {
+      if (task.executed_sat_id) nextHighlight.add(task.executed_sat_id);
     }
     taskHighlightSatIds.value = nextHighlight;
     refreshAllMeshStyles();
   } catch (e) {
-    console.error("加载已完成遥感任务失败", e);
+    console.error("加载运行中遥感任务失败", e);
   } finally {
-    completedTasksLoading.value = false;
+    activeTasksLoading.value = false;
   }
 }
 
-function taskHighlightLabel(task: { id: number; satellite_id?: number; file_prefix?: string }) {
-  if (!task.satellite_id) return task.file_prefix || `任务 ${task.id}`;
-  const meta = satelliteMetaById.value.get(task.satellite_id);
-  if (!meta) return `#${task.satellite_id}`;
-  return `${meta.sat_id} · ${meta.stk_name}`;
+function taskActiveLabel(task: {
+  id: number
+  executed_sat_id?: string
+  file_prefix?: string
+  current_stage?: string
+}) {
+  const sat = task.executed_sat_id ? satNameFromSatId(task.executed_sat_id) : "等待识别…";
+  const stage = task.current_stage ? ` · ${task.current_stage}` : "";
+  return `${sat}${stage}`;
 }
 
-async function focusCompletedTask(task: { id: number; satellite_id?: number }) {
-  if (!task.satellite_id) return;
-  let meta = satelliteMetaById.value.get(task.satellite_id);
-  if (!meta) {
-    try {
-      const sat = await getSatellite(task.satellite_id);
-      meta = { sat_id: sat.sat_id, stk_name: sat.stk_name };
-      satelliteMetaById.value = new Map(satelliteMetaById.value).set(task.satellite_id, meta);
-    } catch {
-      return;
-    }
-  }
-  selectedRouter.value = meta.sat_id;
-  selectSatById(meta.sat_id);
+function focusActiveTask(task: { executed_sat_id?: string }) {
+  if (!task.executed_sat_id) return;
+  selectedRouter.value = task.executed_sat_id;
+  selectSatById(task.executed_sat_id);
 }
 
 async function applyRouteSatelliteHighlight() {
+  const satId = route.query.satId;
+  if (typeof satId === "string" && satId) {
+    selectedRouter.value = satId;
+    if (ready.value) selectSatById(satId);
+    return;
+  }
   const raw = route.query.satelliteId;
   if (!raw) return;
   const satelliteDbId = Number(raw);
   if (!Number.isFinite(satelliteDbId)) return;
   try {
     const sat = await getSatellite(satelliteDbId);
-    satelliteMetaById.value = new Map(satelliteMetaById.value).set(satelliteDbId, {
-      sat_id: sat.sat_id,
-      stk_name: sat.stk_name,
-    });
     selectedRouter.value = sat.sat_id;
     if (ready.value) selectSatById(sat.sat_id);
   } catch (e) {
@@ -217,6 +201,8 @@ function selectSatById(satId: string) {
   if (!sat) return;
   selected.value = {
     id: sat.id,
+    displayName: sat.displayName,
+    hostNode: sat.hostNode,
     orbit: sat.orbit,
     slot: sat.slot,
     utc: sat.utc,
@@ -301,6 +287,8 @@ watch(selectedRouter, () => {
 // ---------------------------------------------------------
 type SatT0 = {
   id: string;
+  displayName?: string;
+  hostNode?: string;
   orbit: number;
   slot: number;
   utc: string;
@@ -644,6 +632,8 @@ async function loadT0() {
     if (!res.ok) throw new Error(`Fetch failed: /api/topology/t0 (${res.status})`);
     const data: Array<{
       id: string;
+      display_name?: string;
+      host_node?: string;
       orbit: number;
       slot: number;
       utc: string;
@@ -666,9 +656,11 @@ async function loadT0() {
       mesh.userData = { id: s.id };
       const [rx, ry, rz] = s.r;
       mesh.position.set(rx * KM_TO_UNITS, ry * KM_TO_UNITS, rz * KM_TO_UNITS);
-      addNodeLabel(mesh, s.id);
+      addNodeLabel(mesh, s.display_name || satNameFromSatId(s.id));
       sats.value.push({
         id: s.id,
+        displayName: s.display_name || satNameFromSatId(s.id),
+        hostNode: s.host_node,
         orbit: s.orbit,
         slot: s.slot,
         utc: s.utc,
@@ -709,10 +701,10 @@ watch(() => selected.value?.id ?? null, (id) => { if (ready.value && showLinks.v
 
 onMounted(async () => {
   loadRouterData();
-  void loadCompletedTasks();
-  completedTasksTimer = setInterval(() => {
-    void loadCompletedTasks();
-  }, 20000);
+  void loadActiveTasks();
+  activeTasksTimer = setInterval(() => {
+    void loadActiveTasks();
+  }, 5000);
 
   if (!host.value) return;
   scene = new THREE.Scene();
@@ -765,9 +757,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  if (completedTasksTimer) {
-    clearInterval(completedTasksTimer);
-    completedTasksTimer = null;
+  if (activeTasksTimer) {
+    clearInterval(activeTasksTimer);
+    activeTasksTimer = null;
   }
   if (raf) cancelAnimationFrame(raf);
   if (renderer) renderer.domElement.removeEventListener("pointerdown", onPointerDown);
@@ -913,8 +905,14 @@ onBeforeUnmount(() => {
   gap: 2px;
 }
 
-.task-highlight-btn:hover {
-  background: rgba(34, 170, 85, 0.22);
+.task-highlight-btn.running {
+  background: rgba(34, 170, 85, 0.18);
+  border-color: rgba(34, 170, 85, 0.45);
+}
+
+.task-node {
+  font-size: 10px;
+  opacity: 0.75;
 }
 
 .task-result-link {

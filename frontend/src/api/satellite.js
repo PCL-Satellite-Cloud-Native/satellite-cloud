@@ -60,3 +60,12 @@ export async function getScenarioWithSatellites(scenarioId) {
   return { scenario, satellites }
 }
 
+/** Pilot 集群：K8s 节点 ↔ 卫星映射（15 节点 pilot） */
+export async function getPilotClusterMap() {
+  const response = await fetch(`${API_BASE_URL}/topology/pilot-map`)
+  if (!response.ok) {
+    throw new Error(`获取 Pilot 映射失败: ${response.statusText}`)
+  }
+  return response.json()
+}
+

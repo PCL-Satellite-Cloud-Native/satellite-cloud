@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "description": "SSOT 副本 — 后端嵌入: backend/internal/pilotcluster/pilot-map.json",
+  "naming": {
+    "sat_id": "sat-{plane}-{slot}",
+    "sat_name": "Sat_{plane}_{slot}",
+    "node": "K8s 部署节点（非卫星名）"
+  },
+  "nodes": [
+    { "node": "k8s-worker11", "sat_id": "sat-1-1", "sat_name": "Sat_1_1", "orbit": 1, "slot": 1 },
+    { "node": "k8s-worker12", "sat_id": "sat-1-2", "sat_name": "Sat_1_2", "orbit": 1, "slot": 2 },
+    { "node": "k8s-worker13", "sat_id": "sat-1-3", "sat_name": "Sat_1_3", "orbit": 1, "slot": 3 },
+    { "node": "k8s-worker14", "sat_id": "sat-1-4", "sat_name": "Sat_1_4", "orbit": 1, "slot": 4 },
+    { "node": "k8s-worker15", "sat_id": "sat-1-5", "sat_name": "Sat_1_5", "orbit": 1, "slot": 5 },
+    { "node": "k8s-worker21", "sat_id": "sat-2-1", "sat_name": "Sat_2_1", "orbit": 2, "slot": 1 },
+    { "node": "k8s-worker22", "sat_id": "sat-2-2", "sat_name": "Sat_2_2", "orbit": 2, "slot": 2 },
+    { "node": "k8s-master", "sat_id": "sat-2-3", "sat_name": "Sat_2_3", "orbit": 2, "slot": 3 },
+    { "node": "k8s-worker24", "sat_id": "sat-2-4", "sat_name": "Sat_2_4", "orbit": 2, "slot": 4 },
+    { "node": "k8s-worker25", "sat_id": "sat-2-5", "sat_name": "Sat_2_5", "orbit": 2, "slot": 5 },
+    { "node": "k8s-worker31", "sat_id": "sat-3-1", "sat_name": "Sat_3_1", "orbit": 3, "slot": 1 },
+    { "node": "k8s-worker32", "sat_id": "sat-3-2", "sat_name": "Sat_3_2", "orbit": 3, "slot": 2 },
+    { "node": "k8s-worker33", "sat_id": "sat-3-3", "sat_name": "Sat_3_3", "orbit": 3, "slot": 3 },
+    { "node": "k8s-worker34", "sat_id": "sat-3-4", "sat_name": "Sat_3_4", "orbit": 3, "slot": 4 },
+    { "node": "k8s-worker35", "sat_id": "sat-3-5", "sat_name": "Sat_3_5", "orbit": 3, "slot": 5 }
+  ]
+}

@@ -9,8 +9,9 @@
     <div ref="viewerContainer" class="viewer"></div>
     
     <div class="instruction-overlay">
-      <div>已选中高亮: {{ highlightedSatIds.size }} 颗</div>
-      <div class="sub-text">点击任意卫星可 手动开启/关闭 高亮</div>
+      <div>运行中高亮: {{ runningHighlightCount }} 颗</div>
+      <div>手动选中: {{ highlightedSatIds.size }} 颗</div>
+      <div class="sub-text">Pilot：15 颗卫星；绿色 = 正在执行任务</div>
     </div>
   </div>
 </template>
@@ -18,6 +19,8 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { getScenarioWithSatellites, getScenarios } from '../api/satellite.js'
+import { listRemoteSensingTasks } from '../api/remoteSensing.js'
+import { displaySatName } from '../utils/satNaming.js'
 
 window.CESIUM_BASE_URL = '/cesium'
 import * as Cesium from 'cesium'
@@ -32,9 +35,13 @@ const props = defineProps({
 const viewerContainer = ref(null)
 const loading = ref(false)
 const error = ref(null)
-const highlightedSatIds = ref(new Set()) // 响应式的高亮集合
+const highlightedSatIds = ref(new Set())
+const runningHighlightIds = ref(new Set())
+const runningHighlightCount = ref(0)
 let viewer = null
-let handler = null // 点击事件处理器
+let handler = null
+let runningTasksTimer = null
+const entityBySatId = new Map()
 
 // 中国中心点
 const CHINA_CENTER = { lon: 104.0, lat: 35.0 }
@@ -47,19 +54,26 @@ const CHINA_CENTER = { lon: 104.0, lat: 35.0 }
  * 更新单个卫星实体的样式（高亮 vs 普通）
  */
 function updateEntityStyle(entity, isHighlighted, altitudeMeters) {
-  // 1. 设置点样式
-  const pointColor = isHighlighted ? Cesium.Color.GOLD : Cesium.Color.WHITE.withAlpha(0.7)
-  const pointSize = isHighlighted ? 14 : 5
+  const isRunning = runningHighlightIds.value.has(entity.id)
+  const active = isHighlighted || isRunning
+  const pointColor = isRunning
+    ? Cesium.Color.LIME
+    : (isHighlighted ? Cesium.Color.GOLD : Cesium.Color.WHITE.withAlpha(0.7))
+  const pointSize = active ? 14 : 5
   
   entity.point.color = pointColor
   entity.point.pixelSize = pointSize
-  entity.point.outline = isHighlighted
+  entity.point.outline = active
   entity.point.outlineColor = Cesium.Color.BLACK
 
-  // 2. 设置轨迹样式
-  const pathWidth = isHighlighted ? 4 : 1.5
+  const pathWidth = active ? 4 : 1.5
   let pathMaterial
-  if (isHighlighted) {
+  if (isRunning) {
+    pathMaterial = new Cesium.PolylineGlowMaterialProperty({
+      glowPower: 0.25,
+      color: Cesium.Color.LIME
+    })
+  } else if (isHighlighted) {
     pathMaterial = new Cesium.PolylineGlowMaterialProperty({
       glowPower: 0.2,
       color: Cesium.Color.GOLD
@@ -71,8 +85,7 @@ function updateEntityStyle(entity, isHighlighted, altitudeMeters) {
   entity.path.width = pathWidth
   entity.path.material = pathMaterial
 
-  // 3. 设置标签显隐
-  entity.label.show = isHighlighted
+  entity.label.show = active
 
   // 4. 设置圆锥体 (Sensor Cone)
   // 逻辑：给圆锥体一个特定的ID: satelliteID + "_cone"
@@ -80,7 +93,6 @@ function updateEntityStyle(entity, isHighlighted, altitudeMeters) {
   let coneEntity = viewer.entities.getById(coneId)
 
   if (isHighlighted) {
-    // 如果需要高亮且没有圆锥体，创建它
     if (!coneEntity) {
       const halfAngle = Cesium.Math.toRadians(30)
       const bottomRadius = altitudeMeters * Math.tan(halfAngle)
@@ -158,8 +170,26 @@ function toggleSatelliteHighlight(satId, entity, altitudeMeters) {
   }
 }
 
-// --------------------------------------------------------------------
-// 辅助计算函数 (保持不变)
+async function refreshRunningHighlights() {
+  try {
+    const tasks = await listRemoteSensingTasks({ status: 'running' })
+    const next = new Set()
+    for (const t of tasks ?? []) {
+      if (t.executed_sat_id) next.add(t.executed_sat_id)
+    }
+    runningHighlightIds.value = next
+    runningHighlightCount.value = next.size
+    for (const [satId, entity] of entityBySatId.entries()) {
+      const sat = entity._satData
+      const alt = sat ? sat.alt_km * 1000 : 550000
+      const manual = highlightedSatIds.value.has(satId)
+      updateEntityStyle(entity, manual, alt)
+    }
+  } catch (e) {
+    console.warn('刷新运行中任务高亮失败', e)
+  }
+}
+
 // --------------------------------------------------------------------
 
 function getSatellitePositionAtTime(sat, periodSeconds) {
@@ -293,7 +323,7 @@ async function initializeViewer() {
   try {
     loading.value = true
     error.value = null
-    
+
     const { scenario, satellites } = await resolveScenarioWithSatellites(props.scenarioId)
     if (!satellites.length) {
       throw new Error(`场景 ${scenario.id} 下没有卫星数据，请先导入卫星数据`)
@@ -343,12 +373,9 @@ async function initializeViewer() {
     viewer.clock.multiplier = 10 
     viewer.clock.shouldAnimate = true
 
-    // 1. 获取初始高亮列表
-    const initialHighlights = filterChinaSatellites(satellites, startTime)
-    highlightedSatIds.value = initialHighlights // 存入响应式变量
-    console.log(`初始筛选高亮: ${initialHighlights.size} 颗`)
+    // Pilot：后端已过滤为 15 颗；高亮由运行中任务驱动
+    highlightedSatIds.value = new Set()
 
-    // 2. 创建所有卫星实体
     satellites.forEach((satellite) => {
       const satId = satellite.sat_id || satellite.stk_name
       const periodSeconds = 5400 
@@ -359,10 +386,11 @@ async function initializeViewer() {
         satellite.inc_deg, satellite.raan_deg, satellite.ta_deg, 720
       )
 
-      // 先创建基础实体 (默认样式先给普通样式，随后立即更新)
+      const label = displaySatName(satellite)
+
       const entity = viewer.entities.add({
         id: satId,
-        name: satellite.stk_name,
+        name: label,
         position: positionProp,
         point: {
           pixelSize: 5,
@@ -378,20 +406,22 @@ async function initializeViewer() {
           trailTime: periodSeconds 
         },
         label: {
-          show: false, // 默认不显示
-          text: satellite.stk_name,
+          show: false,
+          text: label,
           font: '14px sans-serif',
-          fillColor: Cesium.Color.GOLD,
+          fillColor: Cesium.Color.LIME,
           style: Cesium.LabelStyle.FILL,
           pixelOffset: new Cesium.Cartesian2(0, -20),
           distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 10000000)
         }
       })
-      
-      // 3. 根据是否高亮，应用一次样式
-      const isHighlighted = initialHighlights.has(satId)
-      updateEntityStyle(entity, isHighlighted, altitudeMeters)
+      entity._satData = satellite
+      entityBySatId.set(satId, entity)
+      updateEntityStyle(entity, false, altitudeMeters)
     })
+
+    await refreshRunningHighlights()
+    runningTasksTimer = setInterval(refreshRunningHighlights, 5000)
     
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(105.0, 32.0, 18000000),
@@ -411,6 +441,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (runningTasksTimer) {
+    clearInterval(runningTasksTimer)
+    runningTasksTimer = null
+  }
   if (handler) {
     handler.destroy()
     handler = null

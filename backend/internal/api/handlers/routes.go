@@ -28,6 +28,7 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, re
 	router.GET("/topology/t0", topologyHandler.TopologyT0Handler)
 	router.GET("/topology/delay", topologyHandler.TopologyDelayHandler)
 	router.GET("/topology/router", topologyHandler.TopologyRouterHandler)
+	router.GET("/topology/pilot-map", topologyHandler.TopologyPilotMapHandler)
 
 	if remoteSvc != nil {
 		remoteHandler := NewRemoteSensingHandler(remoteSvc, logger)

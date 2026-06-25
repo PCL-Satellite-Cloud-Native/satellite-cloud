@@ -14,6 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+
+	"satellite-cloud/backend/internal/pilotcluster"
 )
 
 type TopologyHandler struct {
@@ -33,6 +35,8 @@ type TopoSatT0 struct {
 	ID              string     `json:"id"`
 	Orbit           int        `json:"orbit"`
 	Slot            int        `json:"slot"`
+	HostNode        string     `json:"host_node,omitempty"`
+	DisplayName     string     `json:"display_name,omitempty"`
 	UTC             string     `json:"utc"`
 	R               [3]float64 `json:"r"` // km
 	LLALat          float64    `json:"lla_Lat"`
@@ -76,7 +80,24 @@ func (h *TopologyHandler) TopologyT0Handler(c *gin.Context) {
 			return
 		}
 	}
+	sats = applyPilotClusterT0(sats)
 	c.JSON(200, sats)
+}
+
+// TopologyPilotMapHandler 返回 Pilot 集群节点↔卫星映射（前端过滤与标签展示）。
+//
+// GET /api/topology/pilot-map
+func (h *TopologyHandler) TopologyPilotMapHandler(c *gin.Context) {
+	m := pilotcluster.Current()
+	if !m.Enabled {
+		c.JSON(200, gin.H{"enabled": false, "nodes": []any{}})
+		return
+	}
+	c.JSON(200, gin.H{
+		"enabled": true,
+		"count":   len(m.Entries),
+		"nodes":   m.Entries,
+	})
 }
 
 // TopologyDelayHandler 返回 delay 矩阵对应的边集合。
@@ -89,7 +110,56 @@ func (h *TopologyHandler) TopologyDelayHandler(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "Failed to load delay matrix"})
 		return
 	}
-	c.JSON(200, edges)
+	c.JSON(200, applyPilotClusterDelay(edges))
+}
+
+func applyPilotClusterT0(sats []TopoSatT0) []TopoSatT0 {
+	m := pilotcluster.Current()
+	if !m.Enabled {
+		return sats
+	}
+	out := make([]TopoSatT0, 0, len(m.Entries))
+	for _, s := range sats {
+		if !m.ContainsSatID(s.ID) {
+			continue
+		}
+		s.HostNode = m.HostNode(s.ID)
+		s.DisplayName = m.SatName(s.ID)
+		if s.Orbit == 0 {
+			if e, ok := m.EntryForSatID(s.ID); ok {
+				s.Orbit = e.Orbit
+				s.Slot = e.Slot
+			}
+		}
+		out = append(out, s)
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, e := range m.Entries {
+		out = append(out, TopoSatT0{
+			ID:          e.SatID,
+			Orbit:       e.Orbit,
+			Slot:        e.Slot,
+			HostNode:    e.Node,
+			DisplayName: e.SatName,
+		})
+	}
+	return out
+}
+
+func applyPilotClusterDelay(edges []DelayEdge) []DelayEdge {
+	m := pilotcluster.Current()
+	if !m.Enabled {
+		return edges
+	}
+	out := make([]DelayEdge, 0, len(edges))
+	for _, e := range edges {
+		if m.ContainsSatID(e.AId) && m.ContainsSatID(e.BId) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // RouterGraphNode 与 RouterGraphEdge 用于 2D 拓扑图 API。
@@ -321,11 +391,15 @@ func loadT0FromDB(db *gorm.DB) ([]TopoSatT0, error) {
 	return out, nil
 }
 
-// parseSatIDOrbitSlot 从 sat_id 如 "Sat_6_6" 解析 orbit 与 slot。
+// parseSatIDOrbitSlot 从 sat_id 如 "sat-1-1" 或 "Sat_6_6" 解析 orbit 与 slot。
 func parseSatIDOrbitSlot(satID string) (orbit, slot int) {
-	var o, s int
-	_, _ = fmt.Sscanf(satID, "Sat_%d_%d", &o, &s)
-	return o, s
+	if _, err := fmt.Sscanf(satID, "sat-%d-%d", &orbit, &slot); err == nil && orbit > 0 {
+		return orbit, slot
+	}
+	if _, err := fmt.Sscanf(satID, "Sat_%d_%d", &orbit, &slot); err == nil {
+		return orbit, slot
+	}
+	return 0, 0
 }
 
 // 从 DB 中读取 delay 边（satellite_delay_edges），当前默认对场景 Scenario5_full_36x22 生效。
@@ -451,7 +525,8 @@ func loadRouterGraphFromDB(db *gorm.DB, scenarioName, center string) (
 		if satID == "" {
 			satID = r
 		}
-		nodes[r] = RouterGraphNode{Name: satID}
+		display := pilotcluster.Current().SatName(satID)
+		nodes[r] = RouterGraphNode{Name: display}
 	}
 
 	added := make(map[string]struct{})

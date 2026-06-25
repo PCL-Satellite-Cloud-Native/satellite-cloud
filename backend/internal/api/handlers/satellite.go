@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 
 	"satellite-cloud/backend/internal/model"
-	"satellite-cloud/backend/internal/pilotcluster"
 )
 
 type SatelliteHandler struct {

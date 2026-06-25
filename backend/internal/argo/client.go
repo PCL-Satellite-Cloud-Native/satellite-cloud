@@ -42,13 +42,14 @@ func NewInCluster(namespace string) (*Client, error) {
 
 // PanRPCWorkflowParams 与 rs-worker PAN RPC 配置及 WorkflowTemplate 参数对齐
 type PanRPCWorkflowParams struct {
-	TemplateName string
-	TaskID       uint
-	FilePrefix   string
-	RSImage      string
-	CPUThreads   int
-	WarpMemMB    int
-	ResampleAlg  string
+	TemplateName          string
+	TaskID                uint
+	FilePrefix            string
+	RSImage               string
+	CPUThreads            int
+	WarpMemMB             int
+	ResampleAlg           string
+	SatelliteAffinityID   string // satellites.sat_id → node label satellite.io/id
 }
 
 // SubmitPanRPCWorkflow 基于 WorkflowTemplate 提交 PAN RPC 并行任务
@@ -66,6 +67,45 @@ func (c *Client) SubmitPanRPCWorkflow(ctx context.Context, p PanRPCWorkflowParam
 		"satellite.io/task-id": fmt.Sprintf("%d", p.TaskID),
 		"satellite.io/stage":   "pan_rpc_warp_quarters",
 	}
+	if p.SatelliteAffinityID != "" {
+		labels["satellite.io/sat-id"] = p.SatelliteAffinityID
+	}
+	spec := map[string]interface{}{
+		"serviceAccountName": "argo-workflow",
+		"workflowTemplateRef": map[string]interface{}{
+			"name": p.TemplateName,
+		},
+		"arguments": map[string]interface{}{
+			"parameters": []interface{}{
+				map[string]interface{}{"name": "task_id", "value": fmt.Sprintf("%d", p.TaskID)},
+				map[string]interface{}{"name": "file_prefix", "value": p.FilePrefix},
+				map[string]interface{}{"name": "rs_image", "value": p.RSImage},
+				map[string]interface{}{"name": "cpu_threads", "value": fmt.Sprintf("%d", p.CPUThreads)},
+				map[string]interface{}{"name": "warp_mem_mb", "value": fmt.Sprintf("%d", p.WarpMemMB)},
+				map[string]interface{}{"name": "resample_alg", "value": p.ResampleAlg},
+			},
+		},
+	}
+	if p.SatelliteAffinityID != "" {
+		spec["affinity"] = map[string]interface{}{
+			"nodeAffinity": map[string]interface{}{
+				"preferredDuringSchedulingIgnoredDuringExecution": []interface{}{
+					map[string]interface{}{
+						"weight": int64(100),
+						"preference": map[string]interface{}{
+							"matchExpressions": []interface{}{
+								map[string]interface{}{
+									"key":      "satellite.io/id",
+									"operator": "In",
+									"values":   []interface{}{p.SatelliteAffinityID},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
 	wf := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "argoproj.io/v1alpha1",
@@ -75,22 +115,7 @@ func (c *Client) SubmitPanRPCWorkflow(ctx context.Context, p PanRPCWorkflowParam
 				"namespace":    c.namespace,
 				"labels":       labels,
 			},
-			"spec": map[string]interface{}{
-				"serviceAccountName": "argo-workflow",
-				"workflowTemplateRef": map[string]interface{}{
-					"name": p.TemplateName,
-				},
-				"arguments": map[string]interface{}{
-					"parameters": []interface{}{
-						map[string]interface{}{"name": "task_id", "value": fmt.Sprintf("%d", p.TaskID)},
-						map[string]interface{}{"name": "file_prefix", "value": p.FilePrefix},
-						map[string]interface{}{"name": "rs_image", "value": p.RSImage},
-						map[string]interface{}{"name": "cpu_threads", "value": fmt.Sprintf("%d", p.CPUThreads)},
-						map[string]interface{}{"name": "warp_mem_mb", "value": fmt.Sprintf("%d", p.WarpMemMB)},
-						map[string]interface{}{"name": "resample_alg", "value": p.ResampleAlg},
-					},
-				},
-			},
+			"spec": spec,
 		},
 	}
 	created, err := c.dyn.Resource(workflowGVR).Namespace(c.namespace).Create(ctx, wf, metav1.CreateOptions{})

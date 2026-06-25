@@ -31,6 +31,24 @@
       </div>
 
       <div class="card">
+        <div class="h">遥感任务高亮</div>
+        <div class="small" v-if="completedTasksLoading">正在加载已完成任务…</div>
+        <div v-else-if="completedTasks.length === 0" class="small">暂无已完成的遥感任务。</div>
+        <ul v-else class="task-highlight-list">
+          <li v-for="task in completedTasks" :key="task.id">
+            <button type="button" class="task-highlight-btn" @click="focusCompletedTask(task)">
+              <span class="mono">#{{ task.id }}</span>
+              <span>{{ taskHighlightLabel(task) }}</span>
+            </button>
+            <router-link class="task-result-link" :to="{ path: '/remote-sensing', query: { task: task.id } }">
+              查看产物
+            </router-link>
+          </li>
+        </ul>
+        <div class="small">已完成任务对应卫星在 3D 视图中以绿色高亮显示。</div>
+      </div>
+
+      <div class="card">
         <div class="h">当前选中卫星</div>
         <div v-if="selected">
           <div class="kv"><b>ID</b><span class="mono">{{ selected.id }}</span></div>
@@ -96,6 +114,9 @@
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, reactive, watch, markRaw } from "vue";
+import { useRoute } from "vue-router";
+import { listRemoteSensingTasks } from "../api/remoteSensing";
+import { getSatellite } from "../api/satellite";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
@@ -104,6 +125,115 @@ import { TubeGeometry, LineCurve3 } from "three";
 // 引入 v-network-graph
 import { VNetworkGraph, VEdgeLabel, defineConfigs } from 'v-network-graph'
 import 'v-network-graph/lib/style.css'
+
+const route = useRoute();
+
+const completedTasks = ref<Array<{ id: number; satellite_id?: number; scenario_id?: number; file_prefix?: string }>>([]);
+const completedTasksLoading = ref(false);
+const taskHighlightSatIds = ref<Set<string>>(new Set());
+const satelliteMetaById = ref<Map<number, { sat_id: string; stk_name: string }>>(new Map());
+let completedTasksTimer: ReturnType<typeof setInterval> | null = null;
+
+async function loadCompletedTasks() {
+  completedTasksLoading.value = true;
+  try {
+    const tasks = await listRemoteSensingTasks({ status: "completed" });
+    const recent = (tasks ?? []).slice(0, 12);
+    completedTasks.value = recent;
+
+    const nextMeta = new Map(satelliteMetaById.value);
+    const satDbIds = [...new Set(recent.map((t) => t.satellite_id).filter(Boolean))] as number[];
+    await Promise.all(
+      satDbIds.map(async (id) => {
+        if (nextMeta.has(id)) return;
+        try {
+          const sat = await getSatellite(id);
+          nextMeta.set(id, { sat_id: sat.sat_id, stk_name: sat.stk_name });
+        } catch {
+          /* ignore */
+        }
+      })
+    );
+    satelliteMetaById.value = nextMeta;
+
+    const nextHighlight = new Set<string>();
+    for (const task of recent) {
+      if (!task.satellite_id) continue;
+      const meta = nextMeta.get(task.satellite_id);
+      if (meta?.sat_id) nextHighlight.add(meta.sat_id);
+    }
+    taskHighlightSatIds.value = nextHighlight;
+    refreshAllMeshStyles();
+  } catch (e) {
+    console.error("加载已完成遥感任务失败", e);
+  } finally {
+    completedTasksLoading.value = false;
+  }
+}
+
+function taskHighlightLabel(task: { id: number; satellite_id?: number; file_prefix?: string }) {
+  if (!task.satellite_id) return task.file_prefix || `任务 ${task.id}`;
+  const meta = satelliteMetaById.value.get(task.satellite_id);
+  if (!meta) return `#${task.satellite_id}`;
+  return `${meta.sat_id} · ${meta.stk_name}`;
+}
+
+async function focusCompletedTask(task: { id: number; satellite_id?: number }) {
+  if (!task.satellite_id) return;
+  let meta = satelliteMetaById.value.get(task.satellite_id);
+  if (!meta) {
+    try {
+      const sat = await getSatellite(task.satellite_id);
+      meta = { sat_id: sat.sat_id, stk_name: sat.stk_name };
+      satelliteMetaById.value = new Map(satelliteMetaById.value).set(task.satellite_id, meta);
+    } catch {
+      return;
+    }
+  }
+  selectedRouter.value = meta.sat_id;
+  selectSatById(meta.sat_id);
+}
+
+async function applyRouteSatelliteHighlight() {
+  const raw = route.query.satelliteId;
+  if (!raw) return;
+  const satelliteDbId = Number(raw);
+  if (!Number.isFinite(satelliteDbId)) return;
+  try {
+    const sat = await getSatellite(satelliteDbId);
+    satelliteMetaById.value = new Map(satelliteMetaById.value).set(satelliteDbId, {
+      sat_id: sat.sat_id,
+      stk_name: sat.stk_name,
+    });
+    selectedRouter.value = sat.sat_id;
+    if (ready.value) selectSatById(sat.sat_id);
+  } catch (e) {
+    console.error("路由卫星高亮失败", e);
+  }
+}
+
+function selectSatById(satId: string) {
+  const sat = sats.value.find((x) => x.id === satId);
+  if (!sat) return;
+  selected.value = {
+    id: sat.id,
+    orbit: sat.orbit,
+    slot: sat.slot,
+    utc: sat.utc,
+    r: sat.r,
+    lla_Lat: sat.lla_Lat,
+    lla_Lon: sat.lla_Lon,
+    lla_Alt: sat.lla_Alt,
+    coe_SemiMajorAxis: sat.coe_SemiMajorAxis,
+    coe_Eccentricity: sat.coe_Eccentricity,
+    coe_Inclination: sat.coe_Inclination,
+    coe_RAAN: sat.coe_RAAN,
+    coe_ArgPerigee: sat.coe_ArgPerigee,
+    coe_TrueAnomaly: sat.coe_TrueAnomaly,
+  };
+  refreshAllMeshStyles();
+  if (linkMode.value === "orbit") buildDelayHighlightForSelected(sat.id);
+}
 
 // ---------------------------------------------------------
 // 2D 路由拓扑逻辑
@@ -286,19 +416,29 @@ function addNodeLabel(mesh: THREE.Mesh, text: string) {
   mesh.add(obj);
   nodeLabels.push(obj);
 }
-function setHighlight(mesh: THREE.Mesh | null) {
+function refreshAllMeshStyles() {
   for (const sat of sats.value) {
     const mat = sat.mesh.material as THREE.MeshStandardMaterial;
-    mat.emissive.setHex(0x000000);
-    mat.color.setHex(colorForOrbit(sat.orbit));
-    sat.mesh.scale.setScalar(1);
+    if (selected.value?.id === sat.id) {
+      mat.emissive.setHex(0x2b5cff);
+      mat.color.setHex(0xffffff);
+      sat.mesh.scale.setScalar(1.25);
+    } else if (taskHighlightSatIds.value.has(sat.id)) {
+      mat.emissive.setHex(0x22aa55);
+      mat.color.setHex(0xaaffcc);
+      sat.mesh.scale.setScalar(1.12);
+    } else {
+      mat.emissive.setHex(0x000000);
+      mat.color.setHex(colorForOrbit(sat.orbit));
+      sat.mesh.scale.setScalar(1);
+    }
   }
-  if (mesh) {
-    const mat = mesh.material as THREE.MeshStandardMaterial;
-    mat.emissive.setHex(0x2b5cff);
-    mat.color.setHex(0xffffff);
-    mesh.scale.setScalar(1.25);
+}
+function setHighlight(mesh: THREE.Mesh | null) {
+  if (!mesh) {
+    selected.value = null;
   }
+  refreshAllMeshStyles();
 }
 function resetView() {
   if (!camera || !controls) return;
@@ -470,27 +610,13 @@ function pickSatMesh(ev: PointerEvent): THREE.Mesh | null {
 function onPointerDown(ev: PointerEvent) {
   const mesh = pickSatMesh(ev);
   if (!mesh) {
-    setHighlight(null);
     selected.value = null;
+    refreshAllMeshStyles();
     if (linkMode.value === "orbit") buildDelayHighlightForSelected(null);
     return;
   }
-  setHighlight(mesh);
   const ud = mesh.userData as { id: string };
-  const sat = sats.value.find((x) => x.id === ud.id);
-  if (!sat) return;
-
-  selected.value = {
-    id: sat.id, orbit: sat.orbit, slot: sat.slot, utc: sat.utc, r: sat.r,
-    lla_Lat: sat.lla_Lat, lla_Lon: sat.lla_Lon, lla_Alt: sat.lla_Alt,
-    coe_SemiMajorAxis: sat.coe_SemiMajorAxis, coe_Eccentricity: sat.coe_Eccentricity, coe_Inclination: sat.coe_Inclination,
-    coe_RAAN: sat.coe_RAAN, coe_ArgPerigee: sat.coe_ArgPerigee, coe_TrueAnomaly: sat.coe_TrueAnomaly,
-  };
-
-  // 【修改】：删除了这里联动 selectedRouter 的代码，实现了逻辑分离。
-  // 点击 3D 卫星不再影响右侧路由图，右侧路由图只响应手动输入。
-
-  if (linkMode.value === "orbit") buildDelayHighlightForSelected(sat.id);
+  selectSatById(ud.id);
 }
 function animate() {
   if (!renderer || !scene || !camera) return;
@@ -567,6 +693,7 @@ async function loadT0() {
   loading.value = false;
   ready.value = sats.value.length > 0;
   loadProgress.value = ready.value ? "done" : "no sats";
+  refreshAllMeshStyles();
 }
 async function loadDelayMatrix() {
   try {
@@ -581,8 +708,11 @@ watch([showLinks, linkMode], () => { if (ready.value) rebuildLinks(); });
 watch(() => selected.value?.id ?? null, (id) => { if (ready.value && showLinks.value && linkMode.value === "orbit") buildDelayHighlightForSelected(id); });
 
 onMounted(async () => {
-  // 加载 2D 拓扑数据
   loadRouterData();
+  void loadCompletedTasks();
+  completedTasksTimer = setInterval(() => {
+    void loadCompletedTasks();
+  }, 20000);
 
   if (!host.value) return;
   scene = new THREE.Scene();
@@ -617,6 +747,8 @@ onMounted(async () => {
     await loadT0();
     await loadDelayMatrix();
     rebuildLinks();
+    await applyRouteSatelliteHighlight();
+    refreshAllMeshStyles();
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     resizeObs = new ResizeObserver(() => {
       if (!host.value || !renderer || !camera) return;
@@ -633,6 +765,10 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (completedTasksTimer) {
+    clearInterval(completedTasksTimer);
+    completedTasksTimer = null;
+  }
   if (raf) cancelAnimationFrame(raf);
   if (renderer) renderer.domElement.removeEventListener("pointerdown", onPointerDown);
   if (resizeObs && host.value) resizeObs.unobserve(host.value);
@@ -743,4 +879,52 @@ onBeforeUnmount(() => {
 .node-label { font-size: 12px; padding: 2px 6px; border-radius: 8px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.18); color: #e8eeff; transform: translate(-50%, -50%); }
 .edge-label { white-space: pre; font-size: 11px; line-height: 1.25; padding: 4px 6px; border-radius: 10px; background: rgba(0, 0, 0, 0.52); border: 1px solid rgba(255, 255, 255, 0.14); color: #e8eeff; transform: translate(-50%, -50%); max-width: 240px; }
 .edge-label--highlight { border-color: rgba(255, 204, 102, 0.55); box-shadow: 0 0 14px rgba(255, 204, 102, 0.18); }
+
+.task-highlight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.task-highlight-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.task-highlight-btn {
+  flex: 1;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(34, 170, 85, 0.12);
+  color: #e8eeff;
+  border-radius: 10px;
+  padding: 7px 9px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-highlight-btn:hover {
+  background: rgba(34, 170, 85, 0.22);
+}
+
+.task-result-link {
+  font-size: 11px;
+  color: #7dd3fc;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.task-result-link:hover {
+  text-decoration: underline;
+}
 </style>

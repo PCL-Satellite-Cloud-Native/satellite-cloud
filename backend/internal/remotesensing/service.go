@@ -633,6 +633,21 @@ func (s *RemoteSensingService) eventWithTaskTopology(taskID uint, event RemoteSe
 	return event
 }
 
+func (s *RemoteSensingService) satelliteSatID(ctx context.Context, satelliteID *uint) string {
+	if satelliteID == nil || *satelliteID == 0 {
+		return ""
+	}
+	var sat model.Satellite
+	if err := s.db.WithContext(ctx).Select("sat_id").First(&sat, *satelliteID).Error; err != nil {
+		s.logger.Warn("satellite affinity lookup failed",
+			zap.Uint("satellite_id", *satelliteID),
+			zap.Error(err),
+		)
+		return ""
+	}
+	return sat.SatID
+}
+
 func (s *RemoteSensingService) validateTaskTopology(ctx context.Context, scenarioID, satelliteID *uint) error {
 	if scenarioID == nil && satelliteID == nil {
 		return nil

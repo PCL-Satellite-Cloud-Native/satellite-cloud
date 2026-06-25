@@ -109,6 +109,8 @@ func main() {
 						}()
 						zapLogger.Info("rs-worker 开始处理任务",
 							zap.Uint("task_id", payload.TaskID),
+							zap.Uint("satellite_id", payload.SatelliteID),
+							zap.String("node", os.Getenv("NODE_NAME")),
 							zap.String("stream_id", streamID),
 						)
 						rsSvc.RunPipelineFromJob(context.Background(), payload)

@@ -8,8 +8,13 @@ async function handleJSON(response) {
   return response.json()
 }
 
-export function listRemoteSensingTasks() {
-  return fetch(`${API_BASE_URL}/remote-sensing/tasks`).then(handleJSON)
+export function listRemoteSensingTasks(params = {}) {
+  const qs = new URLSearchParams()
+  if (params.scenarioId != null) qs.set('scenario_id', String(params.scenarioId))
+  if (params.satelliteId != null) qs.set('satellite_id', String(params.satelliteId))
+  if (params.status) qs.set('status', params.status)
+  const query = qs.toString()
+  return fetch(`${API_BASE_URL}/remote-sensing/tasks${query ? `?${query}` : ''}`).then(handleJSON)
 }
 
 export function createRemoteSensingTask(payload) {

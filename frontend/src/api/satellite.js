@@ -28,6 +28,17 @@ export async function getScenario(scenarioId) {
 }
 
 /**
+ * 获取单颗卫星详情（satellites.id 主键）
+ */
+export async function getSatellite(satelliteId) {
+  const response = await fetch(`${API_BASE_URL}/satellites/${satelliteId}`)
+  if (!response.ok) {
+    throw new Error(`获取卫星详情失败: ${response.statusText}`)
+  }
+  return response.json()
+}
+
+/**
  * 获取场景下的所有卫星
  */
 export async function getSatellitesByScenario(scenarioId) {

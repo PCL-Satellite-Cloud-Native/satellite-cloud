@@ -43,13 +43,14 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 	}
 
 	wfName, err := argoClient.SubmitPanRPCWorkflow(ctx, argo.PanRPCWorkflowParams{
-		TemplateName: s.argoCfg.PanRPCTemplate,
-		TaskID:       taskID,
-		FilePrefix:   req.FilePrefix,
-		RSImage:      s.argoCfg.WorkflowImage,
-		CPUThreads:   cpuThreads,
-		WarpMemMB:    warpMemMB,
-		ResampleAlg:  resampleAlg,
+		TemplateName:        s.argoCfg.PanRPCTemplate,
+		TaskID:              taskID,
+		FilePrefix:          req.FilePrefix,
+		RSImage:             s.argoCfg.WorkflowImage,
+		CPUThreads:          cpuThreads,
+		WarpMemMB:           warpMemMB,
+		ResampleAlg:         resampleAlg,
+		SatelliteAffinityID: s.satelliteSatID(ctx, req.SatelliteID),
 	})
 	if err != nil {
 		return nil, err

@@ -19,6 +19,27 @@
           <h2>创建任务</h2>
 
           <fieldset class="form-section">
+            <legend>拓扑绑定（可选）</legend>
+            <label>
+              仿真场景
+              <select v-model="form.scenarioId" @change="onScenarioChange">
+                <option :value="null">不绑定场景</option>
+                <option v-for="s in scenarios" :key="s.id" :value="s.id">{{ s.name }}</option>
+              </select>
+            </label>
+            <label>
+              执行卫星
+              <select v-model="form.satelliteId" :disabled="!form.scenarioId">
+                <option :value="null">不绑定卫星</option>
+                <option v-for="sat in scenarioSatellites" :key="sat.id" :value="sat.id">
+                  {{ sat.sat_id }} · {{ sat.stk_name }}
+                </option>
+              </select>
+            </label>
+            <p class="form-hint">绑定后可在拓扑页高亮对应卫星，并支持按卫星筛选任务列表。</p>
+          </fieldset>
+
+          <fieldset class="form-section">
             <legend>预处理（1–9 阶段）</legend>
             <label>
               任务名称
@@ -99,6 +120,7 @@
                 <p class="task-meta">
                   状态：{{ statusText(task.status) }}
                   · 阶段：{{ stageNameText(task.current_stage) || '等待中' }}
+                  <span v-if="task.satellite_id"> · 卫星：{{ satelliteLabel(task.satellite_id) }}</span>
                   <span v-if="task.enable_detection === false"> · 未启用检测</span>
                 </p>
               </div>
@@ -111,6 +133,16 @@
               <div>目录：{{ task.input_directory }}</div>
               <div v-if="task.enable_detection !== false && task.detection_classes !== undefined">
                 检测类别：{{ formatDetectionClasses(task.detection_classes) }}
+              </div>
+              <div v-if="task.scenario_id">场景 ID：{{ task.scenario_id }}</div>
+              <div v-if="task.satellite_id" class="task-topology-row">
+                绑定卫星：{{ satelliteLabel(task.satellite_id) }}
+                <router-link
+                  class="topology-link"
+                  :to="{ path: '/simulation/topology', query: { satelliteId: task.satellite_id } }"
+                >
+                  拓扑高亮
+                </router-link>
               </div>
               <div>创建：{{ formatTime(task.created_at) }}</div>
             </div>
@@ -150,6 +182,22 @@
           <article class="summary-item" v-if="selectedTask.enable_detection !== false">
             <span>检测类别</span>
             <strong>{{ formatDetectionClasses(selectedTask.detection_classes) }}</strong>
+          </article>
+          <article class="summary-item" v-if="selectedTask.satellite_id">
+            <span>绑定卫星</span>
+            <strong>
+              {{ satelliteLabel(selectedTask.satellite_id) }}
+              <router-link
+                class="topology-link inline"
+                :to="{ path: '/simulation/topology', query: { satelliteId: selectedTask.satellite_id } }"
+              >
+                拓扑
+              </router-link>
+            </strong>
+          </article>
+          <article class="summary-item" v-if="selectedTask.scenario_id">
+            <span>场景</span>
+            <strong>{{ scenarioName(selectedTask.scenario_id) }}</strong>
           </article>
           <article class="summary-item" v-if="selectedTask.error_message">
             <span>失败原因</span>
@@ -301,6 +349,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   listRemoteSensingTasks,
   createRemoteSensingTask,
@@ -312,6 +361,9 @@ import {
   artifactDownloadUrl,
   detectionTilesArchiveUrl,
 } from '../api/remoteSensing'
+import { getScenarios, getSatellitesByScenario, getSatellite } from '../api/satellite'
+
+const route = useRoute()
 
 const STAGE_TITLE_MAP = {
   tiff_to_envi_mss: 'TIFF → ENVI（MSS）',
@@ -372,7 +424,73 @@ const form = reactive({
   enableDetection: true,
   detectionClassIds: [1, 5],
   detectionDrawLabels: true,
+  scenarioId: null,
+  satelliteId: null,
 })
+
+const scenarios = ref([])
+const scenarioSatellites = ref([])
+const satelliteLookup = ref(new Map())
+
+function scenarioName(scenarioId) {
+  const found = scenarios.value.find((s) => s.id === scenarioId)
+  return found ? found.name : `场景 #${scenarioId}`
+}
+
+function satelliteLabel(satelliteId) {
+  const info = satelliteLookup.value.get(satelliteId)
+  if (!info) return `#${satelliteId}`
+  return `${info.sat_id} (${info.stk_name})`
+}
+
+async function loadScenarios() {
+  try {
+    const data = await getScenarios()
+    scenarios.value = data.results ?? data
+  } catch (err) {
+    console.error('场景列表加载失败', err)
+  }
+}
+
+async function loadSatellitesForScenario(scenarioId) {
+  if (!scenarioId) {
+    scenarioSatellites.value = []
+    return
+  }
+  try {
+    const sats = await getSatellitesByScenario(scenarioId)
+    scenarioSatellites.value = sats
+    const next = new Map(satelliteLookup.value)
+    for (const sat of sats) next.set(sat.id, sat)
+    satelliteLookup.value = next
+  } catch (err) {
+    console.error('卫星列表加载失败', err)
+    scenarioSatellites.value = []
+  }
+}
+
+function onScenarioChange() {
+  form.satelliteId = null
+  loadSatellitesForScenario(form.scenarioId)
+}
+
+async function ensureSatelliteLookup(tasksList) {
+  const missing = [...new Set(tasksList.map((t) => t.satellite_id).filter(Boolean))]
+    .filter((id) => !satelliteLookup.value.has(id))
+  if (!missing.length) return
+  const next = new Map(satelliteLookup.value)
+  await Promise.all(
+    missing.map(async (id) => {
+      try {
+        const sat = await getSatellite(id)
+        next.set(id, sat)
+      } catch {
+        /* ignore */
+      }
+    })
+  )
+  satelliteLookup.value = next
+}
 
 const detectionSelectionSummary = computed(() => {
   if (!form.detectionClassIds.length) return ''
@@ -677,6 +795,7 @@ async function loadTasks(preferredId, options = {}) {
   try {
     const data = await listRemoteSensingTasks()
     tasks.value = data
+    await ensureSatelliteLookup(data)
 
     if (!data.length) {
       selectedTask.value = null
@@ -872,6 +991,8 @@ async function submitTask() {
       enableDetection: form.enableDetection,
       detectionClasses,
       detectionDrawLabels: form.detectionDrawLabels,
+      ...(form.scenarioId ? { scenarioId: form.scenarioId } : {}),
+      ...(form.satelliteId ? { satelliteId: form.satelliteId } : {}),
     })
     submitMessage.value = '任务已提交（预处理 → 目标识别串行执行）'
     form.name = ''
@@ -885,7 +1006,13 @@ async function submitTask() {
 }
 
 onMounted(async () => {
-  await loadTasks()
+  await loadScenarios()
+  if (scenarios.value.length && form.scenarioId == null) {
+    form.scenarioId = scenarios.value[0].id
+    await loadSatellitesForScenario(form.scenarioId)
+  }
+  const preferredId = route.query.task ? Number(route.query.task) : undefined
+  await loadTasks(preferredId)
   nowTickTimer.value = setInterval(() => {
     nowTick.value = Date.now()
   }, 1000)
@@ -1110,12 +1237,34 @@ onBeforeUnmount(() => {
   color: #4e5a71;
 }
 
-.task-form input {
+.task-form input,
+.task-form select {
   margin-top: 0.35rem;
   padding: 0.55rem 0.6rem;
   border: 1px solid #d8dfed;
   border-radius: 6px;
   font-size: 0.93rem;
+}
+
+.task-topology-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.topology-link {
+  color: #1265d8;
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+
+.topology-link:hover {
+  text-decoration: underline;
+}
+
+.topology-link.inline {
+  margin-left: 0.35rem;
 }
 
 .form-actions {

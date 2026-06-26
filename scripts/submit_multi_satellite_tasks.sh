@@ -105,25 +105,51 @@ except urllib.error.URLError as e:
 if isinstance(sats, dict):
     sats = sats.get("results") or sats.get("satellites") or []
 
-nodes = (pilot.get("nodes") or [])[:count]
-if len(nodes) < count:
+all_nodes = pilot.get("nodes") or []
+if len(all_nodes) < count:
     print(f"pilot-map 不足 {count} 颗（enabled={pilot.get('enabled')}）", file=sys.stderr)
     sys.exit(1)
 
-by_key = {}
+def resolve_sat(e, by_sat_id, by_stk, by_ephem):
+    sid = e["sat_id"]
+    if sid in by_sat_id:
+        return by_sat_id[sid]
+    legacy = ephem_stk(e["orbit"], e["slot"])
+    if legacy in by_ephem:
+        return by_ephem[legacy]
+    name = e.get("sat_name")
+    if name and name in by_stk:
+        return by_stk[name]
+    return None
+
+by_sat_id, by_stk, by_ephem = {}, {}, {}
 for s in sats:
-    for key in (s.get("sat_id"), s.get("stk_name")):
-        if key:
-            by_key[key] = s
+    sid = s.get("sat_id")
+    if sid:
+        by_sat_id[sid] = s
+        if sid.startswith("Sat_"):
+            by_ephem[sid] = s
+    stk = s.get("stk_name")
+    if stk:
+        by_stk[stk] = s
 
 selected = []
-for e in nodes:
-    sid = e["sat_id"]
-    cand = by_key.get(sid) or by_key.get(e.get("sat_name")) or by_key.get(ephem_stk(e["orbit"], e["slot"]))
+used_ids = set()
+for e in all_nodes:
+    if len(selected) >= count:
+        break
+    cand = resolve_sat(e, by_sat_id, by_stk, by_ephem)
     if not cand:
-        print(f"场景 {scenario_id} 未找到卫星 {sid} ({e.get('sat_name')} / {ephem_stk(e['orbit'], e['slot'])})", file=sys.stderr)
-        sys.exit(1)
+        continue
+    pk = cand.get("id")
+    if pk in used_ids:
+        continue
+    used_ids.add(pk)
     selected.append(cand)
+
+if len(selected) < count:
+    print(f"场景 {scenario_id} 仅解析到 {len(selected)} 颗不同卫星（需要 {count} 颗）", file=sys.stderr)
+    sys.exit(1)
 
 for row in selected:
     print(json.dumps(row, ensure_ascii=False))

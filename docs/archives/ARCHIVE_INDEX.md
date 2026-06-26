@@ -32,6 +32,7 @@
 | 2026-06-22 | [2026-06-22_phase2-production-validation.md](./2026-06-22_phase2-production-validation.md) | Phase 2 生产复验 task 143；Eviction/CI SA 教训；pan_rpc 基线 174.6 s | [PHASE2_RUNBOOK.md](../PHASE2_RUNBOOK.md) §8 |
 | 2026-06-22 | [2026-06-22_phase3-closure.md](./2026-06-22_phase3-closure.md) | Phase 3 Argo PAN RPC **功能** Pilot；task 144；stage 4 212.7 s | [PHASE3_RUNBOOK.md](../PHASE3_RUNBOOK.md) |
 | 2026-06-23 | [2026-06-23_phase3-performance-closure.md](./2026-06-23_phase3-performance-closure.md) | Phase 3 **正式归档**；P3-04b；生产 `dd4bc728`；task 146 **165.4 s** | [PHASE4_RUNBOOK.md](../PHASE4_RUNBOOK.md) |
+| 2026-06-11 | [2026-06-11_phase5-ephem-id-bridge.md](./2026-06-11_phase5-ephem-id-bridge.md) | Phase 5 **临时**星历 ID 桥接（sat-* ↔ Sat_6_6…）；STK 更新后回滚 | [PHASE5_RUNBOOK.md](../PHASE5_RUNBOOK.md) §9 |
 
 ---
 

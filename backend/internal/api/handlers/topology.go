@@ -81,7 +81,23 @@ func (h *TopologyHandler) TopologyT0Handler(c *gin.Context) {
 		}
 	}
 	sats = applyPilotClusterT0(sats)
+	if pilotcluster.Current().Enabled && !topoPilotHasPositions(sats) {
+		if csvSats, csvErr := loadT0FromCSVs(); csvErr == nil && len(csvSats) > 0 {
+			if remapped := applyPilotClusterT0(csvSats); topoPilotHasPositions(remapped) {
+				sats = remapped
+			}
+		}
+	}
 	c.JSON(200, sats)
+}
+
+func topoPilotHasPositions(sats []TopoSatT0) bool {
+	for _, s := range sats {
+		if topoHasPosition(s) {
+			return true
+		}
+	}
+	return false
 }
 
 // TopologyPilotMapHandler 返回 Pilot 集群节点↔卫星映射（前端过滤与标签展示）。
@@ -113,30 +129,83 @@ func (h *TopologyHandler) TopologyDelayHandler(c *gin.Context) {
 	c.JSON(200, applyPilotClusterDelay(edges))
 }
 
+type orbitSlotKey struct {
+	orbit int
+	slot  int
+}
+
+func topoHasPosition(s TopoSatT0) bool {
+	return s.R[0] != 0 || s.R[1] != 0 || s.R[2] != 0
+}
+
+func buildEphemIndex(sats []TopoSatT0) (byID map[string]TopoSatT0, byOrbitSlot map[orbitSlotKey]TopoSatT0) {
+	byID = make(map[string]TopoSatT0, len(sats)*2)
+	byOrbitSlot = make(map[orbitSlotKey]TopoSatT0, len(sats))
+	for _, s := range sats {
+		byID[s.ID] = s
+		if strings.HasPrefix(s.ID, "Sat_") {
+			byID[s.ID] = s
+		}
+		if s.Orbit > 0 && s.Slot > 0 {
+			byOrbitSlot[orbitSlotKey{s.Orbit, s.Slot}] = s
+		}
+	}
+	return byID, byOrbitSlot
+}
+
+func lookupPilotEphem(pilot pilotcluster.Entry, byID map[string]TopoSatT0, byOrbitSlot map[orbitSlotKey]TopoSatT0) (TopoSatT0, bool) {
+	if s, ok := byID[pilot.SatID]; ok && topoHasPosition(s) {
+		return s, true
+	}
+	if s, ok := byID[pilot.SatName]; ok && topoHasPosition(s) {
+		return s, true
+	}
+	ephemID := pilotcluster.EphemSTKName(pilot.Orbit, pilot.Slot)
+	if s, ok := byID[ephemID]; ok {
+		return s, true
+	}
+	ephO, ephS := pilotcluster.EphemOrbitSlot(pilot.Orbit, pilot.Slot)
+	if s, ok := byOrbitSlot[orbitSlotKey{ephO, ephS}]; ok {
+		return s, true
+	}
+	return TopoSatT0{}, false
+}
+
+func topoSatFromPilotEphem(src TopoSatT0, pilot pilotcluster.Entry) TopoSatT0 {
+	return TopoSatT0{
+		ID:              pilot.SatID,
+		Orbit:           pilot.Orbit,
+		Slot:            pilot.Slot,
+		HostNode:        pilot.Node,
+		DisplayName:     pilot.SatName,
+		UTC:             src.UTC,
+		R:               src.R,
+		LLALat:          src.LLALat,
+		LLALon:          src.LLALon,
+		LLAAlt:          src.LLAAlt,
+		COESemiMajor:    src.COESemiMajor,
+		COEEccentricity: src.COEEccentricity,
+		COEInclination:  src.COEInclination,
+		COERAAN:         src.COERAAN,
+		COEArgPerigee:   src.COEArgPerigee,
+		COETrueAnomaly:  src.COETrueAnomaly,
+	}
+}
+
+// applyPilotClusterT0 将 Pilot sat_id 与 STK 星历 Sat_6_6…Sat_8_10 对齐，避免 15 星叠在原点。
+// 临时桥接；STK 更新后见 docs/archives/2026-06-11_phase5-ephem-id-bridge.md §6 回滚。
 func applyPilotClusterT0(sats []TopoSatT0) []TopoSatT0 {
 	m := pilotcluster.Current()
 	if !m.Enabled {
 		return sats
 	}
+	byID, byOrbitSlot := buildEphemIndex(sats)
 	out := make([]TopoSatT0, 0, len(m.Entries))
-	for _, s := range sats {
-		if !m.ContainsSatID(s.ID) {
+	for _, e := range m.Entries {
+		if src, ok := lookupPilotEphem(e, byID, byOrbitSlot); ok {
+			out = append(out, topoSatFromPilotEphem(src, e))
 			continue
 		}
-		s.HostNode = m.HostNode(s.ID)
-		s.DisplayName = m.SatName(s.ID)
-		if s.Orbit == 0 {
-			if e, ok := m.EntryForSatID(s.ID); ok {
-				s.Orbit = e.Orbit
-				s.Slot = e.Slot
-			}
-		}
-		out = append(out, s)
-	}
-	if len(out) > 0 {
-		return out
-	}
-	for _, e := range m.Entries {
 		out = append(out, TopoSatT0{
 			ID:          e.SatID,
 			Orbit:       e.Orbit,
@@ -153,11 +222,28 @@ func applyPilotClusterDelay(edges []DelayEdge) []DelayEdge {
 	if !m.Enabled {
 		return edges
 	}
+	ephemToPilot := make(map[string]string, len(m.Entries))
+	for _, e := range m.Entries {
+		ephemToPilot[pilotcluster.EphemSTKName(e.Orbit, e.Slot)] = e.SatID
+	}
 	out := make([]DelayEdge, 0, len(edges))
 	for _, e := range edges {
-		if m.ContainsSatID(e.AId) && m.ContainsSatID(e.BId) {
-			out = append(out, e)
+		aID, bID := e.AId, e.BId
+		if p, ok := ephemToPilot[e.AId]; ok {
+			aID = p
 		}
+		if p, ok := ephemToPilot[e.BId]; ok {
+			bID = p
+		}
+		if !m.ContainsSatID(aID) || !m.ContainsSatID(bID) {
+			continue
+		}
+		out = append(out, DelayEdge{
+			AId:    aID,
+			BId:    bID,
+			DelayS: e.DelayS,
+			DistKm: e.DistKm,
+		})
 	}
 	return out
 }

@@ -495,9 +495,9 @@ function buildOrbitLinksOnly() {
     if (arr.length < 2) continue;
     arr.sort((a, b) => a.slot - b.slot);
     const positions: number[] = [];
-    for (let i = 0; i < arr.length - 1; i++) {
+    for (let i = 0; i < arr.length; i++) {
       const a = arr[i].mesh.position;
-      const b = arr[i + 1].mesh.position;
+      const b = arr[(i + 1) % arr.length].mesh.position;
       positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
     }
     const geom = new THREE.BufferGeometry();

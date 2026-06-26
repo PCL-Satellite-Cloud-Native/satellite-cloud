@@ -186,4 +186,16 @@ MinIO **不替代** task 隔离设计；二者正交。
 
 ---
 
+## 9. 临时：星历 ID 桥接（待 STK 更新后回滚）
+
+Pilot 业务 ID（`sat-1-1`）与当前 DB/CSV 星历（`Sat_6_6…Sat_8_10`）不一致时，API 通过 **+5/+5 偏移** 取坐标渲染拓扑。
+
+| 项 | 说明 |
+|----|------|
+| 代码 | `backend/internal/pilotcluster/ephem.go`、`topology.go` |
+| 归档与回滚 | [archives/2026-06-11_phase5-ephem-id-bridge.md](./archives/2026-06-11_phase5-ephem-id-bridge.md) |
+| 退役条件 | STK 重新 export/import，`sat_id` 与 `Sat_{p}_{s}` 一一对应后按归档 §6 删除桥接 |
+
+---
+
 *P5-01 合并并部署 backend 后，按 §2.5 验收；随后实施 P5-02 前端。*

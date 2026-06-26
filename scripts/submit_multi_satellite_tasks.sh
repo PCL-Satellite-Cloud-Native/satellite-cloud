@@ -10,6 +10,7 @@ usage() {
     [--api-base http://127.0.0.1:8080] \
     [--scenario-id 2] \
     [--count 3] \
+    [--satellite-ids 42,43,44] \
     [--file-prefix GF2_PMS1_...] \
     [--poll-interval 30] \
     [--timeout 7200]
@@ -27,6 +28,7 @@ EOF
 RUN_ID=""
 COUNT=3
 SCENARIO_ID=""
+SATELLITE_IDS=""
 API_BASE="${SATELLITE_API_BASE:-http://127.0.0.1:8080}"
 FILE_PREFIX="GF2_PMS1_E118.6_N37.4_20160826_L1A0001792619"
 POLL_INTERVAL=30
@@ -37,6 +39,7 @@ while [[ $# -gt 0 ]]; do
     --run-id) RUN_ID="$2"; shift 2 ;;
     --count) COUNT="$2"; shift 2 ;;
     --scenario-id) SCENARIO_ID="$2"; shift 2 ;;
+    --satellite-ids) SATELLITE_IDS="$2"; shift 2 ;;
     --api-base) API_BASE="$2"; shift 2 ;;
     --file-prefix) FILE_PREFIX="$2"; shift 2 ;;
     --poll-interval) POLL_INTERVAL="$2"; shift 2 ;;
@@ -66,9 +69,71 @@ fi
 OUT_DIR="artifacts/benchmarks/${RUN_ID}"
 mkdir -p "${OUT_DIR}"
 
-mapfile -t SAT_ROWS < <(curl -sf "${API_BASE}/api/satellites?scenario_id=${SCENARIO_ID}" | jq -c ".[0:${COUNT}][]")
+if [[ -n "${SATELLITE_IDS}" ]]; then
+  IFS=',' read -r -a SAT_PK_LIST <<< "${SATELLITE_IDS}"
+  if [[ ${#SAT_PK_LIST[@]} -lt ${COUNT} ]]; then
+    COUNT=${#SAT_PK_LIST[@]}
+  fi
+  SAT_ROWS=()
+  for (( i=0; i<COUNT; i++ )); do
+    pk="${SAT_PK_LIST[$i]}"
+    row="$(curl -sf "${API_BASE}/api/satellites/${pk}")"
+    SAT_ROWS+=("${row}")
+  done
+else
+# 从 pilot-map 取前 N 颗 Pilot 星，再在场景卫星列表中按 sat_id / stk_name / legacy 星历名解析 DB 主键
+mapfile -t SAT_ROWS < <(python3 - "${API_BASE}" "${SCENARIO_ID}" "${COUNT}" <<'PY'
+import json, sys, urllib.error, urllib.request
+
+api, scenario_id, count = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+
+def fetch(url):
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+def ephem_stk(orbit, slot):
+    return f"Sat_{orbit + 5}_{slot + 5}"
+
+try:
+    pilot = fetch(f"{api}/api/topology/pilot-map")
+    sats = fetch(f"{api}/api/scenarios/{scenario_id}/satellites")
+except urllib.error.URLError as e:
+    print(f"API 请求失败: {e}", file=sys.stderr)
+    sys.exit(1)
+
+if isinstance(sats, dict):
+    sats = sats.get("results") or sats.get("satellites") or []
+
+nodes = (pilot.get("nodes") or [])[:count]
+if len(nodes) < count:
+    print(f"pilot-map 不足 {count} 颗（enabled={pilot.get('enabled')}）", file=sys.stderr)
+    sys.exit(1)
+
+by_key = {}
+for s in sats:
+    for key in (s.get("sat_id"), s.get("stk_name")):
+        if key:
+            by_key[key] = s
+
+selected = []
+for e in nodes:
+    sid = e["sat_id"]
+    cand = by_key.get(sid) or by_key.get(e.get("sat_name")) or by_key.get(ephem_stk(e["orbit"], e["slot"]))
+    if not cand:
+        print(f"场景 {scenario_id} 未找到卫星 {sid} ({e.get('sat_name')} / {ephem_stk(e['orbit'], e['slot'])})", file=sys.stderr)
+        sys.exit(1)
+    selected.append(cand)
+
+for row in selected:
+    print(json.dumps(row, ensure_ascii=False))
+PY
+)
+fi
+
 if [[ ${#SAT_ROWS[@]} -lt ${COUNT} ]]; then
-  echo "场景 ${SCENARIO_ID} 卫星不足 ${COUNT} 颗"
+  echo "场景 ${SCENARIO_ID} 卫星不足 ${COUNT} 颗（解析到 ${#SAT_ROWS[@]} 颗）"
+  echo "诊断: curl -s ${API_BASE}/api/scenarios/${SCENARIO_ID}/satellites | jq 'length'"
   exit 1
 fi
 

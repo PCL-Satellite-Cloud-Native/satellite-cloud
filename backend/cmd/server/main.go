@@ -107,7 +107,20 @@ func main() {
 		zapLogger.Info("Migrations applied or already up to date")
 	}
 
-	// 可选：启动时自动从 CSV 导入拓扑相关数据（当前仅支持 delay 矩阵）
+	bootstrapScenario := os.Getenv("SATELLITE_TOPOLOGY_SCENARIO")
+	if bootstrapScenario == "" {
+		bootstrapScenario = "Scenario5_full_36x22"
+	}
+	if imported, err := topology.EnsureRouterImported(db, bootstrapScenario, topology.DefaultRouterCSVDir()); err != nil {
+		zapLogger.Warn("Router topology bootstrap failed", zap.Error(err))
+	} else if imported {
+		zapLogger.Info("Router topology bootstrapped from CSV into DB",
+			zap.String("scenario", bootstrapScenario),
+			zap.String("dir", topology.DefaultRouterCSVDir()),
+		)
+	}
+
+	// 可选：启动时自动从 CSV 导入拓扑相关数据（delay / T0 / router 可单独配置）
 	if os.Getenv("SATELLITE_TOPOLOGY_AUTO_IMPORT") == "true" {
 		scenarioName := os.Getenv("SATELLITE_TOPOLOGY_SCENARIO")
 		if scenarioName == "" {
@@ -136,7 +149,11 @@ func main() {
 				zapLogger.Info("Auto-import T0 states succeeded")
 			}
 		}
-		if routerDir := os.Getenv("SATELLITE_ROUTER_CSV_DIR"); routerDir != "" {
+		routerDir := os.Getenv("SATELLITE_ROUTER_CSV_DIR")
+		if routerDir == "" {
+			routerDir = topology.DefaultRouterCSVDir()
+		}
+		if _, statErr := os.Stat(routerDir); statErr == nil {
 			zapLogger.Info("Auto-importing router topology from CSV dir",
 				zap.String("scenario", scenarioName),
 				zap.String("dir", routerDir),

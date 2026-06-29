@@ -35,39 +35,75 @@ func ImportDelayFromCSV(db *gorm.DB, scenarioName, filePath string) error {
 		return fmt.Errorf("scenario %q not found", scenarioName)
 	}
 
+	parsed, err := LoadDelayEdgesFromCSV(filePath)
+	if err != nil {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`DELETE FROM public.satellite_delay_edges WHERE scenario_id = ?`, scenarioID).Error; err != nil {
+			return fmt.Errorf("delete old edges: %w", err)
+		}
+		for _, e := range parsed {
+			if err := tx.Exec(`
+				INSERT INTO public.satellite_delay_edges (
+					scenario_id, a_id, b_id, delay_s, dist_km
+				) VALUES (?, ?, ?, ?, ?)`,
+				scenarioID, e.AId, e.BId, e.DelayS, e.DistKm,
+			).Error; err != nil {
+				return fmt.Errorf("insert edge (%s,%s): %w", e.AId, e.BId, err)
+			}
+		}
+		return nil
+	})
+}
+
+// DelayEdgeCSV 从 delay 矩阵 CSV 解析出的一条边。
+type DelayEdgeCSV struct {
+	AId    string
+	BId    string
+	DelayS float64
+	DistKm float64
+}
+
+const speedOfLightKmPerS = 299792.458
+
+// DefaultDelayCSVPath 返回 delay 矩阵 CSV 默认路径。
+func DefaultDelayCSVPath() string {
+	if v := os.Getenv("SATELLITE_DELAY_CSV_PATH"); v != "" {
+		return v
+	}
+	return filepath.Join("..", "frontend", "public", "data", "delay_15x15.csv")
+}
+
+// LoadDelayEdgesFromCSV 解析 delay 矩阵 CSV（非零项，a_id < b_id 去重）。
+func LoadDelayEdgesFromCSV(filePath string) ([]DelayEdgeCSV, error) {
+	if filePath == "" {
+		return nil, fmt.Errorf("filePath is empty")
+	}
 	f, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("open csv: %w", err)
+		return nil, fmt.Errorf("open csv: %w", err)
 	}
 	defer f.Close()
 
 	r := csv.NewReader(f)
 	r.TrimLeadingSpace = true
-
 	rows, err := r.ReadAll()
 	if err != nil {
-		return fmt.Errorf("read csv: %w", err)
+		return nil, fmt.Errorf("read csv: %w", err)
 	}
 	if len(rows) < 2 {
-		return fmt.Errorf("csv rows too short")
+		return nil, fmt.Errorf("csv rows too short")
 	}
 
 	header := rows[0]
 	if len(header) < 2 {
-		return fmt.Errorf("csv header too short")
+		return nil, fmt.Errorf("csv header too short")
 	}
 	colNames := header[1:]
 
-	type edge struct {
-		aId    string
-		bId    string
-		delayS float64
-		distKm float64
-	}
-
-	const cKmPerS = 299792.458
-	var edges []edge
-
+	var edges []DelayEdgeCSV
 	for i := 1; i < len(rows); i++ {
 		row := rows[i]
 		if len(row) < 2 {
@@ -87,37 +123,20 @@ func ImportDelayFromCSV(db *gorm.DB, scenarioName, filePath string) error {
 				continue
 			}
 			var v float64
-			_, err := fmt.Sscanf(vStr, "%f", &v)
-			if err != nil || v == 0 {
+			if _, err := fmt.Sscanf(vStr, "%f", &v); err != nil || v == 0 {
 				continue
 			}
 			if rowName < colName {
-				edges = append(edges, edge{
-					aId:    rowName,
-					bId:    colName,
-					delayS: v,
-					distKm: v * cKmPerS,
+				edges = append(edges, DelayEdgeCSV{
+					AId:    rowName,
+					BId:    colName,
+					DelayS: v,
+					DistKm: v * speedOfLightKmPerS,
 				})
 			}
 		}
 	}
-
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`DELETE FROM public.satellite_delay_edges WHERE scenario_id = ?`, scenarioID).Error; err != nil {
-			return fmt.Errorf("delete old edges: %w", err)
-		}
-		for _, e := range edges {
-			if err := tx.Exec(`
-				INSERT INTO public.satellite_delay_edges (
-					scenario_id, a_id, b_id, delay_s, dist_km
-				) VALUES (?, ?, ?, ?, ?)`,
-				scenarioID, e.aId, e.bId, e.delayS, e.distKm,
-			).Error; err != nil {
-				return fmt.Errorf("insert edge (%s,%s): %w", e.aId, e.bId, err)
-			}
-		}
-		return nil
-	})
+	return edges, nil
 }
 
 // T0 星历 CSV 文件名列表（与 handlers/topology 中一致）
@@ -372,5 +391,44 @@ func ImportRouterFromCSV(db *gorm.DB, scenarioName, dirPath string) error {
 		}
 		return nil
 	})
+}
+
+// DefaultRouterCSVDir 返回 router CSV 默认目录（可用 SATELLITE_ROUTER_CSV_DIR 覆盖）。
+func DefaultRouterCSVDir() string {
+	if v := os.Getenv("SATELLITE_ROUTER_CSV_DIR"); v != "" {
+		return v
+	}
+	return filepath.Join("..", "frontend", "public", "data", "router")
+}
+
+// RouterNodeCount 返回场景下 router_nodes 行数。
+func RouterNodeCount(db *gorm.DB, scenarioName string) (int64, error) {
+	var count int64
+	err := db.Raw(`
+		SELECT COUNT(*) FROM public.router_nodes rn
+		INNER JOIN public.scenarios s ON s.id = rn.scenario_id
+		WHERE s.name = ?`, scenarioName).Scan(&count).Error
+	return count, err
+}
+
+// EnsureRouterImported 若 DB 无路由节点则从 CSV 导入；返回是否执行了导入。
+func EnsureRouterImported(db *gorm.DB, scenarioName, dirPath string) (bool, error) {
+	count, err := RouterNodeCount(db, scenarioName)
+	if err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return false, nil
+	}
+	if dirPath == "" {
+		dirPath = DefaultRouterCSVDir()
+	}
+	if _, err := os.Stat(dirPath); err != nil {
+		return false, fmt.Errorf("router csv dir: %w", err)
+	}
+	if err := ImportRouterFromCSV(db, scenarioName, dirPath); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 

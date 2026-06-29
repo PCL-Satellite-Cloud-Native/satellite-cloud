@@ -246,7 +246,10 @@ function resetClockToStart() {
 
 async function assetExists(url) {
   try {
-    const resp = await fetch(url, { method: 'HEAD' })
+    let resp = await fetch(url, { method: 'HEAD' })
+    if (resp.ok) return true
+    // 部分 Nginx/网关对 HEAD 支持不完整，回退 GET
+    resp = await fetch(url, { method: 'GET', cache: 'no-store' })
     return resp.ok
   } catch {
     return false
@@ -261,77 +264,85 @@ async function loadImageryMeta() {
   return null
 }
 
-async function hasRealLocalImagery() {
-  const meta = await loadImageryMeta()
-  if (meta?.source && meta.source !== 'synthetic') return true
-  if (await assetExists('/tiles/earth-hd/tilemapresource.xml')) {
-    try {
-      const resp = await fetch('/assets/earth_hd.jpg', { method: 'HEAD' })
-      if (resp.ok) {
-        const len = Number(resp.headers.get('content-length') || 0)
-        return len >= 80_000
-      }
-    } catch {}
-  }
-  return false
+function labelFromMeta(meta, fallback) {
+  if (!meta?.source || meta.source === 'synthetic') return fallback
+  if (meta.source === 'blue-marble' || meta.source === 'local') return 'hd-tiles'
+  if (meta.source === 'natural-earth') return 'natural-earth'
+  return fallback
 }
 
+/** 按优先级尝试底图；某一源加载失败时自动回退下一项 */
 async function setupOfflineImagery(v) {
   v.imageryLayers.removeAll()
-  try {
-    if (MAP_TILES_URL) {
-      const url = MAP_TILES_URL.includes('{z}')
-        ? MAP_TILES_URL
-        : `${MAP_TILES_URL.replace(/\/$/, '')}/{z}/{x}/{y}.png`
-      v.imageryLayers.addImageryProvider(
-        new Cesium.UrlTemplateImageryProvider({
-          url,
-          minimumLevel: 0,
-          maximumLevel: 18,
-        })
-      )
-      imagerySource.value = 'xyz-tiles'
-      return
-    }
+  const meta = await loadImageryMeta()
 
-    const realLocal = await hasRealLocalImagery()
-    const meta = await loadImageryMeta()
+  const candidates = []
 
-    if (realLocal && (await assetExists('/tiles/earth-hd/tilemapresource.xml'))) {
-      v.imageryLayers.addImageryProvider(
-        new Cesium.TileMapServiceImageryProvider({ url: '/tiles/earth-hd' })
-      )
-      if (meta?.source === 'blue-marble' || meta?.source === 'local') {
-        imagerySource.value = 'hd-tiles'
-      } else if (meta?.source === 'natural-earth') {
-        imagerySource.value = 'natural-earth'
-      } else {
-        imagerySource.value = 'hd-tiles'
-      }
-      return
-    }
-
-    if (realLocal && (await assetExists('/assets/earth_hd.jpg'))) {
-      v.imageryLayers.addImageryProvider(
-        new Cesium.SingleTileImageryProvider({
-          url: '/assets/earth_hd.jpg',
-          rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
-        })
-      )
-      imagerySource.value = meta?.source === 'natural-earth' ? 'natural-earth' : 'hd-single'
-      return
-    }
-
-    v.imageryLayers.addImageryProvider(
-      new Cesium.TileMapServiceImageryProvider({
-        url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
-      })
-    )
-    imagerySource.value = 'natural-earth'
-  } catch (e) {
-    console.warn('底图加载失败', e)
-    imagerySource.value = 'failed'
+  if (MAP_TILES_URL) {
+    const url = MAP_TILES_URL.includes('{z}')
+      ? MAP_TILES_URL
+      : `${MAP_TILES_URL.replace(/\/$/, '')}/{z}/{x}/{y}.png`
+    candidates.push({
+      label: 'xyz-tiles',
+      create: () => new Cesium.UrlTemplateImageryProvider({
+        url,
+        minimumLevel: 0,
+        maximumLevel: 18,
+      }),
+    })
   }
+
+  if (await assetExists('/assets/earth_hd.jpg')) {
+    candidates.push({
+      label: labelFromMeta(meta, 'hd-single'),
+      create: () => new Cesium.SingleTileImageryProvider({
+        url: '/assets/earth_hd.jpg',
+        rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
+      }),
+    })
+  }
+
+  if (await assetExists('/tiles/earth-hd/tilemapresource.xml')) {
+    candidates.push({
+      label: labelFromMeta(meta, 'hd-tiles'),
+      create: () => new Cesium.TileMapServiceImageryProvider({ url: '/tiles/earth-hd' }),
+    })
+  }
+
+  candidates.push({
+    label: 'natural-earth',
+    create: () => new Cesium.TileMapServiceImageryProvider({
+      url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
+    }),
+  })
+
+  let idx = 0
+  const tryNext = () => {
+    if (idx >= candidates.length) {
+      imagerySource.value = 'failed'
+      console.warn('所有底图源均不可用')
+      return
+    }
+    const { label, create } = candidates[idx++]
+    try {
+      const provider = create()
+      const layer = v.imageryLayers.addImageryProvider(provider)
+      imagerySource.value = label
+
+      const onError = (err) => {
+        provider.errorEvent.removeEventListener(onError)
+        console.warn(`底图 ${label} 加载失败，尝试下一源`, err)
+        v.imageryLayers.remove(layer, false)
+        tryNext()
+      }
+      provider.errorEvent.addEventListener(onError)
+    } catch (err) {
+      console.warn(`底图 ${label} 初始化失败`, err)
+      tryNext()
+    }
+  }
+
+  tryNext()
 }
 
 function applyClockMultiplier() {

@@ -12,6 +12,9 @@ COPY . .
 ARG VITE_GRAFANA_URL
 ENV VITE_GRAFANA_URL=$VITE_GRAFANA_URL
 
+# 若仓库未提交瓦片包，构建阶段尝试生成（需 sharp，失败不阻断构建）
+RUN npm run prepare:tiles || true
+
 # 构建静态文件
 RUN npm run build
 
@@ -23,8 +26,7 @@ WORKDIR /usr/share/nginx/html
 
 COPY --from=builder /app/dist/ .
 
-# 可选：自定义 Nginx 配置（例如单页应用路由）
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

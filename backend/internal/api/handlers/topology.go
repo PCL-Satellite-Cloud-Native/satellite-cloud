@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"satellite-cloud/backend/internal/pilotcluster"
+	topoimport "satellite-cloud/backend/internal/topology"
 )
 
 type TopologyHandler struct {
@@ -250,7 +252,11 @@ func applyPilotClusterDelay(edges []DelayEdge) []DelayEdge {
 
 // RouterGraphNode 与 RouterGraphEdge 用于 2D 拓扑图 API。
 type RouterGraphNode struct {
-	Name string `json:"name"`
+	Name     string `json:"name"`
+	SatID    string `json:"sat_id"`
+	Hop      int    `json:"hop"`
+	Orbit    int    `json:"orbit,omitempty"`
+	IsCenter bool   `json:"is_center,omitempty"`
 }
 type RouterGraphEdge struct {
 	Source string `json:"source"`
@@ -276,17 +282,123 @@ func (h *TopologyHandler) TopologyRouterHandler(c *gin.Context) {
 		scenarioName = "Scenario5_full_36x22"
 	}
 
-	nodes, edges, layoutNodes, err := loadRouterGraphFromDB(h.db, scenarioName, center)
+	if imported, impErr := topoimport.EnsureRouterImported(h.db, scenarioName, topoimport.DefaultRouterCSVDir()); impErr != nil {
+		h.logger.Warn("Router DB lazy-import failed", zap.Error(impErr))
+	} else if imported {
+		h.logger.Info("Router topology lazy-imported from CSV into DB", zap.String("scenario", scenarioName))
+	}
+
+	nodes, edges, layoutNodes, centerRouter, err := loadRouterGraphFromDB(h.db, scenarioName, center)
 	if err != nil {
 		h.logger.Error("Failed to load router graph from DB", zap.Error(err))
 		c.JSON(500, gin.H{"error": "Failed to load router topology"})
 		return
 	}
+	dataSource := "db"
+	if len(nodes) == 0 {
+		csvNodes, csvEdges, csvLayouts, csvCenter, csvErr := loadRouterGraphFromCSV(center, routerDataBaseDir())
+		if csvErr != nil {
+			h.logger.Warn("Router CSV fallback failed", zap.Error(csvErr))
+		} else if len(csvNodes) > 0 {
+			nodes, edges, layoutNodes, centerRouter = csvNodes, csvEdges, csvLayouts, csvCenter
+			dataSource = "csv"
+		}
+	}
+	centerSatID := ""
+	if n, ok := nodes[centerRouter]; ok {
+		centerSatID = n.SatID
+	}
+
 	c.JSON(200, gin.H{
-		"nodes":   nodes,
-		"edges":   edges,
-		"layouts": gin.H{"nodes": layoutNodes},
+		"center":        centerRouter,
+		"center_sat_id": centerSatID,
+		"data_source":   dataSource,
+		"nodes":         nodes,
+		"edges":         edges,
+		"layouts":       gin.H{"nodes": layoutNodes},
 	})
+}
+
+// RouterDirectLinkJSON 路由 CSV/DB 中的 1 跳 ISL 直连（sat_id 对）。
+type RouterDirectLinkJSON struct {
+	SrcSatID   string `json:"src_sat_id"`
+	DstSatID   string `json:"dst_sat_id"`
+	CrossOrbit bool   `json:"cross_orbit"`
+}
+
+// TopologyRouterLinksHandler 返回场景内全部路由直连边（与 net_qos.csv 一致，非 BFS 子网）。
+//
+// GET /api/topology/router-links?scenario_name=Scenario5_full_36x22
+func (h *TopologyHandler) TopologyRouterLinksHandler(c *gin.Context) {
+	scenarioName := strings.TrimSpace(c.Query("scenario_name"))
+	if scenarioName == "" {
+		scenarioName = "Scenario5_full_36x22"
+	}
+
+	if imported, impErr := topoimport.EnsureRouterImported(h.db, scenarioName, topoimport.DefaultRouterCSVDir()); impErr != nil {
+		h.logger.Warn("Router DB lazy-import failed", zap.Error(impErr))
+	} else if imported {
+		h.logger.Info("Router topology lazy-imported from CSV into DB", zap.String("scenario", scenarioName))
+	}
+
+	routerToSat, adj, err := loadRouterAdjacencyFromDB(h.db, scenarioName)
+	if err != nil {
+		h.logger.Error("Failed to load router adjacency from DB", zap.Error(err))
+		c.JSON(500, gin.H{"error": "Failed to load router links"})
+		return
+	}
+	dataSource := "db"
+	if len(routerToSat) == 0 {
+		routerToSat, adj, err = loadRouterAdjacencyFromCSV(routerDataBaseDir())
+		if err != nil {
+			h.logger.Warn("Router CSV adjacency fallback failed", zap.Error(err))
+		} else if len(routerToSat) > 0 {
+			dataSource = "csv"
+		}
+	}
+
+	c.JSON(200, gin.H{
+		"data_source": dataSource,
+		"links":       collectRouterDirectLinks(routerToSat, adj),
+	})
+}
+
+func collectRouterDirectLinks(routerToSat map[string]string, adj map[string][]string) []RouterDirectLinkJSON {
+	seen := make(map[string]struct{})
+	out := make([]RouterDirectLinkJSON, 0, len(adj)*2)
+	for src, dsts := range adj {
+		srcSat := routerToSat[src]
+		if srcSat == "" {
+			continue
+		}
+		for _, dst := range dsts {
+			dstSat := routerToSat[dst]
+			if dstSat == "" || srcSat == dstSat {
+				continue
+			}
+			a, b := srcSat, dstSat
+			if a > b {
+				a, b = b, a
+			}
+			key := a + "|" + b
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, RouterDirectLinkJSON{
+				SrcSatID:   a,
+				DstSatID:   b,
+				CrossOrbit: orbitFromRouterID(src) != orbitFromRouterID(dst),
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SrcSatID != out[j].SrcSatID {
+			return out[i].SrcSatID < out[j].SrcSatID
+		}
+		return out[i].DstSatID < out[j].DstSatID
+	})
+	return out
 }
 
 // -------------------------------
@@ -534,18 +646,33 @@ func loadRouterGraphFromDB(db *gorm.DB, scenarioName, center string) (
 	nodes map[string]RouterGraphNode,
 	edges map[string]RouterGraphEdge,
 	layoutNodes map[string]RouterGraphLayoutNode,
+	centerRouter string,
 	err error,
 ) {
 	nodes = make(map[string]RouterGraphNode)
 	edges = make(map[string]RouterGraphEdge)
 	layoutNodes = make(map[string]RouterGraphLayoutNode)
 
+	routerToSat, adj, err := loadRouterAdjacencyFromDB(db, scenarioName)
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
+	if len(routerToSat) == 0 {
+		return nodes, edges, layoutNodes, "", nil
+	}
+	return buildRouterGraph(center, routerToSat, adj)
+}
+
+func loadRouterAdjacencyFromDB(db *gorm.DB, scenarioName string) (routerToSat map[string]string, adj map[string][]string, err error) {
+	routerToSat = make(map[string]string)
+	adj = make(map[string][]string)
+
 	var scenarioID int64
 	if err := db.Raw(`SELECT id FROM public.scenarios WHERE name = ? LIMIT 1`, scenarioName).Scan(&scenarioID).Error; err != nil {
-		return nil, nil, nil, fmt.Errorf("query scenario: %w", err)
+		return nil, nil, fmt.Errorf("query scenario: %w", err)
 	}
 	if scenarioID == 0 {
-		return nodes, edges, layoutNodes, nil
+		return routerToSat, adj, nil
 	}
 
 	type routerNodeRow struct {
@@ -558,23 +685,116 @@ func loadRouterGraphFromDB(db *gorm.DB, scenarioName, center string) (
 	}
 	var nodeRows []routerNodeRow
 	if err := db.Raw(`SELECT router_id, sat_id FROM public.router_nodes WHERE scenario_id = ?`, scenarioID).Scan(&nodeRows).Error; err != nil {
-		return nil, nil, nil, fmt.Errorf("query router_nodes: %w", err)
+		return nil, nil, fmt.Errorf("query router_nodes: %w", err)
 	}
-	routerToSat := make(map[string]string)
 	for _, r := range nodeRows {
 		routerToSat[r.RouterID] = r.SatID
 	}
 
 	var linkRows []routerLinkRow
 	if err := db.Raw(`SELECT src_router, dst_router FROM public.router_links WHERE scenario_id = ?`, scenarioID).Scan(&linkRows).Error; err != nil {
-		return nil, nil, nil, fmt.Errorf("query router_links: %w", err)
+		return nil, nil, fmt.Errorf("query router_links: %w", err)
 	}
-	adj := make(map[string][]string)
 	for _, l := range linkRows {
 		adj[l.Src] = append(adj[l.Src], l.Dst)
 	}
+	return routerToSat, adj, nil
+}
 
-	centerRouter := center
+var routerCSVPattern = regexp.MustCompile(`^r(\d{3})(\d{3})_net_qos\.csv$`)
+
+func routerDataBaseDir() string {
+	return topoimport.DefaultRouterCSVDir()
+}
+
+// loadRouterGraphFromCSV DB 无数据时从 r*_net_qos.csv 构建路由子网（与 topology/importer 约定一致）。
+func loadRouterGraphFromCSV(center, dirPath string) (
+	nodes map[string]RouterGraphNode,
+	edges map[string]RouterGraphEdge,
+	layoutNodes map[string]RouterGraphLayoutNode,
+	centerRouter string,
+	err error,
+) {
+	routerToSat, adj, err := loadRouterAdjacencyFromCSV(dirPath)
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
+	if len(routerToSat) == 0 {
+		return make(map[string]RouterGraphNode), make(map[string]RouterGraphEdge), make(map[string]RouterGraphLayoutNode), "", nil
+	}
+	return buildRouterGraph(center, routerToSat, adj)
+}
+
+func loadRouterAdjacencyFromCSV(dirPath string) (routerToSat map[string]string, adj map[string][]string, err error) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read router dir: %w", err)
+	}
+
+	routerToSat = make(map[string]string)
+	adj = make(map[string][]string)
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		m := routerCSVPattern.FindStringSubmatch(e.Name())
+		if m == nil {
+			continue
+		}
+		plane, _ := strconv.Atoi(m[1])
+		slot, _ := strconv.Atoi(m[2])
+		routerID := "r" + m[1] + m[2]
+		satID := fmt.Sprintf("sat-%d-%d", plane, slot)
+		routerToSat[routerID] = satID
+
+		path := filepath.Join(dirPath, e.Name())
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		r := csv.NewReader(f)
+		r.TrimLeadingSpace = true
+		recs, readErr := r.ReadAll()
+		f.Close()
+		if readErr != nil || len(recs) < 2 {
+			continue
+		}
+		colIdx := -1
+		for i, h := range recs[0] {
+			if strings.TrimSpace(h) == "直连节点" {
+				colIdx = i
+				break
+			}
+		}
+		if colIdx < 0 {
+			continue
+		}
+		for i := 1; i < len(recs); i++ {
+			if colIdx >= len(recs[i]) {
+				continue
+			}
+			dst := strings.TrimSpace(recs[i][colIdx])
+			if dst != "" && dst != routerID {
+				adj[routerID] = append(adj[routerID], dst)
+			}
+		}
+	}
+	return routerToSat, adj, nil
+}
+
+func buildRouterGraph(center string, routerToSat map[string]string, adj map[string][]string) (
+	nodes map[string]RouterGraphNode,
+	edges map[string]RouterGraphEdge,
+	layoutNodes map[string]RouterGraphLayoutNode,
+	centerRouter string,
+	err error,
+) {
+	nodes = make(map[string]RouterGraphNode)
+	edges = make(map[string]RouterGraphEdge)
+	layoutNodes = make(map[string]RouterGraphLayoutNode)
+
+	centerRouter = center
 	if strings.HasPrefix(center, "sat-") {
 		for rid, sid := range routerToSat {
 			if sid == center {
@@ -583,13 +803,20 @@ func loadRouterGraphFromDB(db *gorm.DB, scenarioName, center string) (
 			}
 		}
 		if centerRouter == center {
-			return nodes, edges, layoutNodes, nil
+			return nodes, edges, layoutNodes, "", nil
 		}
+	} else if _, ok := routerToSat[center]; !ok {
+		return nodes, edges, layoutNodes, "", nil
 	}
 
-	// BFS, max 16 hops
+	// BFS, max 16 hops — 记录每节点跳数
+	hopByRouter := make(map[string]int)
 	reachable := make(map[string]struct{})
-	queue := []struct{ r string; hops int }{{centerRouter, 0}}
+	queue := []struct {
+		r    string
+		hops int
+	}{{centerRouter, 0}}
+	hopByRouter[centerRouter] = 0
 	reachable[centerRouter] = struct{}{}
 	for len(queue) > 0 {
 		cur := queue[0]
@@ -602,7 +829,11 @@ func loadRouterGraphFromDB(db *gorm.DB, scenarioName, center string) (
 				continue
 			}
 			reachable[next] = struct{}{}
-			queue = append(queue, struct{ r string; hops int }{next, cur.hops + 1})
+			hopByRouter[next] = cur.hops + 1
+			queue = append(queue, struct {
+				r    string
+				hops int
+			}{next, cur.hops + 1})
 		}
 	}
 
@@ -612,7 +843,13 @@ func loadRouterGraphFromDB(db *gorm.DB, scenarioName, center string) (
 			satID = r
 		}
 		display := pilotcluster.Current().SatName(satID)
-		nodes[r] = RouterGraphNode{Name: display}
+		nodes[r] = RouterGraphNode{
+			Name:     display,
+			SatID:    satID,
+			Hop:      hopByRouter[r],
+			Orbit:    orbitFromRouterID(r),
+			IsCenter: r == centerRouter,
+		}
 	}
 
 	added := make(map[string]struct{})
@@ -630,40 +867,77 @@ func loadRouterGraphFromDB(db *gorm.DB, scenarioName, center string) (
 				continue
 			}
 			added[key] = struct{}{}
-			edges["edge"+strconv.Itoa(eid)] = RouterGraphEdge{Source: src, Target: tgt, Label: "Link"}
+			label := ""
+			if orbitFromRouterID(src) != orbitFromRouterID(tgt) {
+				label = "跨轨"
+			}
+			edges["edge"+strconv.Itoa(eid)] = RouterGraphEdge{Source: src, Target: tgt, Label: label}
 			eid++
 		}
 	}
 
-	orbitGroups := map[string][]string{"001": nil, "002": nil, "003": nil}
-	for r := range reachable {
-		if len(r) >= 4 {
-			o := r[1:4]
-			if orbitGroups[o] != nil {
-				orbitGroups[o] = append(orbitGroups[o], r)
-			}
-		}
-	}
-	cx, cy := 0.0, 0.0
-	cfg := map[string]struct{ r float64; off float64 }{
-		"001": {250, 0},
-		"002": {180, 3.141592653589793 / 6},
-		"003": {110, 3.141592653589793 / 3},
-	}
-	for o, arr := range orbitGroups {
-		if len(arr) == 0 {
-			continue
-		}
-		step := 2 * math.Pi / float64(len(arr))
-		c := cfg[o]
-		for i, r := range arr {
-			a := float64(i)*step + c.off
-			layoutNodes[r] = RouterGraphLayoutNode{
-				X: cx + c.r*math.Cos(a),
-				Y: cy + c.r*math.Sin(a),
-			}
-		}
-	}
-	return nodes, edges, layoutNodes, nil
+	// 按轨道分行布局：每轨一行，同轨内按星位从左到右
+	layoutNodes = layoutRouterGraphByOrbit(reachable)
+	return nodes, edges, layoutNodes, centerRouter, nil
 }
 
+func slotFromRouterID(routerID string) int {
+	if len(routerID) < 7 {
+		return 0
+	}
+	s, err := strconv.Atoi(routerID[4:7])
+	if err != nil {
+		return 0
+	}
+	return s
+}
+
+// layoutRouterGraphByOrbit 将可达节点按轨道分行、同轨按星位排列，便于阅读路由子网。
+func layoutRouterGraphByOrbit(reachable map[string]struct{}) map[string]RouterGraphLayoutNode {
+	const colSpacing = 100.0
+	const rowSpacing = 110.0
+
+	byOrbit := make(map[int][]string)
+	for r := range reachable {
+		orbit := orbitFromRouterID(r)
+		byOrbit[orbit] = append(byOrbit[orbit], r)
+	}
+
+	orbits := make([]int, 0, len(byOrbit))
+	for o := range byOrbit {
+		orbits = append(orbits, o)
+	}
+	sort.Ints(orbits)
+
+	layoutNodes := make(map[string]RouterGraphLayoutNode, len(reachable))
+	rowCount := len(orbits)
+	for rowIdx, orbit := range orbits {
+		arr := byOrbit[orbit]
+		sort.Slice(arr, func(i, j int) bool {
+			si, sj := slotFromRouterID(arr[i]), slotFromRouterID(arr[j])
+			if si != sj {
+				return si < sj
+			}
+			return arr[i] < arr[j]
+		})
+
+		y := (float64(rowIdx) - float64(rowCount-1)/2.0) * rowSpacing
+		colCount := len(arr)
+		for colIdx, r := range arr {
+			x := (float64(colIdx) - float64(colCount-1)/2.0) * colSpacing
+			layoutNodes[r] = RouterGraphLayoutNode{X: x, Y: y}
+		}
+	}
+	return layoutNodes
+}
+
+func orbitFromRouterID(routerID string) int {
+	if len(routerID) < 4 {
+		return 0
+	}
+	o, err := strconv.Atoi(routerID[1:4])
+	if err != nil {
+		return 0
+	}
+	return o
+}

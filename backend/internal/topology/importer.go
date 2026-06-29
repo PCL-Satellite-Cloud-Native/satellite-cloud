@@ -374,3 +374,42 @@ func ImportRouterFromCSV(db *gorm.DB, scenarioName, dirPath string) error {
 	})
 }
 
+// DefaultRouterCSVDir 返回 router CSV 默认目录（可用 SATELLITE_ROUTER_CSV_DIR 覆盖）。
+func DefaultRouterCSVDir() string {
+	if v := os.Getenv("SATELLITE_ROUTER_CSV_DIR"); v != "" {
+		return v
+	}
+	return filepath.Join("..", "frontend", "public", "data", "router")
+}
+
+// RouterNodeCount 返回场景下 router_nodes 行数。
+func RouterNodeCount(db *gorm.DB, scenarioName string) (int64, error) {
+	var count int64
+	err := db.Raw(`
+		SELECT COUNT(*) FROM public.router_nodes rn
+		INNER JOIN public.scenarios s ON s.id = rn.scenario_id
+		WHERE s.name = ?`, scenarioName).Scan(&count).Error
+	return count, err
+}
+
+// EnsureRouterImported 若 DB 无路由节点则从 CSV 导入；返回是否执行了导入。
+func EnsureRouterImported(db *gorm.DB, scenarioName, dirPath string) (bool, error) {
+	count, err := RouterNodeCount(db, scenarioName)
+	if err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return false, nil
+	}
+	if dirPath == "" {
+		dirPath = DefaultRouterCSVDir()
+	}
+	if _, err := os.Stat(dirPath); err != nil {
+		return false, fmt.Errorf("router csv dir: %w", err)
+	}
+	if err := ImportRouterFromCSV(db, scenarioName, dirPath); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+

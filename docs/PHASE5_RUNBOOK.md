@@ -1,201 +1,143 @@
 # Phase 5 运维手册（拓扑关联）
 
-> **状态（2026-06-24）**：**P5-01 实施中** — DB/API/Redis/SSE 已落地；前端高亮与调度亲和待 P5-02～04。  
+> **状态（2026-06-26）**：**Phase 5 已闭合** — 详见 [archives/2026-06-26_phase5-closure.md](./archives/2026-06-26_phase5-closure.md)  
 > **前置**：[Phase 4 归档](./archives/2026-06-24_phase4-closure.md)  
 > **方案 SSOT**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 5
 
 ---
 
-## 0. Phase 5 目标
+## 0. Phase 5 目标（已达成）
 
 | 维度 | Phase 4（已闭合） | Phase 5（本阶段） |
 |------|-------------------|-------------------|
-| 可观测 | Prometheus / Grafana / HPA | 任务 ↔ 卫星 / 场景绑定 |
-| 多 task | 同 prefix 串行 10 路 | **不同 satellite_id** 多 task 并行（调度试点） |
-| 前端 | 遥感任务页 | 拓扑页 **卫星高亮** + 产物链接 |
-| 存储 | NFS | 仍 NFS；**task 级路径隔离**（P5-05 可选）→ MinIO Phase 6 |
+| 可观测 | Prometheus / Grafana / HPA | 任务 ↔ 卫星 / 场景绑定 ✅ |
+| 多 task | 同 prefix 串行 10 路 | 不同 `satellite_id` 多 task 并行试点 ✅ |
+| 前端 | 遥感任务页 | 拓扑页卫星高亮 + STK 命名 ✅ |
+| 存储 | NFS | 仍 NFS；task 级路径隔离 **未做**（P5-05 遗留） |
 
 ---
 
-## 1. 实施路线图
-
-```mermaid
-flowchart LR
-    P501["P5-01 DB+API+Redis"]
-    P502["P5-02 前端绑定+高亮"]
-    P503["P5-03 nodeAffinity 试点"]
-    P504["P5-04 多星压测脚本"]
-    P505["P5-05 task 路径隔离"]
-
-    P501 --> P502 --> P503 --> P504
-    P504 --> P505
-```
+## 1. 实施路线图（归档快照）
 
 | ID | 内容 | 状态 | 产出 |
 |----|------|------|------|
-| **P5-01** | `scenario_id` / `satellite_id` 入库 + API + Redis + SSE | ✅ 代码 | migration `000008` |
-| **P5-02** | 遥感创建表单选星；拓扑页 completed 高亮 | ⏳ | `RemoteSensing.vue` / `SatTopology` |
-| **P5-03** | rs-worker `nodeAffinity`（`satellite.io/id`） | ⏳ | k8s patch / Helm |
-| **P5-04** | 3 task × 3 不同 satellite 压测 | ⏳ | `submit_multi_satellite_tasks.sh` |
-| **P5-05** | NFS 按 `task_id` 隔离中间产物 | ⏳ 可选 | 解锁同 prefix 并行 |
+| **P5-01** | `scenario_id` / `satellite_id` 入库 + API + Redis + SSE | ✅ | migration `000008` |
+| **P5-01b** | `host_node_name` / `executed_sat_id` | ✅ | migration `000009` |
+| **P5-02** | 遥感选星；拓扑 running 高亮；`Sat_*` 显示名 | ✅ | `RemoteSensing.vue` / `SatTopology.vue` |
+| **P5-03** | 节点标签 + Argo preferred affinity + placement | ✅ | `phase5_label_nodes.sh`、`worker-node-reader.yaml` |
+| **P5-04** | 3 task × 3 不同 satellite 压测 | ✅ | `submit_multi_satellite_tasks.sh`；定稿 **p5-multi-3sat-v4** |
+| **P5-05** | NFS 按 `task_id` 隔离 | ⏸ 遗留 | 见 §6 |
 
 ---
 
-## 2. P5-01 已交付（backend）
+## 2. API 速查（仍有效）
 
-### 2.1 数据库
-
-迁移 `backend/migrations/000008_remote_sensing_task_topology.up.sql`：
-
-- `remote_sensing_tasks.scenario_id` → `scenarios(id)`
-- `remote_sensing_tasks.satellite_id` → `satellites(id)`
-
-部署后 backend 启动时自动 migrate，或：
-
-```bash
-# 由 satellite-backend rollout 触发；手动确认：
-kubectl -n gitlab-runner logs deploy/satellite-backend --tail=30 | grep -i migrat
-```
-
-### 2.2 创建任务 API
+### 2.1 创建任务
 
 ```http
 POST /api/remote-sensing/tasks
 Content-Type: application/json
 
 {
-  "name": "p5-test-sat-3",
   "filePrefix": "GF2_PMS1_E118.6_N37.4_20160826_L1A0001792619",
   "inputDirectory": "input",
-  "sensor": "GF2",
-  "enableDetection": true,
-  "scenarioId": 1,
-  "satelliteId": 42
+  "scenarioId": 2,
+  "satelliteId": 4,
+  "enableDetection": true
 }
 ```
 
-- `scenarioId` / `satelliteId` **可选**（兼容旧客户端）
-- 若同时提供：校验 satellite 属于 scenario
-- `satelliteId` 为 **`satellites.id`（表主键）**，非 `sat_id` 字符串
+- `satelliteId` = `satellites.id`（DB 主键），非 `sat-1-1` 字符串
+- **`satellite_id`**：用户指定绑定；**`executed_sat_id`**：rs-worker 实际所在节点（二者可不同）
 
-### 2.3 列表过滤
-
-```http
-GET /api/remote-sensing/tasks?satellite_id=42
-GET /api/remote-sensing/tasks?scenario_id=1&status=completed
-```
-
-### 2.4 Redis / SSE
-
-- `rs.jobs` / `od.jobs` payload 含 `satellite_id`（与方案 §6 一致）
-- SSE `task.completed` 事件含 `satellite_id`、`scenario_id`（供前端高亮）
-
-### 2.5 验收 P5-01
+### 2.2 拓扑 API
 
 ```bash
-# 查场景与卫星 id（示例）
-curl -s http://127.0.0.1:8080/api/scenarios | jq '.[0].id'
-curl -s 'http://127.0.0.1:8080/api/satellites?scenario_id=1' | jq '.[0] | {id,sat_id}'
+curl -s http://<backend>/api/topology/t0 | jq 'length'          # Pilot 下期望 15
+curl -s http://<backend>/api/topology/pilot-map | jq '.nodes | length'
+curl -s http://<backend>/api/topology/delay
+curl -s 'http://<backend>/api/topology/router?center=sat-1-1'
+```
 
-# 创建带绑定的任务
-curl -s -X POST http://127.0.0.1:8080/api/remote-sensing/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{"filePrefix":"GF2_PMS1_E118.6_N37.4_20160826_L1A0001792619","inputDirectory":"input","scenarioId":1,"satelliteId":42,"enableDetection":true}' | jq '{id,satellite_id,scenario_id}'
+### 2.3 集群一次性配置
 
-# 完成后 GET task 应仍含 satellite_id
+```bash
+bash scripts/phase5_label_nodes.sh --apply
+kubectl apply -f k8s/phase5/worker-node-reader.yaml
+kubectl get nodes -L satellite.io/id
 ```
 
 ---
 
-## 3. P5-02 前端（待实施）
+## 3. 压测脚本（P5-04）
+
+```bash
+# 自动从 pilot-map 选 N 颗不同星
+bash scripts/submit_multi_satellite_tasks.sh \
+  --run-id p5-multi-$(date +%m%d) \
+  --api-base http://127.0.0.1:8080 \
+  --scenario-id 2 \
+  --count 3
+
+# 手动指定 DB 主键（推荐验收）
+bash scripts/submit_multi_satellite_tasks.sh \
+  --run-id p5-multi-3sat \
+  --api-base http://127.0.0.1:8080 \
+  --scenario-id 2 \
+  --satellite-ids 4,26,48
+```
+
+**警告**：同 `filePrefix` 并行仍可能 NFS 冲突（P5-05 未完成前谨慎解读）。
+
+---
+
+## 4. 命名约定
+
+| 层级 | 格式 | 示例 |
+|------|------|------|
+| 页面显示 | `Sat_{p}_{s}`（STK） | `Sat_1_1` |
+| 业务 ID | `sat-{p}-{s}` | `sat-1-1` |
+| K8s 标签 | `satellite.io/id` | `sat-1-1` |
+| 部署节点 | K8s 主机名 | `k8s-worker11` |
+
+SSOT：`backend/internal/pilotcluster/pilot-map.json`
+
+---
+
+## 5. 临时：星历 ID 桥接
+
+Pilot `sat-1-1` 与 DB/CSV 星历 `Sat_6_6…Sat_8_10` 不一致时，API 用 **+5/+5** 偏移取坐标。
 
 | 项 | 说明 |
 |----|------|
-| `RemoteSensing.vue` | 场景下拉 + 卫星下拉（`GET /api/satellites?scenario_id=`） |
-| 任务列表 | 展示 `satellite_id` / 卫星名称 |
-| `SatTopology.vue` / `SatelliteViewer.vue` | 监听 SSE 或轮询 completed task → **高亮对应 sat** |
-| v1 范围 | 高亮 + 点击跳转遥感产物；**不做 footprint  polygon（v2）** |
+| 代码 | `backend/internal/pilotcluster/ephem.go` |
+| 归档 | [archives/2026-06-11_phase5-ephem-id-bridge.md](./archives/2026-06-11_phase5-ephem-id-bridge.md) |
+| 退役 | STK 重新 import 后按归档 §6 删除桥接 |
 
 ---
 
-## 4. P5-03 调度亲和（待实施）
+## 6. P5-05 遗留（task 路径隔离）
 
-目标：task 绑定 `satellite_id` 后，rs-worker Pod 带：
-
-```yaml
-affinity:
-  nodeAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
-      - weight: 100
-        preference:
-          matchExpressions:
-            - key: satellite.io/id
-              operator: In
-              values: ["<sat_id 或 satellites 表映射>"]
-```
-
-**Pilot**：15 Node 环境可先 **preferred**（软亲和），日志记录实际 `hostNodeName`。
-
----
-
-## 5. P5-04 多星压测（待实施）
-
-不同于 Phase 4「同 prefix 串行 10 路」：
-
-- **3 个 task、3 个不同 `satelliteId`、同一 filePrefix**
-- 预期：3 路 **running 重叠** 且无 NFS path 冲突（仍共享 prefix 时有风险 → 配合 P5-05 或不同 prefix）
-
-脚本草案：`scripts/submit_multi_satellite_tasks.sh`
-
----
-
-## 6. P5-05 task 路径隔离（可选，建议 Phase 5 内完成）
-
-Phase 4 结论：同 `filePrefix` 并行必冲突。隔离方案：
+Phase 4 结论：同 `filePrefix` 并行写 NFS 可能冲突。隔离方案：
 
 ```
 persist_output_preprocessing/tasks/{task_id}/pan_warp_quarters/...
 output_preprocessing/tasks/{task_id}/...
 ```
 
-改动面：`service.go` 各 stage 路径、Argo Workflow 参数、`pan_rpc_argo.go` 不再全局 `RemoveAll(workers/)`。
-
-完成后：`max-in-flight>1` 同景压测可重测。
+完成后可重测同 prefix 多路并行。详见 closure 归档 §5。
 
 ---
 
-## 7. 与 Phase 6（MinIO）关系
-
-| 先做 | 后做 |
-|------|------|
-| P5-01～04 拓扑绑定 + 多星调度叙事 | MinIO 对象存储 |
-| P5-05 task 路径（仍在 POSIX 路径上） | `ArtifactStorage` 抽象 → S3 |
-
-MinIO **不替代** task 隔离设计；二者正交。
-
----
-
-## 8. 相关路径
+## 7. 相关路径
 
 | 路径 | 说明 |
 |------|------|
-| `backend/migrations/000008_*` | 拓扑字段迁移 |
-| `backend/internal/remotesensing/service.go` | CreateTask / SSE |
+| [archives/2026-06-26_phase5-closure.md](./archives/2026-06-26_phase5-closure.md) | **Phase 5 收口归档** |
+| `backend/internal/pilotcluster/` | Pilot 映射 |
 | `frontend/src/view/SatTopology.vue` | 拓扑主视图 |
 | [PHASE4_RUNBOOK.md](./PHASE4_RUNBOOK.md) | Phase 4（只读） |
 
 ---
 
-## 9. 临时：星历 ID 桥接（待 STK 更新后回滚）
-
-Pilot 业务 ID（`sat-1-1`）与当前 DB/CSV 星历（`Sat_6_6…Sat_8_10`）不一致时，API 通过 **+5/+5 偏移** 取坐标渲染拓扑。
-
-| 项 | 说明 |
-|----|------|
-| 代码 | `backend/internal/pilotcluster/ephem.go`、`topology.go` |
-| 归档与回滚 | [archives/2026-06-11_phase5-ephem-id-bridge.md](./archives/2026-06-11_phase5-ephem-id-bridge.md) |
-| 退役条件 | STK 重新 export/import，`sat_id` 与 `Sat_{p}_{s}` 一一对应后按归档 §6 删除桥接 |
-
----
-
-*P5-01 合并并部署 backend 后，按 §2.5 验收；随后实施 P5-02 前端。*
+*Phase 5 已闭合；后续变更请更新 closure 归档或新建 Phase 5+ 文档，勿无限扩写本文。*

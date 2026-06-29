@@ -223,17 +223,17 @@
 
 ---
 
-### 阶段 5 — 拓扑关联（进行中）
+### 阶段 5 — 拓扑关联（已闭合）
 
-**状态（2026-06-24）**：**P5-01 已实施** — [PHASE5_RUNBOOK.md](./PHASE5_RUNBOOK.md)。
+**状态（2026-06-26）**：**Phase 5 全量闭合** — [archives/2026-06-26_phase5-closure.md](./archives/2026-06-26_phase5-closure.md)、[PHASE5_RUNBOOK.md](./PHASE5_RUNBOOK.md)（只读）。
 
 | 项 | 内容 |
 |----|------|
-| DB | `remote_sensing_tasks.satellite_id`、`scenario_id`（migration 000008） |
-| API | CreateTask `scenarioId` / `satelliteId`；List 过滤 |
-| 事件 | SSE completed 含拓扑字段 |
-| 前端 / 调度 | P5-02～04 待实施 |
-| task 路径隔离 | P5-05 可选（同 prefix 并行前置） |
+| DB | `scenario_id` / `satellite_id`（000008）；`executed_sat_id` / `host_node_name`（000009） |
+| API / 前端 | 选星、拓扑高亮、Pilot 15 星、`Sat_*` 显示名 |
+| 调度试点 | 节点标签 + Argo preferred affinity + 执行落点记录 |
+| 压测定稿 | **p5-multi-3sat-v4**（task 196–198，3/3 completed） |
+| 遗留 | **P5-05** NFS 隔离；rs-worker 多节点硬亲和；STK 桥接退役 |
 
 ---
 

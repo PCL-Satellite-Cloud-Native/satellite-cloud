@@ -30,9 +30,7 @@ func (s *RemoteSensingService) recordTaskPlacement(ctx context.Context, taskID u
 	}
 	if p.ExecutedSatID != "" {
 		updates["executed_sat_id"] = p.ExecutedSatID
-		if satPK := s.lookupSatellitePKBySatID(ctx, p.ExecutedSatID); satPK != nil {
-			updates["satellite_id"] = *satPK
-		}
+		// satellite_id 保留创建任务时用户指定的绑定，勿用 executed_sat_id 覆盖。
 	}
 
 	if err := s.db.WithContext(ctx).Model(&model.RemoteSensingTask{}).
@@ -57,13 +55,4 @@ func (s *RemoteSensingService) recordTaskPlacement(ctx context.Context, taskID u
 		UpdatedAt:     now,
 	}
 	s.publishStageEvent(taskID, s.eventWithTaskTopology(taskID, event))
-}
-
-func (s *RemoteSensingService) lookupSatellitePKBySatID(ctx context.Context, satID string) *uint {
-	var sat model.Satellite
-	if err := s.db.WithContext(ctx).Select("id").Where("sat_id = ?", satID).First(&sat).Error; err != nil {
-		return nil
-	}
-	id := sat.ID
-	return &id
 }

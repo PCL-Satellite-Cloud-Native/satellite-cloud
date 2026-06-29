@@ -206,10 +206,10 @@ while (( SECONDS < deadline )); do
 done
 
 {
-  echo "run_id,task_id,satellite_id,scenario_id,status"
+  echo "run_id,task_id,satellite_id,executed_sat_id,host_node_name,scenario_id,status"
   for tid in "${TASK_IDS[@]}"; do
     body="$(curl -sf "${API_BASE}/api/remote-sensing/tasks/${tid}")"
-    echo "${RUN_ID},${tid},$(echo "${body}" | jq -r '.satellite_id'),$(echo "${body}" | jq -r '.scenario_id'),$(echo "${body}" | jq -r '.status')"
+    echo "${RUN_ID},${tid},$(echo "${body}" | jq -r '.satellite_id'),$(echo "${body}" | jq -r '.executed_sat_id // ""'),$(echo "${body}" | jq -r '.host_node_name // ""'),$(echo "${body}" | jq -r '.scenario_id'),$(echo "${body}" | jq -r '.status')"
   done
 } > "${OUT_DIR}/summary.csv"
 

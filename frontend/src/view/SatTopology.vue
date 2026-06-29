@@ -16,17 +16,8 @@
         <div class="h2">链路连线</div>
         <label class="check">
           <input type="checkbox" v-model="showLinks" :disabled="!ready" />
-          <span>启用连线显示</span>
+          <span>显示 ISL 直连</span>
         </label>
-
-        <div class="row2">
-          <div class="label">连线模式</div>
-          <select class="select" v-model="linkMode" :disabled="!ready || !showLinks">
-            <option value="router">路由直连 (Router CSV)</option>
-            <option value="delay">时延矩阵 (CSV定义)</option>
-          </select>
-        </div>
-
         <button class="btn wide" @click="resetView" :disabled="!ready">重置相机视图</button>
       </div>
 
@@ -43,7 +34,6 @@
             </button>
           </li>
         </ul>
-        <div class="small">3D 视图中<strong>绿色</strong>高亮 = 该卫星正在执行任务（按实际部署节点识别）。</div>
       </div>
 
       <div class="card">
@@ -54,13 +44,24 @@
           <div class="kv" v-if="selected.hostNode"><b>部署节点</b><span class="mono">{{ selected.hostNode }}</span></div>
           <div class="kv"><b>轨道 (Orbit)</b><span>{{ selected.orbit }}</span></div>
           <div class="kv"><b>槽位 (Slot)</b><span>{{ selected.slot }}</span></div>
+          <template v-if="selectedReachableDelays.length">
+            <div class="divider"></div>
+            <div class="h2">星间时延（3 跳内）</div>
+            <ul class="delay-neighbor-list">
+              <li v-for="link in selectedReachableDelays" :key="link.peerId">
+                <span class="delay-hop">h{{ link.hop }}</span>
+                <span class="delay-peer">{{ link.peerName }}</span>
+                <span class="mono delay-ms">{{ link.delayS != null ? formatDelayMs(link.delayS) : '—' }}</span>
+              </li>
+            </ul>
+          </template>
           <div class="divider"></div>
           <div class="h2">地理坐标 (LLA)</div>
           <div class="kv"><b>纬度</b><span>{{ fmt(selected.lla_Lat, 6) }}°</span></div>
           <div class="kv"><b>经度</b><span>{{ fmt(selected.lla_Lon, 6) }}°</span></div>
           <div class="kv"><b>高度</b><span>{{ fmt(selected.lla_Alt, 3) }} km</span></div>
         </div>
-        <div v-else class="small">请点击 3D 视图中的卫星节点查看详情；悬停右侧路由图可联动高亮。</div>
+        <div v-else class="small">点击 3D 卫星查看详情；选中后显示 3 跳内时延。</div>
       </div>
     </div>
 
@@ -288,7 +289,7 @@ function selectSatById(satId: string) {
     coe_TrueAnomaly: sat.coe_TrueAnomaly,
   };
   refreshAllMeshStyles();
-  if (linkMode.value === "router") buildRouterHighlightForSelected(sat.id);
+  buildSelectedNeighborhoodHighlight(sat.id);
   if (selectedRouter.value !== satId) {
     selectedRouter.value = satId;
   }
@@ -534,7 +535,6 @@ const orbitLegendOrbits = computed(() => {
 });
 
 const showLinks = ref(true);
-const linkMode = ref<"router" | "delay">("router");
 
 type RouterDirectLink = {
   src_sat_id: string;
@@ -544,8 +544,94 @@ type RouterDirectLink = {
 const routerDirectLinks = ref<RouterDirectLink[]>([]);
 
 const DELAY_CSV = "/data/delay_15x15.csv";
-const C_KM_S = 299792.458; 
+const C_KM_S = 299792.458;
+const delayDataSource = ref("");
 const delayEdges = ref<DelayEdge[]>([]);
+const DELAY_VIEW_HOPS = 3;
+
+function buildRouterAdjacency() {
+  const adj = new Map<string, string[]>();
+  for (const link of routerDirectLinks.value) {
+    const s = link.src_sat_id;
+    const d = link.dst_sat_id;
+    if (!adj.has(s)) adj.set(s, []);
+    if (!adj.has(d)) adj.set(d, []);
+    adj.get(s)!.push(d);
+    adj.get(d)!.push(s);
+  }
+  return adj;
+}
+
+function bfsWithinHops(startId: string, maxHops: number) {
+  const adj = buildRouterAdjacency();
+  const hopBy = new Map<string, number>([[startId, 0]]);
+  const prev = new Map<string, string>();
+  const queue = [startId];
+  for (let qi = 0; qi < queue.length; qi++) {
+    const cur = queue[qi];
+    const h = hopBy.get(cur)!;
+    if (h >= maxHops) continue;
+    for (const next of adj.get(cur) || []) {
+      if (hopBy.has(next)) continue;
+      hopBy.set(next, h + 1);
+      prev.set(next, cur);
+      queue.push(next);
+    }
+  }
+  return { hopBy, prev };
+}
+
+function pathDelayS(fromId: string, toId: string, prev: Map<string, string>): number | null {
+  if (fromId === toId) return 0;
+  let cur = toId;
+  let total = 0;
+  while (cur !== fromId) {
+    const p = prev.get(cur);
+    if (!p) return null;
+    const edge = lookupDelay(p, cur);
+    if (!edge) return null;
+    total += edge.delayS;
+    cur = p;
+  }
+  return total;
+}
+
+function subgraphRouterLinks(hopBy: Map<string, number>) {
+  return routerDirectLinks.value.filter(
+    (link) => hopBy.has(link.src_sat_id) && hopBy.has(link.dst_sat_id)
+  );
+}
+
+const selectedReachableDelays = computed(() => {
+  const sel = selected.value;
+  if (!sel || delayEdges.value.length === 0) return [];
+  const { hopBy, prev } = bfsWithinHops(sel.id, DELAY_VIEW_HOPS);
+  const satById = new Map(sats.value.map((s) => [s.id, s]));
+  const items: Array<{
+    peerId: string;
+    peerName: string;
+    hop: number;
+    delayS: number | null;
+  }> = [];
+
+  for (const [peerId, hop] of hopBy.entries()) {
+    if (peerId === sel.id || hop === 0) continue;
+    const peer = satById.get(peerId);
+    let delayS: number | null = null;
+    if (hop === 1) {
+      delayS = lookupDelay(sel.id, peerId)?.delayS ?? null;
+    } else {
+      delayS = pathDelayS(sel.id, peerId, prev);
+    }
+    items.push({
+      peerId,
+      peerName: peer?.displayName || satNameFromSatId(peerId),
+      hop,
+      delayS,
+    });
+  }
+  return items.sort((a, b) => a.hop - b.hop || (a.delayS ?? Infinity) - (b.delayS ?? Infinity));
+});
 
 let renderer: THREE.WebGLRenderer | null = null;
 let labelRenderer: CSS2DRenderer | null = null;
@@ -575,6 +661,77 @@ const HIGHLIGHT_RADIAL_SEG = 10;
 // 工具函数
 // ---------------------------------------------------------
 function fmt(x: number, digits: number) { return Number.isFinite(x) ? x.toFixed(digits) : "-"; }
+
+function formatDelayMs(delayS: number) {
+  const ms = delayS * 1000;
+  if (ms < 1) return `${(delayS * 1e6).toFixed(0)} µs`;
+  if (ms < 1000) return `${ms.toFixed(2)} ms`;
+  return `${delayS.toFixed(3)} s`;
+}
+
+function delayPairKey(aId: string, bId: string) {
+  return aId < bId ? `${aId}|${bId}` : `${bId}|${aId}`;
+}
+
+function lookupDelay(aId: string, bId: string): DelayEdge | undefined {
+  const key = delayPairKey(aId, bId);
+  return delayEdges.value.find((e) => delayPairKey(e.aId, e.bId) === key);
+}
+
+function pilotSatIdFromEphem(name: string) {
+  const m = name.match(/^Sat_(\d+)_(\d+)$/i);
+  if (!m) return name;
+  const orbit = Number(m[1]) - 5;
+  const slot = Number(m[2]) - 5;
+  if (orbit >= 1 && orbit <= 3 && slot >= 1 && slot <= 5) {
+    return `sat-${orbit}-${slot}`;
+  }
+  return name;
+}
+
+function parseDelayCsv(text: string): DelayEdge[] {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return [];
+  const colNames = rows[0].slice(1);
+  const edges: DelayEdge[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const rowName = (row[0] || "").trim();
+    if (!rowName) continue;
+    for (let j = 1; j < row.length && j - 1 < colNames.length; j++) {
+      const colName = (colNames[j - 1] || "").trim();
+      const v = Number(row[j]);
+      if (!colName || !Number.isFinite(v) || v === 0) continue;
+      if (rowName >= colName) continue;
+      const aId = pilotSatIdFromEphem(rowName);
+      const bId = pilotSatIdFromEphem(colName);
+      edges.push({ aId, bId, delayS: v, distKm: v * C_KM_S });
+    }
+  }
+  return edges;
+}
+
+function attachDelayLabel(
+  target: THREE.Scene | THREE.Group,
+  pa: THREE.Vector3,
+  pb: THREE.Vector3,
+  aId: string,
+  bId: string,
+  highlight = false
+) {
+  const edge = lookupDelay(aId, bId);
+  if (!edge) return;
+  const mid = new THREE.Vector3().addVectors(pa, pb).multiplyScalar(0.5);
+  const div = document.createElement("div");
+  div.className = highlight ? "edge-label edge-label--highlight" : "edge-label";
+  div.textContent = `${formatDelayMs(edge.delayS)} · ${edge.distKm.toFixed(0)} km`;
+  const obj = new CSS2DObject(div);
+  obj.position.copy(mid);
+  target.add(obj);
+  if (target === scene) {
+    delayModeLabels.push(obj);
+  }
+}
 function parseCsv(text: string): string[][] {
   const clean = (text ?? "").replace(/^\uFEFF/, "");
   const lines = clean.split(/\r?\n/).filter((l) => l.trim().length > 0);
@@ -780,23 +937,25 @@ function buildRouterDirectLinks() {
   }
 }
 
-function buildRouterHighlightForSelected(selectedId: string | null) {
+function buildSelectedNeighborhoodHighlight(selectedId: string | null) {
   if (!scene) return;
   clearDelayHighlight();
   if (!selectedId) return;
-  const satById = new Map(sats.value.map((s) => [s.id, s]));
-  const rel = routerDirectLinks.value.filter(
-    (e) => e.src_sat_id === selectedId || e.dst_sat_id === selectedId
-  );
+
+  const { hopBy } = bfsWithinHops(selectedId, DELAY_VIEW_HOPS);
+  const rel = subgraphRouterLinks(hopBy);
   if (!rel.length) return;
+
+  const satById = new Map(sats.value.map((s) => [s.id, s]));
   const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({
+  const tubeMat = new THREE.MeshStandardMaterial({
     color: HIGHLIGHT_COLOR,
     roughness: 0.35,
     metalness: 0.15,
     emissive: new THREE.Color(0x553300),
     emissiveIntensity: 0.6,
   });
+
   for (const e of rel) {
     const a = satById.get(e.src_sat_id);
     const b = satById.get(e.dst_sat_id);
@@ -805,86 +964,24 @@ function buildRouterHighlightForSelected(selectedId: string | null) {
     const pb = b.mesh.position.clone();
     const curve = new LineCurve3(pa, pb);
     const tube = new TubeGeometry(curve, HIGHLIGHT_TUBULAR_SEG, HIGHLIGHT_RADIUS, HIGHLIGHT_RADIAL_SEG, false);
-    const tubeMesh = new THREE.Mesh(tube, mat);
+    const tubeMesh = new THREE.Mesh(tube, tubeMat);
     tubeMesh.frustumCulled = false;
     group.add(tubeMesh);
+    attachDelayLabel(group, pa, pb, e.src_sat_id, e.dst_sat_id, true);
   }
+
   scene.add(group);
   delayHighlightGroup = group;
 }
-function buildDelayLinksAll() {
-  if (!scene) return;
-  const satById = new Map(sats.value.map((s) => [s.id, s]));
-  const positions: number[] = [];
-  for (const e of delayEdges.value) {
-    const a = satById.get(e.aId);
-    const b = satById.get(e.bId);
-    if (!a || !b) continue;
-    const pa = a.mesh.position;
-    const pb = b.mesh.position;
-    positions.push(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z);
-    const mid = new THREE.Vector3().addVectors(pa, pb).multiplyScalar(0.5);
-    const div = document.createElement("div");
-    div.className = "edge-label";
-    div.textContent = `delay: ${e.delayS.toFixed(6)} s\ndist: ${e.distKm.toFixed(1)} km`;
-    const obj = new CSS2DObject(div);
-    obj.position.copy(mid);
-    scene.add(obj);
-    delayModeLabels.push(obj);
-  }
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 });
-  delayLine = new THREE.LineSegments(geom, mat);
-  delayLine.frustumCulled = false;
-  scene.add(delayLine);
-}
-function buildDelayHighlightForSelected(selectedId: string | null) {
-  if (!scene) return;
-  clearDelayHighlight();
-  if (!selectedId) return;
-  const rel = delayEdges.value.filter((e) => e.aId === selectedId || e.bId === selectedId);
-  if (!rel.length) return;
-  const satById = new Map(sats.value.map((s) => [s.id, s]));
-  const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: HIGHLIGHT_COLOR, roughness: 0.35, metalness: 0.15, emissive: new THREE.Color(0x553300), emissiveIntensity: 0.6 });
-  for (const e of rel) {
-    const a = satById.get(e.aId);
-    const b = satById.get(e.bId);
-    if (!a || !b) continue;
-    const pa = a.mesh.position.clone();
-    const pb = b.mesh.position.clone();
-    const curve = new LineCurve3(pa, pb);
-    const tube = new TubeGeometry(curve, HIGHLIGHT_TUBULAR_SEG, HIGHLIGHT_RADIUS, HIGHLIGHT_RADIAL_SEG, false);
-    const tubeMesh = new THREE.Mesh(tube, mat);
-    tubeMesh.frustumCulled = false;
-    group.add(tubeMesh);
-    const mid = new THREE.Vector3().addVectors(pa, pb).multiplyScalar(0.5);
-    const div = document.createElement("div");
-    div.className = "edge-label edge-label--highlight";
-    div.textContent = `delay: ${e.delayS.toFixed(6)} s\ndist: ${e.distKm.toFixed(1)} km`;
-    const obj = new CSS2DObject(div);
-    obj.position.copy(mid);
-    group.add(obj);
-  }
-  scene.add(group);
-  delayHighlightGroup = group;
-}
+
 function rebuildLinks() {
   if (!scene) return;
   clearOrbitLinks();
   clearDelayModeLinks();
   clearDelayHighlight();
   if (!showLinks.value) return;
-  if (linkMode.value === "router") {
-    buildRouterDirectLinks();
-    buildRouterHighlightForSelected(selected.value?.id ?? null);
-    return;
-  }
-  if (linkMode.value === "delay") {
-    buildDelayLinksAll();
-    return;
-  }
+  buildRouterDirectLinks();
+  buildSelectedNeighborhoodHighlight(selected.value?.id ?? null);
 }
 
 // ... Interaction ...
@@ -903,7 +1000,7 @@ function onPointerDown(ev: PointerEvent) {
   if (!mesh) {
     selected.value = null;
     refreshAllMeshStyles();
-    if (linkMode.value === "router") buildRouterHighlightForSelected(null);
+    buildSelectedNeighborhoodHighlight(null);
     return;
   }
   const ud = mesh.userData as { id: string };
@@ -997,10 +1094,29 @@ async function loadT0() {
 async function loadDelayMatrix() {
   try {
     const res = await fetch("/api/topology/delay");
-    if (!res.ok) return;
-    const edges: DelayEdge[] = await res.json();
-    delayEdges.value = edges;
-  } catch (e) { console.error(e); }
+    if (res.ok) {
+      const data = await res.json();
+      const edges: DelayEdge[] = Array.isArray(data) ? data : (data.edges ?? []);
+      if (edges.length > 0) {
+        delayEdges.value = edges;
+        delayDataSource.value = data.data_source === "csv" ? "csv" : "db";
+        return;
+      }
+    }
+    const csvRes = await fetch(DELAY_CSV);
+    if (csvRes.ok) {
+      const parsed = parseDelayCsv(await csvRes.text());
+      if (parsed.length > 0) {
+        delayEdges.value = parsed;
+        delayDataSource.value = "csv";
+        return;
+      }
+    }
+    delayEdges.value = [];
+    delayDataSource.value = "";
+  } catch (e) {
+    console.error("加载时延矩阵失败", e);
+  }
 }
 
 async function loadRouterDirectLinks() {
@@ -1014,9 +1130,15 @@ async function loadRouterDirectLinks() {
   }
 }
 
-watch([showLinks, linkMode], () => { if (ready.value) rebuildLinks(); });
+watch(showLinks, () => { if (ready.value) rebuildLinks(); });
 watch(() => selected.value?.id ?? null, (id) => {
-  if (ready.value && showLinks.value && linkMode.value === "router") buildRouterHighlightForSelected(id);
+  if (!ready.value || !showLinks.value) return;
+  buildSelectedNeighborhoodHighlight(id);
+});
+watch(delayEdges, () => {
+  if (ready.value && showLinks.value && selected.value) {
+    buildSelectedNeighborhoodHighlight(selected.value.id);
+  }
 });
 
 onMounted(async () => {
@@ -1332,6 +1454,48 @@ onBeforeUnmount(() => {
 
 .dot.center { background: #fbbf24; }
 .dot.task-active { background: #34d399; border-color: rgba(52, 211, 153, 0.6); }
+
+.small.muted, .muted { opacity: 0.65; }
+
+.delay-neighbor-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.delay-neighbor-list li {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.delay-hop {
+  font-size: 11px;
+  opacity: 0.75;
+  font-family: ui-monospace, monospace;
+}
+
+.delay-peer { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.delay-ms { color: #7dd3fc; font-weight: 600; }
+.delay-dist { opacity: 0.75; font-size: 11px; }
+.delay-tag {
+  grid-column: 1 / -1;
+  justify-self: start;
+  font-size: 10px;
+  color: #fbbf24;
+  opacity: 0.9;
+}
 
 .router-meta {
   margin-top: 2px;

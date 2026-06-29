@@ -122,13 +122,17 @@ func (h *TopologyHandler) TopologyPilotMapHandler(c *gin.Context) {
 //
 // GET /api/topology/delay
 func (h *TopologyHandler) TopologyDelayHandler(c *gin.Context) {
-	edges, err := loadDelayEdgesFromDB(h.db)
+	edges, dataSource, err := loadDelayEdgesWithFallback(h.db)
 	if err != nil {
-		h.logger.Error("Failed to load delay matrix from DB", zap.Error(err))
+		h.logger.Error("Failed to load delay matrix", zap.Error(err))
 		c.JSON(500, gin.H{"error": "Failed to load delay matrix"})
 		return
 	}
-	c.JSON(200, applyPilotClusterDelay(edges))
+	mapped := applyPilotClusterDelay(edges)
+	c.JSON(200, gin.H{
+		"data_source": dataSource,
+		"edges":       mapped,
+	})
 }
 
 type orbitSlotKey struct {
@@ -639,6 +643,30 @@ func loadDelayEdgesFromDB(db *gorm.DB) ([]DelayEdge, error) {
 		})
 	}
 	return edges, nil
+}
+
+func loadDelayEdgesWithFallback(db *gorm.DB) ([]DelayEdge, string, error) {
+	edges, err := loadDelayEdgesFromDB(db)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(edges) > 0 {
+		return edges, "db", nil
+	}
+	csvEdges, csvErr := topoimport.LoadDelayEdgesFromCSV(topoimport.DefaultDelayCSVPath())
+	if csvErr != nil {
+		return edges, "db", nil
+	}
+	out := make([]DelayEdge, 0, len(csvEdges))
+	for _, e := range csvEdges {
+		out = append(out, DelayEdge{
+			AId:    e.AId,
+			BId:    e.BId,
+			DelayS: e.DelayS,
+			DistKm: e.DistKm,
+		})
+	}
+	return out, "csv", nil
 }
 
 // loadRouterGraphFromDB 从 router_nodes / router_links 做 BFS，返回 nodes/edges/layoutNodes（节点展示名用 sat_id）。

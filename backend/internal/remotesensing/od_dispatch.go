@@ -21,8 +21,8 @@ func ODWorkerOptions(queueCfg config.QueueConfig) Options {
 	return Options{Queue: queueCfg, BootstrapPending: false, MetricsWorker: "od-worker"}
 }
 
-func fusionDatRelPersist(cfg config.RemoteSensingConfig, filePrefix string) string {
-	return filepath.Join(cfg.PersistOutputDir, "fusion_envi", fmt.Sprintf("%s-MSS1-fusion.dat", filePrefix))
+func fusionDatRelPersist(cfg config.RemoteSensingConfig, taskID uint, filePrefix string) string {
+	return persistPreprocessingDir(taskID, cfg.PersistOutputDir, cfg.TaskPathIsolation, "fusion_envi", fmt.Sprintf("%s-MSS1-fusion.dat", filePrefix))
 }
 
 func createTaskRequestFromODJob(job queue.ODJobPayload) CreateTaskRequest {
@@ -92,16 +92,16 @@ func (s *RemoteSensingService) persistFusionArtifactsSync(taskID uint, filePrefi
 	finalHdrName := fmt.Sprintf("%s-MSS1-fusion.hdr", filePrefix)
 	previewName := fmt.Sprintf("%s-MSS1-fusion.png", filePrefix)
 
-	scratchFinalDatRel := filepath.Join("output_preprocessing", "fusion_envi", finalDatName)
-	scratchFinalHdrRel := filepath.Join("output_preprocessing", "fusion_envi", finalHdrName)
-	scratchPreviewRel := filepath.Join("output_preprocessing", "imgshow", previewName)
+	scratchFinalDatRel := s.scratchDir(taskID, "fusion_envi", finalDatName)
+	scratchFinalHdrRel := s.scratchDir(taskID, "fusion_envi", finalHdrName)
+	scratchPreviewRel := s.scratchDir(taskID, "imgshow", previewName)
 
-	persistFinalDatRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalDatName)
-	persistFinalHdrRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalHdrName)
-	persistPreviewRel := filepath.Join(s.cfg.PersistOutputDir, "imgshow", previewName)
+	persistFinalDatRel := s.persistRel(taskID, "fusion_envi", finalDatName)
+	persistFinalHdrRel := s.persistRel(taskID, "fusion_envi", finalHdrName)
+	persistPreviewRel := s.persistRel(taskID, "imgshow", previewName)
 
-	persistFusionDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "fusion_envi")
-	persistPreviewDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "imgshow")
+	persistFusionDir := filepath.Join(s.cfg.RootPath, s.persistRel(taskID, "fusion_envi"))
+	persistPreviewDir := filepath.Join(s.cfg.RootPath, s.persistRel(taskID, "imgshow"))
 	if err := os.MkdirAll(persistFusionDir, 0o755); err != nil {
 		return fmt.Errorf("持久化目录创建失败: %w", err)
 	}

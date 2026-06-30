@@ -102,6 +102,8 @@ spec:
               value: "cpu"
             - name: SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR
               value: "persist_output_preprocessing"
+            - name: SATELLITE_RS_TASK_PATH_ISOLATION
+              value: "true"
             - name: SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS
               value: "1800"
             - name: SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS

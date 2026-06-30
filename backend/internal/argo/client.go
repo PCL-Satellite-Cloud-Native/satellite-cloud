@@ -49,6 +49,7 @@ type PanRPCWorkflowParams struct {
 	CPUThreads            int
 	WarpMemMB             int
 	ResampleAlg           string
+	TaskPathPrefix        string // P5-05：空=legacy；否则 "tasks/{id}/"
 	SatelliteAffinityID   string // satellites.sat_id → node label satellite.io/id
 }
 
@@ -83,6 +84,7 @@ func (c *Client) SubmitPanRPCWorkflow(ctx context.Context, p PanRPCWorkflowParam
 				map[string]interface{}{"name": "cpu_threads", "value": fmt.Sprintf("%d", p.CPUThreads)},
 				map[string]interface{}{"name": "warp_mem_mb", "value": fmt.Sprintf("%d", p.WarpMemMB)},
 				map[string]interface{}{"name": "resample_alg", "value": p.ResampleAlg},
+				map[string]interface{}{"name": "task_path_prefix", "value": p.TaskPathPrefix},
 			},
 		},
 	}

@@ -450,7 +450,7 @@ func (s *RemoteSensingService) runPipeline(ctx context.Context, taskID uint, req
 			continue
 		}
 		if def.Name == StageObjectDetection && req.EnableDetection && s.queueCfg.UseODWorker {
-			if err := s.enqueueOD(ctx, taskID, req, fusionDatRelPersist(s.cfg, req.FilePrefix)); err != nil {
+			if err := s.enqueueOD(ctx, taskID, req, fusionDatRelPersist(s.cfg, taskID, req.FilePrefix)); err != nil {
 				s.finishTaskWithError(taskID, fmt.Sprintf("检测入队失败: %v", err))
 				return
 			}
@@ -771,26 +771,27 @@ func (s *RemoteSensingService) log(taskID uint, stageName, level, content string
 }
 
 func (s *RemoteSensingService) executeTiffToEnvi(ctx context.Context, taskID uint, req CreateTaskRequest, sensor, stageName string) (*stageExecutionResult, error) {
+	outputDir := s.scratchDir(taskID, "tiff_to_envi")
 	args := []string{
 		"--data_directory", req.InputDirectory,
 		"--file_prefix", req.FilePrefix,
 		"--sensor", sensor,
-		"--output_dir", filepath.Join("output_preprocessing", "tiff_to_envi"),
+		"--output_dir", outputDir,
 	}
 	if _, err := s.runPython(ctx, taskID, stageName, "tiff_to_envi.py", args); err != nil {
 		return nil, err
 	}
-	return &stageExecutionResult{Details: map[string]interface{}{"sensor": sensor}, OutputPath: filepath.Join("output_preprocessing", "tiff_to_envi"), Message: fmt.Sprintf("%s 生成完成", sensor)}, nil
+	return &stageExecutionResult{Details: map[string]interface{}{"sensor": sensor}, OutputPath: outputDir, Message: fmt.Sprintf("%s 生成完成", sensor)}, nil
 }
 
 func (s *RemoteSensingService) executePanRadToa(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
-	outputDir := s.panRadToaOutputDir()
+	outputDir := s.panRadToaOutputDir(taskID)
 	if s.argoCfg.UseArgoPanRPC {
 		s.log(taskID, StagePanRadToa, "info", "Argo 路径：pan_rad_toa 直接写入 NFS persist")
 	}
 	args := []string{
 		"--file_prefix", req.FilePrefix,
-		"--input_dir", filepath.Join("output_preprocessing", "tiff_to_envi"),
+		"--input_dir", s.scratchDir(taskID, "tiff_to_envi"),
 		"--output_dir", outputDir,
 		"--radiance_unit_scale", "10000",
 	}
@@ -804,7 +805,7 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 	if s.argoCfg.UseArgoPanRPC {
 		return s.executePanRpcViaArgo(ctx, taskID, req)
 	}
-	outputDir := filepath.Join("output_preprocessing", "pan_warp_quarters")
+	outputDir := s.scratchDir(taskID, "pan_warp_quarters")
 	demFile := s.cfg.DemFile
 	cpuThreads := effectiveParallelism(s.cfg.PanRPCCPUThreads, 1, 4)
 	parallelism := effectiveParallelism(s.cfg.PanRPCParallel, 1, 4)
@@ -874,7 +875,7 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 			}
 			args := []string{
 				"--file_prefix", req.FilePrefix,
-				"--input_dir", filepath.Join("output_preprocessing", "pan_rad_toa"),
+				"--input_dir", s.scratchDir(taskID, "pan_rad_toa"),
 				"--output_dir", workerOutputDir,
 				"--area_indexes", strings.Join(groupTokens, ","),
 				"--dem_file", demFile,
@@ -930,10 +931,10 @@ func (s *RemoteSensingService) executePanRpc(ctx context.Context, taskID uint, r
 }
 
 func (s *RemoteSensingService) executePanMerge(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
-	outputDir := filepath.Join("output_preprocessing", "pan_merge_warp_square")
+	outputDir := s.scratchDir(taskID, "pan_merge_warp_square")
 	args := []string{
 		"--file_prefix", req.FilePrefix,
-		"--input_dir", s.panWarpQuartersInputDir(),
+		"--input_dir", s.panWarpQuartersInputDir(taskID),
 		"--output_dir", outputDir,
 	}
 	if _, err := s.runPython(ctx, taskID, StagePanMerge, "pan_merge_warp_square.py", args); err != nil {
@@ -943,14 +944,14 @@ func (s *RemoteSensingService) executePanMerge(ctx context.Context, taskID uint,
 }
 
 func (s *RemoteSensingService) executeMssRadQuac(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
-	outputDir := filepath.Join("output_preprocessing", "mss_rad_quac_rpc")
+	outputDir := s.scratchDir(taskID, "mss_rad_quac_rpc")
 	demFile := s.cfg.DemFile
 	if _, err := os.Stat(pathForOSAccess(demFile)); err != nil {
 		return nil, fmt.Errorf("DEM 文件不存在或不可访问: %s", demFile)
 	}
 	args := []string{
 		"--file_prefix", req.FilePrefix,
-		"--input_dir", filepath.Join("output_preprocessing", "tiff_to_envi"),
+		"--input_dir", s.scratchDir(taskID, "tiff_to_envi"),
 		"--output_dir", outputDir,
 		"--radiance_unit_scale", "1",
 		"--aero_profile", "Urban",
@@ -966,7 +967,9 @@ func (s *RemoteSensingService) executeMssRadQuac(ctx context.Context, taskID uin
 }
 
 func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
-	outputDir := filepath.Join("output_preprocessing", "mss_coregister_pan")
+	outputDir := s.scratchDir(taskID, "mss_coregister_pan")
+	panMergeDir := s.scratchDir(taskID, "pan_merge_warp_square")
+	mssRadDir := s.scratchDir(taskID, "mss_rad_quac_rpc")
 	mode := strings.ToLower(strings.TrimSpace(s.cfg.CoregisterMode))
 	if mode == "" {
 		mode = "serial4"
@@ -976,8 +979,8 @@ func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID 
 	case "batch1":
 		args := []string{
 			"--file_prefix", req.FilePrefix,
-			"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
-			"--input_dir_mss", filepath.Join("output_preprocessing", "mss_rad_quac_rpc"),
+			"--input_dir_pan", panMergeDir,
+			"--input_dir_mss", mssRadDir,
 			"--output_dir", outputDir,
 			"--band_indexes", "1,2,3,4",
 		}
@@ -988,8 +991,8 @@ func (s *RemoteSensingService) executeMssCoregister(ctx context.Context, taskID 
 		for i := 1; i <= 4; i++ {
 			args := []string{
 				"--file_prefix", req.FilePrefix,
-				"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
-				"--input_dir_mss", filepath.Join("output_preprocessing", "mss_rad_quac_rpc"),
+				"--input_dir_pan", panMergeDir,
+				"--input_dir_mss", mssRadDir,
 				"--output_dir", outputDir,
 				"--bandidx", strconv.Itoa(i),
 			}
@@ -1024,7 +1027,7 @@ func (s *RemoteSensingService) executePansharpen(ctx context.Context, taskID uin
 }
 
 func (s *RemoteSensingService) executePansharpenDirect(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
-	outputDir := filepath.Join("output_preprocessing", "fusion_envi")
+	outputDir := s.scratchDir(taskID, "fusion_envi")
 	if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, outputDir), 0o755); err != nil {
 		return nil, fmt.Errorf("创建融合输出目录失败: %w", err)
 	}
@@ -1037,8 +1040,8 @@ func (s *RemoteSensingService) executePansharpenDirect(ctx context.Context, task
 	}
 	args := []string{
 		"--file_prefix", req.FilePrefix,
-		"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
-		"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
+		"--input_dir_pan", s.scratchDir(taskID, "pan_merge_warp_square"),
+		"--input_dir_mss", s.scratchDir(taskID, "mss_coregister_pan"),
 		"--output_dir", outputDir,
 		"--band_indexes", "1,2,3",
 		"--gdal_num_threads", s.cfg.PansharpenGDALThread,
@@ -1067,14 +1070,14 @@ func (s *RemoteSensingService) executePansharpenDirect(ctx context.Context, task
 }
 
 func (s *RemoteSensingService) executePansharpenBatch(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
-	outputDir := filepath.Join("output_preprocessing", "pansharpen")
+	outputDir := s.scratchDir(taskID, "pansharpen")
 	if err := os.MkdirAll(filepath.Join(s.cfg.RootPath, outputDir), 0o755); err != nil {
 		return nil, fmt.Errorf("创建 Pan-sharpen 输出目录失败: %w", err)
 	}
 	args := []string{
 		"--file_prefix", req.FilePrefix,
-		"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
-		"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
+		"--input_dir_pan", s.scratchDir(taskID, "pan_merge_warp_square"),
+		"--input_dir_mss", s.scratchDir(taskID, "mss_coregister_pan"),
 		"--output_dir", outputDir,
 		"--band_indexes", "1,2,3",
 		"--gdal_num_threads", s.cfg.PansharpenGDALThread,
@@ -1097,7 +1100,7 @@ func (s *RemoteSensingService) executePansharpenBatch(ctx context.Context, taskI
 }
 
 func (s *RemoteSensingService) executePansharpenParallel(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
-	outputDir := filepath.Join("output_preprocessing", "pansharpen")
+	outputDir := s.scratchDir(taskID, "pansharpen")
 	absoluteOutputDir := filepath.Join(s.cfg.RootPath, outputDir)
 	workerBaseDir := filepath.Join(absoluteOutputDir, "workers")
 	if err := os.RemoveAll(workerBaseDir); err != nil {
@@ -1132,8 +1135,8 @@ func (s *RemoteSensingService) executePansharpenParallel(ctx context.Context, ta
 			}
 			args := []string{
 				"--file_prefix", req.FilePrefix,
-				"--input_dir_pan", filepath.Join("output_preprocessing", "pan_merge_warp_square"),
-				"--input_dir_mss", filepath.Join("output_preprocessing", "mss_coregister_pan"),
+				"--input_dir_pan", s.scratchDir(taskID, "pan_merge_warp_square"),
+				"--input_dir_mss", s.scratchDir(taskID, "mss_coregister_pan"),
 				"--output_dir", workerOutputDir,
 				"--bandidx", strconv.Itoa(i),
 				"--gdal_num_threads", s.cfg.PansharpenGDALThread,
@@ -1200,8 +1203,8 @@ func ensurePansharpenOutputs(rootPath, outputDir, filePrefix string) error {
 }
 
 func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID uint, req CreateTaskRequest) (*stageExecutionResult, error) {
-	inputDir := filepath.Join("output_preprocessing", "pansharpen")
-	outputDir := filepath.Join("output_preprocessing", "fusion_envi")
+	inputDir := s.scratchDir(taskID, "pansharpen")
+	outputDir := s.scratchDir(taskID, "fusion_envi")
 	if s.cfg.FusionDirectEnabled {
 		s.log(taskID, StageFusionStack, "info", "fusion_direct_enabled=true，跳过 fusion_stack_envi，复用阶段8直出结果")
 	} else {
@@ -1233,7 +1236,7 @@ func (s *RemoteSensingService) executeFusionStack(ctx context.Context, taskID ui
 	if _, err := os.Stat(filepath.Join(s.cfg.RootPath, finalDat)); err != nil {
 		return nil, fmt.Errorf("融合输出不存在: %s", finalDat)
 	}
-	previewDir := filepath.Join("output_preprocessing", "imgshow")
+	previewDir := s.scratchDir(taskID, "imgshow")
 	absolutePreviewDir := filepath.Join(s.cfg.RootPath, previewDir)
 	os.MkdirAll(absolutePreviewDir, 0o755)
 	previewPNG := filepath.Join(previewDir, fmt.Sprintf("%s-MSS1-fusion.png", req.FilePrefix))
@@ -1304,16 +1307,16 @@ func (s *RemoteSensingService) persistFusionArtifactsAsync(taskID uint, filePref
 		finalHdrName := fmt.Sprintf("%s-MSS1-fusion.hdr", filePrefix)
 		previewName := fmt.Sprintf("%s-MSS1-fusion.png", filePrefix)
 
-		scratchFinalDatRel := filepath.Join("output_preprocessing", "fusion_envi", finalDatName)
-		scratchFinalHdrRel := filepath.Join("output_preprocessing", "fusion_envi", finalHdrName)
-		scratchPreviewRel := filepath.Join("output_preprocessing", "imgshow", previewName)
+		scratchFinalDatRel := s.scratchDir(taskID, "fusion_envi", finalDatName)
+		scratchFinalHdrRel := s.scratchDir(taskID, "fusion_envi", finalHdrName)
+		scratchPreviewRel := s.scratchDir(taskID, "imgshow", previewName)
 
-		persistFinalDatRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalDatName)
-		persistFinalHdrRel := filepath.Join(s.cfg.PersistOutputDir, "fusion_envi", finalHdrName)
-		persistPreviewRel := filepath.Join(s.cfg.PersistOutputDir, "imgshow", previewName)
+		persistFinalDatRel := s.persistRel(taskID, "fusion_envi", finalDatName)
+		persistFinalHdrRel := s.persistRel(taskID, "fusion_envi", finalHdrName)
+		persistPreviewRel := s.persistRel(taskID, "imgshow", previewName)
 
-		persistFusionDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "fusion_envi")
-		persistPreviewDir := filepath.Join(s.cfg.RootPath, s.cfg.PersistOutputDir, "imgshow")
+		persistFusionDir := filepath.Join(s.cfg.RootPath, s.persistRel(taskID, "fusion_envi"))
+		persistPreviewDir := filepath.Join(s.cfg.RootPath, s.persistRel(taskID, "imgshow"))
 		if err := os.MkdirAll(persistFusionDir, 0o755); err != nil {
 			s.log(taskID, StageFusionStack, "warn", fmt.Sprintf("持久化目录创建失败: %v", err))
 			return

@@ -2,6 +2,7 @@
  * 生成本地离线地球瓦片包 public/tiles/earth-hd/ 与全景图 public/assets/earth_hd.jpg
  *
  * 用法: npm run prepare:tiles
+ *       npm run prepare:tiles:force   # 忽略已有 source，重新下载/拼接
  *
  * 优先级：
  * 1. public/assets/earth_hd_source.jpg（≥250KB 或 --use-local，推荐 Blue Marble 等距圆柱图）
@@ -29,6 +30,7 @@ const SOURCE_URLS = [
 const TILE = 256
 const MIN_REAL_BYTES = 250_000
 const useLocalFlag = process.argv.includes('--use-local')
+const forceFlag = process.argv.includes('--force')
 
 function cesiumNe2Dir() {
   return path.join(
@@ -62,6 +64,7 @@ function writeMeta(source, width, height, maxZoom) {
 }
 
 async function isRealLocalSource(local) {
+  if (forceFlag) return false
   if (!fs.existsSync(local)) return false
   const stat = fs.statSync(local)
   if (useLocalFlag && stat.size > 30_000) return true
@@ -108,10 +111,11 @@ async function stitchNaturalEarthSource(local) {
       if (!fs.existsSync(tilePath)) {
         throw new Error(`Missing NE2 tile: ${tilePath}`)
       }
+      // TMS geodetic：y=0 在南极侧；等距圆柱全景图 y=0 在北极侧，需翻转
       composites.push({
         input: tilePath,
         left: x * TILE,
-        top: y * TILE,
+        top: (rows - 1 - y) * TILE,
       })
     }
   }
@@ -206,8 +210,10 @@ async function buildTiles(sourcePath, sourceKind) {
       for (let x = 0; x < cols; x++) {
         const tileDir = path.join(outDir, String(z), String(x))
         fs.mkdirSync(tileDir, { recursive: true })
+        // 全景图北在上；TMS 瓦片 y=0 在南极侧
+        const imageRow = rows - 1 - y
         await sharp(layer)
-          .extract({ left: x * TILE, top: y * TILE, width: TILE, height: TILE })
+          .extract({ left: x * TILE, top: imageRow * TILE, width: TILE, height: TILE })
           .jpeg({ quality: 90 })
           .toFile(path.join(tileDir, `${y}.jpg`))
       }

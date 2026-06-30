@@ -21,6 +21,8 @@ spec:
         value: "512"
       - name: resample_alg
         value: near
+      - name: task_path_prefix
+        value: ""
   templates:
     - name: pan-rpc-step
       inputs:
@@ -42,9 +44,9 @@ spec:
           - --file_prefix
           - "{{inputs.parameters.file_prefix}}"
           - --input_dir
-          - persist_output_preprocessing/pan_rad_toa
+          - "persist_output_preprocessing/{{workflow.parameters.task_path_prefix}}pan_rad_toa"
           - --output_dir
-          - "persist_output_preprocessing/pan_warp_quarters/workers/group{{inputs.parameters.group_id}}"
+          - "persist_output_preprocessing/{{workflow.parameters.task_path_prefix}}pan_warp_quarters/workers/group{{inputs.parameters.group_id}}"
           - --area_indexes
           - "{{inputs.parameters.area_indexes}}"
           - --dem_file

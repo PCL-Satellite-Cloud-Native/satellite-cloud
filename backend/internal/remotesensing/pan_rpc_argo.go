@@ -25,8 +25,9 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 		return nil, fmt.Errorf("Argo 客户端: %w", err)
 	}
 
-	outputDir := filepath.Join(s.cfg.PersistOutputDir, "pan_warp_quarters")
-	persistOutputDir := filepath.Join(s.cfg.PersistOutputDir, "pan_warp_quarters")
+	outputDir := s.persistRel(taskID, "pan_warp_quarters")
+	persistOutputDir := s.persistRel(taskID, "pan_warp_quarters")
+	taskPathPrefix := persistTaskPathPrefix(taskID, s.cfg.TaskPathIsolation)
 
 	cpuThreads := effectiveParallelism(s.cfg.PanRPCCPUThreads, 1, 4)
 	warpMemMB := s.cfg.PanRPCWarpMemMB
@@ -46,6 +47,7 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 		TemplateName:        s.argoCfg.PanRPCTemplate,
 		TaskID:              taskID,
 		FilePrefix:          req.FilePrefix,
+		TaskPathPrefix:      taskPathPrefix,
 		RSImage:             s.argoCfg.WorkflowImage,
 		CPUThreads:          cpuThreads,
 		WarpMemMB:           warpMemMB,
@@ -94,8 +96,10 @@ func (s *RemoteSensingService) preparePanRpcPersistWorkerDirs(persistOutputRel s
 		return err
 	}
 	workers := filepath.Join(base, "workers")
-	if err := os.RemoveAll(workers); err != nil {
-		return err
+	if !s.cfg.TaskPathIsolation {
+		if err := os.RemoveAll(workers); err != nil {
+			return err
+		}
 	}
 	for group := 1; group <= 4; group++ {
 		if err := os.MkdirAll(filepath.Join(workers, fmt.Sprintf("group%d", group)), 0o755); err != nil {
@@ -137,18 +141,18 @@ func findPanRpcPartOnPersist(workersBase, partName string) (string, error) {
 	return "", fmt.Errorf("%s", partName)
 }
 
-func (s *RemoteSensingService) panWarpQuartersInputDir() string {
+func (s *RemoteSensingService) panWarpQuartersInputDir(taskID uint) string {
 	if s.argoCfg.UseArgoPanRPC {
-		return filepath.Join(s.cfg.PersistOutputDir, "pan_warp_quarters")
+		return s.persistRel(taskID, "pan_warp_quarters")
 	}
-	return filepath.Join("output_preprocessing", "pan_warp_quarters")
+	return s.scratchDir(taskID, "pan_warp_quarters")
 }
 
-func (s *RemoteSensingService) panRadToaOutputDir() string {
+func (s *RemoteSensingService) panRadToaOutputDir(taskID uint) string {
 	if s.argoCfg.UseArgoPanRPC {
-		return filepath.Join(s.cfg.PersistOutputDir, "pan_rad_toa")
+		return s.persistRel(taskID, "pan_rad_toa")
 	}
-	return filepath.Join("output_preprocessing", "pan_rad_toa")
+	return s.scratchDir(taskID, "pan_rad_toa")
 }
 
 func (s *RemoteSensingService) initArgoFromConfig(cfg config.ArgoConfig, logger *zap.Logger) {

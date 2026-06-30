@@ -90,6 +90,7 @@ type RemoteSensingConfig struct {
 	CoregisterMode        string
 	CoregisterGDALThreads string
 	FusionDirectEnabled   bool
+	TaskPathIsolation     bool // P5-05：中间产物按 task_id 隔离（同 filePrefix 多 task 并行）
 }
 
 type ObjectDetectionConfig struct {
@@ -227,6 +228,7 @@ func setDefaults() {
 	viper.SetDefault("remote_sensing.coregister_mode", "serial4")
 	viper.SetDefault("remote_sensing.coregister_gdal_threads", "2")
 	viper.SetDefault("remote_sensing.fusion_direct_enabled", true)
+	viper.SetDefault("remote_sensing.task_path_isolation", true)
 
 	viper.SetDefault("object_detection.root", "../Object-Detection")
 	viper.SetDefault("object_detection.runner", "")
@@ -340,6 +342,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 	}
 	coregisterGDALThreads := get("SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS", "remote_sensing.coregister_gdal_threads", "2")
 	fusionDirectEnabled := getBool("SATELLITE_REMOTE_SENSING_FUSION_DIRECT_ENABLED", "remote_sensing.fusion_direct_enabled", true)
+	taskPathIsolation := getBool("SATELLITE_RS_TASK_PATH_ISOLATION", "remote_sensing.task_path_isolation", true)
 	if pythonBin == "" {
 		// 本地开发优先使用遥感项目虚拟环境，避免依赖装在 .venv 但后端仍调用系统 python3。
 		venvPython := filepath.Join(rootPath, ".venv", "bin", "python")
@@ -379,6 +382,7 @@ func remoteSensingConfigFromEnvOrViper() RemoteSensingConfig {
 		CoregisterMode:        coregisterMode,
 		CoregisterGDALThreads: coregisterGDALThreads,
 		FusionDirectEnabled:   fusionDirectEnabled,
+		TaskPathIsolation:     taskPathIsolation,
 	}
 }
 

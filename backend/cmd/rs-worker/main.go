@@ -63,12 +63,68 @@ func main() {
 		zap.String("consumer", consumerName),
 	)
 
+	rsSvc.BootstrapStaleRunningTasks(ctx)
+
 	concurrency := cfg.Queue.RSWorkerConcurrency
 	if concurrency <= 0 {
 		concurrency = 1
 	}
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
+
+	processJob := func(streamID string, job queue.RSJobPayload) {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			zapLogger.Info("rs-worker 开始处理任务",
+				zap.Uint("task_id", job.TaskID),
+				zap.Uint("satellite_id", job.SatelliteID),
+				zap.String("node", os.Getenv("NODE_NAME")),
+				zap.String("stream_id", streamID),
+			)
+			rsSvc.RunPipelineFromJob(context.Background(), job)
+			if ackErr := qClient.AckRSJob(ctx, streamID); ackErr != nil {
+				zapLogger.Error("XAck failed", zap.String("stream_id", streamID), zap.Error(ackErr))
+			}
+		}()
+	}
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				msgs, err := qClient.ReclaimStaleRSJobs(ctx, 2*time.Minute, 10)
+				if err != nil {
+					zapLogger.Warn("ReclaimStaleRSJobs failed", zap.Error(err))
+					continue
+				}
+				for _, msg := range msgs {
+					job, parseErr := queue.ParseRSJobMessage(msg.Values)
+					if parseErr != nil {
+						zapLogger.Error("invalid reclaimed rs.jobs payload",
+							zap.String("stream_id", msg.ID),
+							zap.Error(parseErr),
+						)
+						_ = qClient.AckRSJob(ctx, msg.ID)
+						continue
+					}
+					zapLogger.Info("回收 orphan Redis job",
+						zap.Uint("task_id", job.TaskID),
+						zap.String("stream_id", msg.ID),
+					)
+					processJob(msg.ID, job)
+				}
+			}
+		}
+	}()
 
 	go func() {
 		for {
@@ -100,24 +156,7 @@ func main() {
 						_ = qClient.AckRSJob(ctx, msg.ID)
 						continue
 					}
-					sem <- struct{}{}
-					wg.Add(1)
-					go func(streamID string, payload queue.RSJobPayload) {
-						defer func() {
-							<-sem
-							wg.Done()
-						}()
-						zapLogger.Info("rs-worker 开始处理任务",
-							zap.Uint("task_id", payload.TaskID),
-							zap.Uint("satellite_id", payload.SatelliteID),
-							zap.String("node", os.Getenv("NODE_NAME")),
-							zap.String("stream_id", streamID),
-						)
-						rsSvc.RunPipelineFromJob(context.Background(), payload)
-						if ackErr := qClient.AckRSJob(ctx, streamID); ackErr != nil {
-							zapLogger.Error("XAck failed", zap.String("stream_id", streamID), zap.Error(ackErr))
-						}
-					}(msg.ID, job)
+					processJob(msg.ID, job)
 				}
 			}
 		}

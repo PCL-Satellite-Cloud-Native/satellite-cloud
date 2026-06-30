@@ -423,6 +423,7 @@ func (s *RemoteSensingService) createStagesForTask(ctx context.Context, taskID u
 
 func (s *RemoteSensingService) runPipeline(ctx context.Context, taskID uint, req CreateTaskRequest) {
 	start := time.Now().UTC()
+	var resume bool
 	tx := s.db.Model(&model.RemoteSensingTask{}).
 		Where("id = ? AND status = ?", taskID, TaskStatusPending).
 		Updates(map[string]interface{}{
@@ -436,12 +437,31 @@ func (s *RemoteSensingService) runPipeline(ctx context.Context, taskID uint, req
 		return
 	}
 	if tx.RowsAffected == 0 {
-		s.logger.Warn("任务未处于 pending，跳过执行", zap.Uint("task_id", taskID))
-		return
+		var t model.RemoteSensingTask
+		if err := s.db.Select("status").First(&t, taskID).Error; err != nil {
+			s.logger.Error("查询任务状态失败", zap.Error(err), zap.Uint("task_id", taskID))
+			return
+		}
+		if t.Status != TaskStatusRunning {
+			s.logger.Warn("任务未处于 pending/running，跳过执行", zap.Uint("task_id", taskID), zap.String("status", t.Status))
+			return
+		}
+		resume = true
+		s.logger.Info("resume 运行中任务", zap.Uint("task_id", taskID))
+	} else {
+		s.publishStageEvent(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusRunning, UpdatedAt: time.Now().UTC()})
 	}
-	s.publishStageEvent(taskID, RemoteSensingStageEvent{TaskID: taskID, TaskStatus: TaskStatusRunning, UpdatedAt: time.Now().UTC()})
+
+	skipStages := map[string]bool{}
+	if resume {
+		skipStages = s.successStages(ctx, taskID)
+	}
 
 	for _, def := range stageDefinitions {
+		if skipStages[def.Name] {
+			s.log(taskID, def.Name, "info", "resume：跳过已完成阶段")
+			continue
+		}
 		if def.Name == StageObjectDetection && !req.EnableDetection {
 			if err := s.updateStageStatus(taskID, def.Name, StageSuccess, map[string]interface{}{"skipped": true}, "", "已跳过目标识别"); err != nil {
 				s.finishTaskWithError(taskID, fmt.Sprintf("更新阶段 %s 失败: %v", def.Name, err))

@@ -131,8 +131,26 @@ func (c *Client) SubmitPanRPCWorkflow(ctx context.Context, p PanRPCWorkflowParam
 	return name, nil
 }
 
-// WaitWorkflowCompleted 轮询直到 Succeeded / Failed / 超时
-func (c *Client) WaitWorkflowCompleted(ctx context.Context, name string, pollInterval time.Duration) error {
+// LatestWorkflowForTask 按 task-id 标签查找最新 Workflow（含已删除后仍可能存在的 Completed 记录需靠 NFS 兜底）
+func (c *Client) LatestWorkflowForTask(ctx context.Context, taskID uint) (name, phase string, err error) {
+	labelSelector := fmt.Sprintf("satellite.io/task-id=%d", taskID)
+	list, err := c.dyn.Resource(workflowGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("list workflows task=%d: %w", taskID, err)
+	}
+	if len(list.Items) == 0 {
+		return "", "", nil
+	}
+	latest := list.Items[len(list.Items)-1]
+	name, _, _ = unstructured.NestedString(latest.Object, "metadata", "name")
+	phase, _, _ = unstructured.NestedString(latest.Object, "status", "phase")
+	return name, phase, nil
+}
+
+// WaitWorkflowCompleted 轮询直到 Succeeded / Failed / 超时；onPoll 可选心跳回调 (phase)
+func (c *Client) WaitWorkflowCompleted(ctx context.Context, name string, pollInterval time.Duration, onPoll func(phase string)) error {
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
 	}
@@ -144,6 +162,9 @@ func (c *Client) WaitWorkflowCompleted(ctx context.Context, name string, pollInt
 			return fmt.Errorf("get workflow %s: %w", name, err)
 		}
 		phase, _, _ := unstructured.NestedString(wf.Object, "status", "phase")
+		if onPoll != nil && phase != "" {
+			onPoll(phase)
+		}
 		switch phase {
 		case "Succeeded":
 			return nil

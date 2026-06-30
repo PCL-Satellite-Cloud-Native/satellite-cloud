@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -29,6 +30,15 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 	persistOutputDir := s.persistRel(taskID, "pan_warp_quarters")
 	taskPathPrefix := persistTaskPathPrefix(taskID, s.cfg.TaskPathIsolation)
 
+	if panRpcMergedPartsExist(s.cfg.RootPath, persistOutputDir, req.FilePrefix) {
+		s.log(taskID, StagePanRpcWarp, "info", "resume：PAN RPC 合并产物已存在，跳过 Argo")
+		return &stageExecutionResult{
+			OutputPath: outputDir,
+			Message:    "RPC 分块完成（resume，产物已合并）",
+			Details:    map[string]interface{}{"mode": "resume_merged"},
+		}, nil
+	}
+
 	cpuThreads := effectiveParallelism(s.cfg.PanRPCCPUThreads, 1, 4)
 	warpMemMB := s.cfg.PanRPCWarpMemMB
 	if warpMemMB <= 0 {
@@ -43,25 +53,63 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 		return nil, fmt.Errorf("准备 PAN RPC persist 目录: %w", err)
 	}
 
-	wfName, err := argoClient.SubmitPanRPCWorkflow(ctx, argo.PanRPCWorkflowParams{
-		TemplateName:        s.argoCfg.PanRPCTemplate,
-		TaskID:              taskID,
-		FilePrefix:          req.FilePrefix,
-		TaskPathPrefix:      taskPathPrefix,
-		RSImage:             s.argoCfg.WorkflowImage,
-		CPUThreads:          cpuThreads,
-		WarpMemMB:           warpMemMB,
-		ResampleAlg:         resampleAlg,
-		SatelliteAffinityID: s.satelliteSatID(ctx, req.SatelliteID),
-	})
+	// workers 已有 4 分块（Argo 已成功但 merge 未跑，常见于 Pod 重启）
+	if panRpcWorkerPartsReady(s.cfg.RootPath, persistOutputDir, req.FilePrefix) {
+		s.log(taskID, StagePanRpcWarp, "info", "resume：workers 分块齐全，直接 merge")
+		if err := s.mergePanRpcOnPersist(taskID, req.FilePrefix, persistOutputDir); err != nil {
+			return nil, err
+		}
+		return s.panRpcArgoResult(outputDir, cpuThreads, warpMemMB, resampleAlg, "resume_merge", ""), nil
+	}
+
+	wfName, wfPhase, err := argoClient.LatestWorkflowForTask(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
-	s.log(taskID, StagePanRpcWarp, "info", fmt.Sprintf("已提交 Argo Workflow: %s", wfName))
+	switch wfPhase {
+	case "Succeeded":
+		s.log(taskID, StagePanRpcWarp, "info", fmt.Sprintf("resume：Workflow 已成功 %s，执行 merge", wfName))
+		if err := s.mergePanRpcOnPersist(taskID, req.FilePrefix, persistOutputDir); err != nil {
+			return nil, err
+		}
+		return s.panRpcArgoResult(outputDir, cpuThreads, warpMemMB, resampleAlg, "resume_workflow_succeeded", wfName), nil
+	case "Running":
+		s.log(taskID, StagePanRpcWarp, "info", fmt.Sprintf("resume：等待已有 Workflow %s", wfName))
+	default:
+		wfName = ""
+	}
+
+	if wfName == "" {
+		wfName, err = argoClient.SubmitPanRPCWorkflow(ctx, argo.PanRPCWorkflowParams{
+			TemplateName:        s.argoCfg.PanRPCTemplate,
+			TaskID:              taskID,
+			FilePrefix:          req.FilePrefix,
+			TaskPathPrefix:      taskPathPrefix,
+			RSImage:             s.argoCfg.WorkflowImage,
+			CPUThreads:          cpuThreads,
+			WarpMemMB:           warpMemMB,
+			ResampleAlg:         resampleAlg,
+			SatelliteAffinityID: s.satelliteSatID(ctx, req.SatelliteID),
+		})
+		if err != nil {
+			return nil, err
+		}
+		s.log(taskID, StagePanRpcWarp, "info", fmt.Sprintf("已提交 Argo Workflow: %s", wfName))
+	}
 
 	waitCtx, cancel := context.WithTimeout(ctx, s.stageTimeoutFor(StagePanRpcWarp))
 	defer cancel()
-	if err := argoClient.WaitWorkflowCompleted(waitCtx, wfName, 0); err != nil {
+	heartbeatSec := s.cfg.CommandHeartbeatSec
+	if heartbeatSec <= 0 {
+		heartbeatSec = 60
+	}
+	lastBeat := time.Now()
+	if err := argoClient.WaitWorkflowCompleted(waitCtx, wfName, 0, func(phase string) {
+		if time.Since(lastBeat) >= time.Duration(heartbeatSec)*time.Second {
+			s.log(taskID, StagePanRpcWarp, "info", fmt.Sprintf("Argo 心跳: workflow=%s phase=%s", wfName, phase))
+			lastBeat = time.Now()
+		}
+	}); err != nil {
 		return nil, fmt.Errorf("Argo Workflow 失败: %w", err)
 	}
 	s.log(taskID, StagePanRpcWarp, "info", fmt.Sprintf("Argo Workflow 完成: %s", wfName))
@@ -69,7 +117,10 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 	if err := s.mergePanRpcOnPersist(taskID, req.FilePrefix, persistOutputDir); err != nil {
 		return nil, err
 	}
+	return s.panRpcArgoResult(outputDir, cpuThreads, warpMemMB, resampleAlg, "argo_workflow_parallel", wfName), nil
+}
 
+func (s *RemoteSensingService) panRpcArgoResult(outputDir string, cpuThreads, warpMemMB int, resampleAlg, mode, wfName string) *stageExecutionResult {
 	details := map[string]interface{}{
 		"area_indexes": []int{1, 2, 3, 4},
 		"completed":    4,
@@ -78,16 +129,18 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 		"cpu_threads":  cpuThreads,
 		"warp_mem_mb":  warpMemMB,
 		"resample_alg": resampleAlg,
-		"mode":         "argo_workflow_parallel",
-		"workflow":     wfName,
+		"mode":         mode,
 		"p3_04":        true,
 		"p3_04b":       true,
 	}
-	return &stageExecutionResult{
-		Details:    details,
-		OutputPath: outputDir,
-		Message:    "RPC 分块完成（Argo 4 路并行）",
-	}, nil
+	if wfName != "" {
+		details["workflow"] = wfName
+	}
+	msg := "RPC 分块完成（Argo 4 路并行）"
+	if mode == "resume_merge" {
+		msg = "RPC 分块完成（resume merge）"
+	}
+	return &stageExecutionResult{Details: details, OutputPath: outputDir, Message: msg}
 }
 
 func (s *RemoteSensingService) preparePanRpcPersistWorkerDirs(persistOutputRel string) error {

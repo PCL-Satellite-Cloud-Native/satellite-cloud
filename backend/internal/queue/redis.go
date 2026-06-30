@@ -110,6 +110,25 @@ func (c *Client) ReadRSJob(ctx context.Context, block time.Duration) ([]redis.XS
 	}).Result()
 }
 
+// ReclaimStaleRSJobs 回收 idle 超过 minIdle 的 pending 消息（Pod 重启后 orphan job）
+func (c *Client) ReclaimStaleRSJobs(ctx context.Context, minIdle time.Duration, count int64) ([]redis.XMessage, error) {
+	if count <= 0 {
+		count = 10
+	}
+	msgs, _, err := c.rdb.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   c.streamRS,
+		Group:    c.consumerGroup,
+		Consumer: c.consumerName,
+		MinIdle:  minIdle,
+		Start:    "0-0",
+		Count:    count,
+	}).Result()
+	if err != nil {
+		return nil, fmt.Errorf("XAutoClaim: %w", err)
+	}
+	return msgs, nil
+}
+
 // AckRSJob 确认消息
 func (c *Client) AckRSJob(ctx context.Context, streamID string) error {
 	return c.rdb.XAck(ctx, c.streamRS, c.consumerGroup, streamID).Err()

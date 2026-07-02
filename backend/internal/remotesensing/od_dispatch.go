@@ -88,6 +88,10 @@ func (s *RemoteSensingService) RunDetectionFromJob(ctx context.Context, job queu
 
 // persistFusionArtifactsSync 阶段 9 完成后同步持久化融合产物（od-worker 跨 Pod 需读 NFS）
 func (s *RemoteSensingService) persistFusionArtifactsSync(taskID uint, filePrefix string) error {
+	if s.isolatedWorkOnPersist() {
+		s.log(taskID, StageFusionStack, "info", "task_path_isolation：融合产物已在 NFS persist，跳过同步复制")
+		return nil
+	}
 	finalDatName := fmt.Sprintf("%s-MSS1-fusion.dat", filePrefix)
 	finalHdrName := fmt.Sprintf("%s-MSS1-fusion.hdr", filePrefix)
 	previewName := fmt.Sprintf("%s-MSS1-fusion.png", filePrefix)

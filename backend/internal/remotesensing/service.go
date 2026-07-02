@@ -459,8 +459,11 @@ func (s *RemoteSensingService) runPipeline(ctx context.Context, taskID uint, req
 
 	for _, def := range stageDefinitions {
 		if skipStages[def.Name] {
-			s.log(taskID, def.Name, "info", "resume：跳过已完成阶段")
-			continue
+			if s.stageOutputStillValid(taskID, def.Name) {
+				s.log(taskID, def.Name, "info", "resume：跳过已完成阶段")
+				continue
+			}
+			s.log(taskID, def.Name, "warn", "resume：阶段已成功但产物缺失，重新执行")
 		}
 		if def.Name == StageObjectDetection && !req.EnableDetection {
 			if err := s.updateStageStatus(taskID, def.Name, StageSuccess, map[string]interface{}{"skipped": true}, "", "已跳过目标识别"); err != nil {
@@ -1322,6 +1325,11 @@ func (s *RemoteSensingService) persistFusionArtifactsAsync(taskID uint, filePref
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
+
+		if s.isolatedWorkOnPersist() {
+			s.log(taskID, StageFusionStack, "info", "task_path_isolation：融合产物已在 NFS persist，跳过后台复制")
+			return
+		}
 
 		finalDatName := fmt.Sprintf("%s-MSS1-fusion.dat", filePrefix)
 		finalHdrName := fmt.Sprintf("%s-MSS1-fusion.hdr", filePrefix)

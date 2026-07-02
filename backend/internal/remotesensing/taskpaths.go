@@ -36,7 +36,15 @@ func persistTaskPathPrefix(taskID uint, isolated bool) string {
 }
 
 func (s *RemoteSensingService) scratchDir(taskID uint, parts ...string) string {
-	return scratchPreprocessingDir(taskID, s.cfg.TaskPathIsolation, parts...)
+	// isolation 开启时中间产物写入 NFS persist（emptyDir 在 Pod 重启/resume 后会丢失）
+	if s.cfg.TaskPathIsolation {
+		return persistPreprocessingDir(taskID, s.cfg.PersistOutputDir, true, parts...)
+	}
+	return scratchPreprocessingDir(taskID, false, parts...)
+}
+
+func (s *RemoteSensingService) isolatedWorkOnPersist() bool {
+	return s.cfg.TaskPathIsolation
 }
 
 func (s *RemoteSensingService) persistRel(taskID uint, parts ...string) string {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -55,6 +56,26 @@ func panRpcMergedPartsExist(rootPath, persistOutputRel, filePrefix string) bool 
 		}
 	}
 	return true
+}
+
+func (s *RemoteSensingService) stageOutputStillValid(taskID uint, stageName string) bool {
+	var st model.RemoteSensingTaskStage
+	if err := s.db.Where("task_id = ? AND name = ?", taskID, stageName).First(&st).Error; err != nil {
+		return false
+	}
+	if st.Status != StageSuccess || strings.TrimSpace(st.OutputPath) == "" {
+		return false
+	}
+	abs := filepath.Join(s.cfg.RootPath, filepath.FromSlash(st.OutputPath))
+	info, err := os.Stat(abs)
+	if err != nil {
+		return false
+	}
+	if info.IsDir() {
+		entries, err := os.ReadDir(abs)
+		return err == nil && len(entries) > 0
+	}
+	return info.Size() > 0
 }
 
 func panRpcWorkerPartsReady(rootPath, persistOutputRel, filePrefix string) bool {

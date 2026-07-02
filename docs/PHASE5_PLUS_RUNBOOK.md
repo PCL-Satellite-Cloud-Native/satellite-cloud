@@ -30,7 +30,7 @@
 
 | 根 | Legacy（`isolation=false`） | 隔离（默认 `true`） |
 |----|----------------------------|---------------------|
-| scratch | `output_preprocessing/{stage}/...` | `output_preprocessing/tasks/{id}/{stage}/...` |
+| scratch | `output_preprocessing/{stage}/...` | `persist_output_preprocessing/tasks/{id}/{stage}/...`（**NFS，非 emptyDir**） |
 | persist | `persist_output_preprocessing/{stage}/...` | `persist_output_preprocessing/tasks/{id}/{stage}/...` |
 | Argo 参数 | `task_path_prefix=""` | `task_path_prefix="tasks/{id}/"` |
 
@@ -61,6 +61,17 @@ kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
 ### 1.5 验收
 
 ```bash
+# 1)  8080端口转发
+kubectl -n gitlab-runner port-forward svc/satellite-backend 8080:8080
+## 或后台跑
+kubectl -n gitlab-runner port-forward svc/satellite-backend 8080:8080 &
+
+# 验证
+curl -s http://127.0.0.1:8080/health
+## 或
+curl -s http://127.0.0.1:8080/api/scenarios | jq 'length'
+
+# 执行
 bash scripts/submit_multi_satellite_tasks.sh \
   --run-id p5-path-$(date +%m%d) \
   --api-base http://127.0.0.1:8080 \

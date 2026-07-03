@@ -34,6 +34,7 @@
 | 2026-06-23 | [2026-06-23_phase3-performance-closure.md](./2026-06-23_phase3-performance-closure.md) | Phase 3 **正式归档**；P3-04b；生产 `dd4bc728`；task 146 **165.4 s** | [PHASE4_RUNBOOK.md](../PHASE4_RUNBOOK.md) |
 | 2026-06-11 | [2026-06-11_phase5-ephem-id-bridge.md](./2026-06-11_phase5-ephem-id-bridge.md) | Phase 5 **临时**星历 ID 桥接（sat-* ↔ Sat_6_6…）；STK 更新后回滚 | [PHASE5_RUNBOOK.md](../PHASE5_RUNBOOK.md) §5 |
 | 2026-06-26 | [2026-06-26_phase5-closure.md](./2026-06-26_phase5-closure.md) | Phase 5 **正式归档**；p5-multi-3sat-v4；placement 修复；P5-05 遗留 | [PHASE5_RUNBOOK.md](../PHASE5_RUNBOOK.md) |
+| 2026-07-03 | [2026-07-03_phase5-05-closure.md](./2026-07-03_phase5-05-closure.md) | P5-05 NFS 路径隔离收口；p5-path-v4-0703 **3/3**；2T NFS 扩容 | [PHASE5_PLUS_RUNBOOK.md](../PHASE5_PLUS_RUNBOOK.md) §1 |
 
 ---
 

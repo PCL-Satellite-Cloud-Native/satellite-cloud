@@ -134,6 +134,15 @@ func (c *Client) AckRSJob(ctx context.Context, streamID string) error {
 	return c.rdb.XAck(ctx, c.streamRS, c.consumerGroup, streamID).Err()
 }
 
+// ReleaseRSJobForOtherConsumer ACK 后重新 XADD，供其他 rs-worker 节点消费（P5-06b）。
+func (c *Client) ReleaseRSJobForOtherConsumer(ctx context.Context, streamID string, job RSJobPayload) error {
+	if err := c.AckRSJob(ctx, streamID); err != nil {
+		return err
+	}
+	_, err := c.EnqueueRSJob(ctx, job)
+	return err
+}
+
 // StreamGroupPending 消费者组待处理消息数（XPENDING count）
 func (c *Client) StreamGroupPending(ctx context.Context, stream, group string) (int64, error) {
 	info, err := c.rdb.XPending(ctx, stream, group).Result()

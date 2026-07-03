@@ -90,6 +90,7 @@ func (s *RemoteSensingService) executePanRpcViaArgo(ctx context.Context, taskID 
 			WarpMemMB:           warpMemMB,
 			ResampleAlg:         resampleAlg,
 			SatelliteAffinityID: s.satelliteSatID(ctx, req.SatelliteID),
+			RequiredNodeAffinity:  s.argoCfg.RequiredNodeAffinity,
 		})
 		if err != nil {
 			return nil, err

@@ -4,12 +4,12 @@ metadata:
   name: remote-sensing-data-pv
 spec:
   capacity:
-    storage: 200Gi
+    storage: 500Gi
   accessModes:
     - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
   nfs:
-    server: k8s-worker22
+    server: 192.168.10.112
     path: /export/remote-sensing-data
 ---
 apiVersion: v1
@@ -23,5 +23,5 @@ spec:
     - ReadWriteMany
   resources:
     requests:
-      storage: 200Gi
+      storage: 500Gi
   volumeName: remote-sensing-data-pv

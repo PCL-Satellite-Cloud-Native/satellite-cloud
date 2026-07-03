@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/k8snode"
 	"satellite-cloud/backend/internal/metrics"
 	"satellite-cloud/backend/internal/queue"
 	"satellite-cloud/backend/internal/remotesensing"
@@ -65,6 +66,13 @@ func main() {
 
 	rsSvc.BootstrapStaleRunningTasks(ctx)
 
+	localPlacement := k8snode.CurrentPlacement(ctx)
+	zapLogger.Info("rs-worker local placement",
+		zap.String("node", localPlacement.NodeName),
+		zap.String("executed_sat_id", localPlacement.ExecutedSatID),
+		zap.Bool("satellite_aware_queue", cfg.Queue.SatelliteAwareQueue),
+	)
+
 	concurrency := cfg.Queue.RSWorkerConcurrency
 	if concurrency <= 0 {
 		concurrency = 1
@@ -73,6 +81,16 @@ func main() {
 	var wg sync.WaitGroup
 
 	processJob := func(streamID string, job queue.RSJobPayload) {
+		if ok, _ := rsSvc.ShouldProcessRSJob(ctx, job, localPlacement.ExecutedSatID); !ok {
+			if err := qClient.ReleaseRSJobForOtherConsumer(ctx, streamID, job); err != nil {
+				zapLogger.Warn("交还非本星 RS job 失败",
+					zap.Uint("task_id", job.TaskID),
+					zap.String("stream_id", streamID),
+					zap.Error(err),
+				)
+			}
+			return
+		}
 		sem <- struct{}{}
 		wg.Add(1)
 		go func() {

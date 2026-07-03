@@ -51,6 +51,7 @@ type PanRPCWorkflowParams struct {
 	ResampleAlg           string
 	TaskPathPrefix        string // P5-05：空=legacy；否则 "tasks/{id}/"
 	SatelliteAffinityID   string // satellites.sat_id → node label satellite.io/id
+	RequiredNodeAffinity  bool   // P5-06b：true=required，false=preferred
 }
 
 // SubmitPanRPCWorkflow 基于 WorkflowTemplate 提交 PAN RPC 并行任务
@@ -89,24 +90,7 @@ func (c *Client) SubmitPanRPCWorkflow(ctx context.Context, p PanRPCWorkflowParam
 		},
 	}
 	if p.SatelliteAffinityID != "" {
-		spec["affinity"] = map[string]interface{}{
-			"nodeAffinity": map[string]interface{}{
-				"preferredDuringSchedulingIgnoredDuringExecution": []interface{}{
-					map[string]interface{}{
-						"weight": int64(100),
-						"preference": map[string]interface{}{
-							"matchExpressions": []interface{}{
-								map[string]interface{}{
-									"key":      "satellite.io/id",
-									"operator": "In",
-									"values":   []interface{}{p.SatelliteAffinityID},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
+		spec["affinity"] = panRPCNodeAffinity(p.SatelliteAffinityID, p.RequiredNodeAffinity)
 	}
 	wf := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -177,5 +161,38 @@ func (c *Client) WaitWorkflowCompleted(ctx context.Context, name string, pollInt
 			return ctx.Err()
 		case <-ticker.C:
 		}
+	}
+}
+
+func panRPCNodeAffinity(satelliteID string, required bool) map[string]interface{} {
+	matchExpr := map[string]interface{}{
+		"key":      "satellite.io/id",
+		"operator": "In",
+		"values":   []interface{}{satelliteID},
+	}
+	if required {
+		return map[string]interface{}{
+			"nodeAffinity": map[string]interface{}{
+				"requiredDuringSchedulingIgnoredDuringExecution": map[string]interface{}{
+					"nodeSelectorTerms": []interface{}{
+						map[string]interface{}{
+							"matchExpressions": []interface{}{matchExpr},
+						},
+					},
+				},
+			},
+		}
+	}
+	return map[string]interface{}{
+		"nodeAffinity": map[string]interface{}{
+			"preferredDuringSchedulingIgnoredDuringExecution": []interface{}{
+				map[string]interface{}{
+					"weight": int64(100),
+					"preference": map[string]interface{}{
+						"matchExpressions": []interface{}{matchExpr},
+					},
+				},
+			},
+		},
 	}
 }

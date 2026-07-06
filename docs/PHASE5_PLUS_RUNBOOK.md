@@ -93,17 +93,38 @@ P5-05 压测前若 NFS ~98G 满盘，须先扩容。运维脚本：`scripts/ops/
 
 #### 方式 A — GitLab CI（推荐，master 无需代码仓库）
 
-1. **开发机** `git push origin main`（含 P5-06b 代码）
+**一次性前置（master / cluster-admin，CI 无 nodes 权限）**：
+
+```bash
+# 开发机：拷贝部署包到 master（4 个文件）
+scp scripts/phase5_label_nodes.sh \
+    backend/internal/pilotcluster/pilot-map.json \
+    k8s/phase5/worker-node-reader.yaml \
+    k8s/gitlab-runner-ci-rbac-phase5.yaml \
+    pcl@k8s-master:~/code/p5-deploy/
+
+# master
+cd ~/code/p5-deploy
+bash phase5_label_nodes.sh --apply          # 自动读同目录 pilot-map.json
+kubectl apply -f worker-node-reader.yaml
+kubectl apply -f gitlab-runner-ci-rbac-phase5.yaml
+kubectl get nodes -L satellite.io/id
+```
+
+**Pipeline 步骤**：
+
+1. **开发机** `git push origin main`
 2. GitLab → **CI/CD → Pipelines** → 等待 **`build-backend`** 绿
 3. 手动点击 **`deploy-phase5-plus-pilot`**
 4. Job 绿后，在 **master** 仅做验收（见 §2.4）
 
-CI job 会自动：`satellite.io/id` 打标（best-effort）→ RBAC → WorkflowTemplate → 停 Deployment → 上 DaemonSet → 更新镜像。
+CI job 会自动：WorkflowTemplate → 停 Deployment → 上 DaemonSet → 更新镜像（**不含**节点打标 / ClusterRole）。
 
-| 前置（一次性，集群管理员） | 说明 |
-|---------------------------|------|
-| 节点标签 | CI 会尝试打标；若 Forbidden，在 master 执行 `scripts/phase5_label_nodes.sh --apply` |
-| `k8s/phase5/worker-node-reader.yaml` | CI 会 apply；需 cluster-admin 或已有 ClusterRoleBinding |
+| 前置（一次性，cluster-admin） | 说明 |
+|-------------------------------|------|
+| `phase5_label_nodes.sh --apply` | 15 节点 `satellite.io/id` |
+| `k8s/phase5/worker-node-reader.yaml` | rs-worker 读 Node 标签 |
+| `k8s/gitlab-runner-ci-rbac-phase5.yaml` | CI 可 apply DaemonSet |
 
 **回滚 CI 路径**：删除 DaemonSet → 恢复 Deployment（§2.4 回滚命令）。
 

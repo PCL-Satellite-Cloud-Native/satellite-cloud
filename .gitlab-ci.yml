@@ -281,49 +281,23 @@ deploy-phase5-plus-pilot:
   script:
     - echo "Phase 5+ Pilot：P5-05 路径隔离 + P5-06b 按星 rs-worker DaemonSet"
     - echo "BACKEND_IMAGE=$BACKEND_IMAGE"
-    - echo "── 1) 节点标签 satellite.io/id（best-effort；无 RBAC 时管理员在 master 执行 phase5_label_nodes.sh --apply）"
-    - |
-      if command -v python3 >/dev/null 2>&1; then
-        python3 <<'PY'
-      import json, subprocess, sys
-      with open("backend/internal/pilotcluster/pilot-map.json") as f:
-          nodes = json.load(f).get("nodes", [])
-      ok = 0
-      for n in nodes:
-          node, sat = n["node"], n["sat_id"]
-          cmd = ["kubectl", "label", "node", node, f"satellite.io/id={sat}", "--overwrite"]
-          print(" ".join(cmd), flush=True)
-          r = subprocess.run(cmd)
-          if r.returncode == 0:
-              ok += 1
-      print(f"labeled {ok}/{len(nodes)} nodes", flush=True)
-      if ok == 0 and len(nodes) > 0:
-          print("WARN: 节点打标全部失败，请确认 gitlab-runner 有 nodes/patch 权限或已在 master 手动打标", file=sys.stderr)
-      PY
-      else
-        echo "python3 不可用，尝试 scripts/phase5_label_nodes.sh"
-        if command -v jq >/dev/null 2>&1; then
-          sh scripts/phase5_label_nodes.sh --apply || true
-        else
-          echo "WARN: 跳过自动打标，请确认 kubectl get nodes -L satellite.io/id 已有标签"
-        fi
-      fi
-    - kubectl get nodes -L satellite.io/id
-    - echo "── 2) worker 读 Node RBAC（集群管理员一次性；已 apply 可重复）"
-    - kubectl apply -f k8s/phase5/worker-node-reader.yaml
-    - echo "── 3) WorkflowTemplate（P5-05 task_path_prefix）"
+    - echo "── 前置（cluster-admin 在 master 一次性，CI 无 nodes 权限时不自动打标）"
+    - echo "  bash scripts/phase5_label_nodes.sh --apply"
+    - echo "  kubectl apply -f k8s/phase5/worker-node-reader.yaml"
+    - echo "  kubectl apply -f k8s/gitlab-runner-ci-rbac-phase5.yaml"
+    - echo "── 1) WorkflowTemplate（P5-05 task_path_prefix）"
     - kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml
-    - echo "── 4) 停 rs-worker Deployment + 冻结 HPA（避免与 DaemonSet 双消费）"
+    - echo "── 2) 停 rs-worker Deployment + 冻结 HPA（避免与 DaemonSet 双消费）"
     - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0 || true
     - kubectl -n gitlab-runner patch hpa rs-worker -p '{"spec":{"minReplicas":0,"maxReplicas":0}}' 2>/dev/null || true
-    - echo "── 5) 更新 backend / od-worker 镜像"
+    - echo "── 3) 更新 backend / od-worker 镜像"
     - kubectl apply -k k8s/phase2/
     - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner apply -f k8s/backend/deployment.yaml
     - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
     - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
-    - echo "── 6) 部署 rs-worker DaemonSet（P5-06b）"
+    - echo "── 4) 部署 rs-worker DaemonSet（P5-06b）"
     - kubectl apply -k k8s/phase5/
     - kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"

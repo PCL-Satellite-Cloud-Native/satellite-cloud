@@ -4,5 +4,4 @@ kind: Kustomization
 namespace: gitlab-runner
 
 resources:
-  - worker-node-reader.yaml
   - rs-worker-daemonset.yaml

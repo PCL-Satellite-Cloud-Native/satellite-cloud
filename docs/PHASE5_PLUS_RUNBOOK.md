@@ -91,27 +91,37 @@ P5-05 压测前若 NFS ~98G 满盘，须先扩容。运维脚本：`scripts/ops/
 
 ### 2.3 部署步骤
 
+#### 方式 A — GitLab CI（推荐，master 无需代码仓库）
+
+1. **开发机** `git push origin main`（含 P5-06b 代码）
+2. GitLab → **CI/CD → Pipelines** → 等待 **`build-backend`** 绿
+3. 手动点击 **`deploy-phase5-plus-pilot`**
+4. Job 绿后，在 **master** 仅做验收（见 §2.4）
+
+CI job 会自动：`satellite.io/id` 打标（best-effort）→ RBAC → WorkflowTemplate → 停 Deployment → 上 DaemonSet → 更新镜像。
+
+| 前置（一次性，集群管理员） | 说明 |
+|---------------------------|------|
+| 节点标签 | CI 会尝试打标；若 Forbidden，在 master 执行 `scripts/phase5_label_nodes.sh --apply` |
+| `k8s/phase5/worker-node-reader.yaml` | CI 会 apply；需 cluster-admin 或已有 ClusterRoleBinding |
+
+**回滚 CI 路径**：删除 DaemonSet → 恢复 Deployment（§2.4 回滚命令）。
+
+#### 方式 B — master 手动 kubectl（备选）
+
 ```bash
-# 0) 构建并推送 backend 镜像（含 rs-worker）
+export BACKEND_IMAGE=192.168.10.238/satellite/backend:<SHA>   # Pipeline 短 SHA
 
-# 1) 节点标签（若未做）
 bash scripts/phase5_label_nodes.sh --apply
-
-# 2) Node 读 RBAC（一次性）
 kubectl apply -f k8s/phase5/worker-node-reader.yaml
-
-# 3) 停掉单副本 Deployment + HPA（避免双消费）
+kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml
 kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0
-kubectl -n gitlab-runner patch hpa rs-worker -p '{"spec":{"maxReplicas":1,"minReplicas":0}}' 2>/dev/null || true
-
-# 4) 部署 DaemonSet
+kubectl -n gitlab-runner patch hpa rs-worker -p '{"spec":{"minReplicas":0,"maxReplicas":0}}' 2>/dev/null || true
 kubectl apply -k k8s/phase5/
+kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
+kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
 kubectl -n gitlab-runner rollout status daemonset/rs-worker --timeout=600s
-
-# 5) 验证每节点 Pod
 kubectl -n gitlab-runner get pods -l app=rs-worker -o wide
-# 期望：带 satellite.io/id 的节点各 1 Pod；日志含 executed_sat_id
-kubectl -n gitlab-runner logs daemonset/rs-worker --tail=5 | grep -E "local placement|executed_sat_id"
 ```
 
 **Pilot 子集验收**（仅 3 星节点时）：可临时给无关节点打 `satellite.io/rs-worker=disabled` 并 patch DaemonSet `nodeAffinity` 排除；或接受 15 Pod 全量运行。
@@ -162,6 +172,7 @@ kubectl -n gitlab-runner set env deployment/rs-worker \
 | `backend/internal/remotesensing/taskpaths.go` | P5-05 路径 helper |
 | `backend/internal/remotesensing/worker_satellite.go` | P5-06b 队列过滤 |
 | `k8s/phase5/rs-worker-daemonset.yaml` | P5-06b DaemonSet |
+| `.gitlab-ci.yml` → `deploy-phase5-plus-pilot` | CI 一键部署 |
 | [archives/2026-07-03_phase5-05-closure.md](./archives/2026-07-03_phase5-05-closure.md) | P5-05 收口 |
 | [archives/2026-06-26_phase5-closure.md](./archives/2026-06-26_phase5-closure.md) | Phase 5 收口 |
 

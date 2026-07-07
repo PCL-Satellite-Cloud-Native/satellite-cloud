@@ -23,6 +23,21 @@ func (s *RemoteSensingService) recordTaskPlacement(ctx context.Context, taskID u
 		return
 	}
 
+	// od-worker 仅跑阶段 10；RS 落点已由 rs-worker 写入，勿覆盖 executed_sat_id / host_node_name。
+	if s.metricsWorker == "od-worker" {
+		var existing model.RemoteSensingTask
+		if err := s.db.WithContext(ctx).Select("host_node_name", "executed_sat_id").
+			First(&existing, taskID).Error; err == nil && existing.ExecutedSatID != "" {
+			s.logger.Info("保留 rs-worker 执行落点，od-worker 不覆盖",
+				zap.Uint("task_id", taskID),
+				zap.String("host_node", existing.HostNodeName),
+				zap.String("executed_sat_id", existing.ExecutedSatID),
+				zap.String("od_node", p.NodeName),
+			)
+			return
+		}
+	}
+
 	now := time.Now().UTC()
 	updates := map[string]interface{}{
 		"host_node_name": p.NodeName,

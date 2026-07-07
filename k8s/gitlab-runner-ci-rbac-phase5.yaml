@@ -1,4 +1,4 @@
-# 授权 gitlab-runner 在 gitlab-runner namespace 管理 DaemonSet（P5-06b）
+# 授权 gitlab-runner 在 gitlab-runner namespace 管理 DaemonSet + WorkflowTemplate（P5-06b / P5-05）
 #
 # 【集群管理员一次性执行】在 k8s-master：
 #   kubectl apply -f k8s/gitlab-runner-ci-rbac-phase5.yaml
@@ -15,6 +15,9 @@ rules:
   - apiGroups: ["apps"]
     resources: ["daemonsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtemplates"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

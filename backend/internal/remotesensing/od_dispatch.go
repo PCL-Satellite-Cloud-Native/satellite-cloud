@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -62,6 +63,34 @@ func (s *RemoteSensingService) enqueueOD(ctx context.Context, taskID uint, req C
 		zap.String("fusion_dat_rel", fusionDatRel),
 	)
 	return nil
+}
+
+// enqueueODWithRetry 向 od.jobs 入队；Redis LOADING（重启/AOF 加载）时退避重试。
+func (s *RemoteSensingService) enqueueODWithRetry(ctx context.Context, taskID uint, req CreateTaskRequest, fusionDatRel string) error {
+	const maxAttempts = 10
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := s.enqueueOD(ctx, taskID, req, fusionDatRel)
+		if err == nil {
+			s.log(taskID, StageObjectDetection, "info", "检测任务已入队 od.jobs，等待 od-worker 消费")
+			return nil
+		}
+		lastErr = err
+		msg := err.Error()
+		if strings.Contains(msg, "LOADING") {
+			wait := time.Duration(attempt) * 3 * time.Second
+			s.log(taskID, StageObjectDetection, "warn",
+				fmt.Sprintf("Redis LOADING，%ds 后重试入队 od.jobs（%d/%d）", wait/time.Second, attempt, maxAttempts))
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(wait):
+			}
+			continue
+		}
+		return err
+	}
+	return lastErr
 }
 
 // RunDetectionFromJob od-worker 消费 od.jobs 后执行阶段 10

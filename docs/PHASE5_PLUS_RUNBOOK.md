@@ -96,19 +96,22 @@ P5-05 压测前若 NFS ~98G 满盘，须先扩容。运维脚本：`scripts/ops/
 **一次性前置（master / cluster-admin，CI 无 nodes 权限）**：
 
 ```bash
-# 开发机：拷贝部署包到 master（4 个文件）
+# 开发机：拷贝部署包到 master（5 个文件）
 scp scripts/phase5_label_nodes.sh \
     backend/internal/pilotcluster/pilot-map.json \
     k8s/phase5/worker-node-reader.yaml \
     k8s/gitlab-runner-ci-rbac-phase5.yaml \
+    k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml \
     pcl@k8s-master:~/code/p5-deploy/
 
 # master
 cd ~/code/p5-deploy
-bash phase5_label_nodes.sh --apply          # 自动读同目录 pilot-map.json
+bash phase5_label_nodes.sh --apply
 kubectl apply -f worker-node-reader.yaml
-kubectl apply -f gitlab-runner-ci-rbac-phase5.yaml
+kubectl apply -f gitlab-runner-ci-rbac-phase5.yaml   # 含 DaemonSet + WorkflowTemplate 权限
+kubectl apply -f workflowtemplate-pan-rpc.yaml       # P5-05 task_path_prefix（CI 也会 apply）
 kubectl get nodes -L satellite.io/id
+kubectl -n gitlab-runner get workflowtemplate rs-pan-rpc-parallel
 ```
 
 **Pipeline 步骤**：

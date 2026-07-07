@@ -285,8 +285,8 @@ deploy-phase5-plus-pilot:
     - echo "  bash scripts/phase5_label_nodes.sh --apply"
     - echo "  kubectl apply -f k8s/phase5/worker-node-reader.yaml"
     - echo "  kubectl apply -f k8s/gitlab-runner-ci-rbac-phase5.yaml"
-    - echo "── 1) WorkflowTemplate（P5-05 task_path_prefix）"
-    - kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml
+    - echo "── 1) WorkflowTemplate（P5-05 task_path_prefix；需 gitlab-runner-ci-rbac-phase5 含 workflowtemplates）"
+    - kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml || echo "WARN WorkflowTemplate apply 失败，请在 master 手动 apply 或更新 RBAC 后重试"
     - echo "── 2) 停 rs-worker Deployment + 冻结 HPA（避免与 DaemonSet 双消费）"
     - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0 || true
     - kubectl -n gitlab-runner patch hpa rs-worker -p '{"spec":{"minReplicas":0,"maxReplicas":0}}' 2>/dev/null || true

@@ -147,7 +147,8 @@ kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0
 kubectl apply -k k8s/phase5/
 kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
 kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
-kubectl -n gitlab-runner rollout status daemonset/rs-worker --timeout=600s
+kubectl -n gitlab-runner rollout status daemonset/rs-worker --timeout=900s
+# 或：EXPECTED_IMAGE=$BACKEND_IMAGE bash scripts/phase5_wait_ds_rollout.sh --min-ready 12
 kubectl -n gitlab-runner get pods -l app=rs-worker -o wide
 ```
 

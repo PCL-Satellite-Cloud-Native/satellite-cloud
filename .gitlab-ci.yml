@@ -302,7 +302,7 @@ deploy-phase5-plus-pilot:
     - kubectl -n gitlab-runner patch deployment/rs-worker --type=merge -p '{"spec":{"replicas":0}}' || true
     - kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
-    - kubectl -n gitlab-runner rollout status daemonset/rs-worker --timeout=600s
+    - EXPECTED_IMAGE="$BACKEND_IMAGE" sh scripts/phase5_wait_ds_rollout.sh --namespace gitlab-runner --timeout 900 --min-ready 12
     - kubectl -n gitlab-runner get deploy rs-worker -o jsonpath='rs-worker Deployment replicas={.spec.replicas} ready={.status.readyReplicas}{"\n"}'
     - kubectl -n gitlab-runner get ds rs-worker -o jsonpath='rs-worker DaemonSet image={.spec.template.spec.containers[0].image}{"\n"}'
     - kubectl -n gitlab-runner get pods -l app=rs-worker -o wide

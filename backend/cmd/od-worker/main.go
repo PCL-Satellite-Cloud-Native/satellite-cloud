@@ -85,6 +85,17 @@ func main() {
 				if errors.Is(err, redis.Nil) {
 					continue
 				}
+				if queue.IsRedisNoGroup(err) {
+					if ensureErr := qClient.EnsureODConsumerGroup(ctx, cfg.Queue.StreamOD, cfg.Queue.ODConsumerGroup); ensureErr != nil {
+						zapLogger.Warn("重建 od consumer group 失败", zap.Error(ensureErr))
+					} else {
+						zapLogger.Info("已重建 od consumer group（Redis 重启后恢复）",
+							zap.String("stream", cfg.Queue.StreamOD),
+							zap.String("group", cfg.Queue.ODConsumerGroup),
+						)
+					}
+					continue
+				}
 				zapLogger.Warn("XReadGroup od failed", zap.Error(err))
 				time.Sleep(2 * time.Second)
 				continue

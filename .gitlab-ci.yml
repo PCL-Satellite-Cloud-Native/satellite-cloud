@@ -287,9 +287,8 @@ deploy-phase5-plus-pilot:
     - echo "  kubectl apply -f k8s/gitlab-runner-ci-rbac-phase5.yaml"
     - echo "── 1) WorkflowTemplate（P5-05 task_path_prefix；需 gitlab-runner-ci-rbac-phase5 含 workflowtemplates）"
     - kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml || echo "WARN WorkflowTemplate apply 失败，请在 master 手动 apply 或更新 RBAC 后重试"
-    - echo "── 2) 停 rs-worker Deployment + 冻结 HPA（避免与 DaemonSet 双消费）"
-    - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0 || true
-    - kubectl -n gitlab-runner patch hpa rs-worker -p '{"spec":{"minReplicas":0,"maxReplicas":0}}' 2>/dev/null || true
+    - echo "── 2) 删除 rs-worker Deployment HPA（Resource 指标无法 minReplicas=0，否则会拉回 1 副本）"
+    - kubectl -n gitlab-runner delete hpa rs-worker --ignore-not-found
     - echo "── 3) 更新 backend / od-worker 镜像"
     - kubectl apply -k k8s/phase2/
     - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
@@ -297,11 +296,14 @@ deploy-phase5-plus-pilot:
     - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
     - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
-    - echo "── 4) 部署 rs-worker DaemonSet（P5-06b）"
+    - echo "── 4) 部署 rs-worker DaemonSet + Deployment replicas=0（P5-06b）"
     - kubectl apply -k k8s/phase5/
+    - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0
     - kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status daemonset/rs-worker --timeout=600s
+    - kubectl -n gitlab-runner get deploy rs-worker -o jsonpath='rs-worker Deployment replicas={.spec.replicas} ready={.status.readyReplicas}{"\n"}'
+    - kubectl -n gitlab-runner get ds rs-worker -o jsonpath='rs-worker DaemonSet image={.spec.template.spec.containers[0].image}{"\n"}'
     - kubectl -n gitlab-runner get pods -l app=rs-worker -o wide
     - |
       POD=$(kubectl -n gitlab-runner get pod -l app=rs-worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)

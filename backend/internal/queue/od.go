@@ -31,6 +31,11 @@ func DefaultODConsumerName() string {
 	return "od-worker-" + host
 }
 
+// IsRedisNoGroup Redis Stream 消费者组不存在（常见于 Redis 重启后 od.jobs 仍在但 group 元数据丢失）
+func IsRedisNoGroup(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "NOGROUP")
+}
+
 // EnsureODConsumerGroup 创建 od.jobs Stream 与消费者组
 func (c *Client) EnsureODConsumerGroup(ctx context.Context, streamOD, consumerGroup string) error {
 	err := c.rdb.XGroupCreateMkStream(ctx, streamOD, consumerGroup, "0").Err()

@@ -102,8 +102,17 @@ func (s *RemoteSensingService) RunDetectionFromJob(ctx context.Context, job queu
 	start := time.Now()
 	defer s.recordWorkerMetrics(start, job.TaskID, false)
 
-	s.recordTaskPlacement(ctx, job.TaskID)
 	taskID := job.TaskID
+	if skip, reason := s.shouldSkipODJob(taskID); skip {
+		s.logger.Info("跳过重复 OD job",
+			zap.Uint("task_id", taskID),
+			zap.String("reason", reason),
+			zap.String("worker", s.metricsWorker),
+		)
+		return
+	}
+
+	s.recordTaskPlacement(ctx, taskID)
 	req := createTaskRequestFromODJob(job)
 	req.FusionDatRel = job.FusionDatRel
 	def := stageDefinition{Name: StageObjectDetection, Title: "YOLOv8 目标识别", Order: 10}
@@ -113,6 +122,26 @@ func (s *RemoteSensingService) RunDetectionFromJob(ctx context.Context, job queu
 		return
 	}
 	s.finishTaskCompleted(taskID)
+}
+
+// shouldSkipODJob 重复 od.jobs（Redis 积压 / rs-worker resume 重入队）勿把已完成任务阶段 10 改回 running。
+func (s *RemoteSensingService) shouldSkipODJob(taskID uint) (bool, string) {
+	var task model.RemoteSensingTask
+	if err := s.db.Select("status").First(&task, taskID).Error; err != nil {
+		return false, ""
+	}
+	if task.Status == TaskStatusCompleted {
+		return true, "task already completed"
+	}
+	var stage model.RemoteSensingTaskStage
+	if err := s.db.Where("task_id = ? AND name = ?", taskID, StageObjectDetection).
+		Select("status").First(&stage).Error; err == nil && stage.Status == StageSuccess {
+		if task.Status != TaskStatusCompleted {
+			s.finishTaskCompleted(taskID)
+		}
+		return true, "object_detection already success"
+	}
+	return false, ""
 }
 
 // persistFusionArtifactsSync 阶段 9 完成后同步持久化融合产物（od-worker 跨 Pod 需读 NFS）

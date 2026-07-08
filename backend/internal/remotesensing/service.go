@@ -473,6 +473,13 @@ func (s *RemoteSensingService) runPipeline(ctx context.Context, taskID uint, req
 			continue
 		}
 		if def.Name == StageObjectDetection && req.EnableDetection && s.queueCfg.UseODWorker {
+			if skip, reason := s.shouldSkipODJob(taskID); skip {
+				s.log(taskID, StageObjectDetection, "info", "跳过重复 OD 入队："+reason)
+				if reason == "object_detection already success" {
+					s.finishTaskCompleted(taskID)
+				}
+				return
+			}
 			if err := s.enqueueODWithRetry(ctx, taskID, req, fusionDatRelPersist(s.cfg, taskID, req.FilePrefix)); err != nil {
 				s.finishTaskWithError(taskID, fmt.Sprintf("检测入队失败: %v", err))
 				return

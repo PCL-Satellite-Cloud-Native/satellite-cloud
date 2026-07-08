@@ -1,8 +1,9 @@
 # Phase 5+ 运维手册（路径隔离 → 按星 rs-worker）
 
-> **状态（2026-07-03）**：P5-05 **已验收**；P5-06b **代码就绪，待部署验收**  
+> **状态（2026-07-08）**：P5-05 **已验收**；P5-06b **已验收**（p5-6b-v2-0707）  
 > **前置**：[PHASE5_RUNBOOK.md](./PHASE5_RUNBOOK.md)（Phase 5 已闭合）  
 > **P5-05 归档**：[archives/2026-07-03_phase5-05-closure.md](./archives/2026-07-03_phase5-05-closure.md)  
+> **P5-06b 归档**：[archives/2026-07-08_phase5-06b-closure.md](./archives/2026-07-08_phase5-06b-closure.md)  
 > **方案 SSOT**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md)
 
 ---
@@ -12,7 +13,7 @@
 | ID | 内容 | 优先级 | 状态 |
 |----|------|--------|------|
 | **P5-05** | NFS 按 `task_id` 隔离中间产物 | **先** | ✅ **已验收**（p5-path-v4-0703） |
-| **P5-06b** | 每节点 rs-worker + 卫星感知消费 + required affinity | 后 | 🔄 代码就绪 |
+| **P5-06b** | 每节点 rs-worker + 卫星感知消费 + required affinity | 后 | ✅ **已验收**（p5-6b-v2-0707） |
 | P5-07 | STK 对齐、移除 +5 星历桥接 | STK 就绪后 | ⏸ |
 | P5-08 | `phase5_acceptance.sh` 回归脚本 | 可选 | ⏸ |
 | Phase 6 | MinIO + 120 Node | P5-05 后 | ⏸ |
@@ -63,7 +64,9 @@ P5-05 压测前若 NFS ~98G 满盘，须先扩容。运维脚本：`scripts/ops/
 
 ---
 
-## 2. P5-06b — 按节点 rs-worker
+## 2. P5-06b — 按节点 rs-worker ✅
+
+> **验收定稿**：run_id **`p5-6b-v2-0707`**，task 232/233/234 均 `completed`；落点 worker11/21/31。详见 [2026-07-08_phase5-06b-closure.md](./archives/2026-07-08_phase5-06b-closure.md)。
 
 ### 2.1 目标
 
@@ -139,8 +142,8 @@ export BACKEND_IMAGE=192.168.10.238/satellite/backend:<SHA>   # Pipeline 短 SHA
 bash scripts/phase5_label_nodes.sh --apply
 kubectl apply -f k8s/phase5/worker-node-reader.yaml
 kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml
+kubectl -n gitlab-runner delete hpa rs-worker --ignore-not-found   # Resource HPA 无法 min=0，须删以免拉回 Deployment
 kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0
-kubectl -n gitlab-runner patch hpa rs-worker -p '{"spec":{"minReplicas":0,"maxReplicas":0}}' 2>/dev/null || true
 kubectl apply -k k8s/phase5/
 kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
 kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
@@ -175,6 +178,7 @@ bash scripts/submit_multi_satellite_tasks.sh \
 
 ```bash
 kubectl -n gitlab-runner delete daemonset/rs-worker --ignore-not-found
+kubectl apply -f k8s/phase4/hpa-rs-worker.yaml   # 恢复 Deployment HPA
 kubectl -n gitlab-runner scale deployment/rs-worker --replicas=1
 kubectl -n gitlab-runner set env deployment/rs-worker \
   SATELLITE_RS_SATELLITE_AWARE_QUEUE=false \
@@ -187,6 +191,36 @@ kubectl -n gitlab-runner set env deployment/rs-worker \
 - `scripts/phase5_label_nodes.sh --apply` 已执行
 - `k8s/phase5/worker-node-reader.yaml` 已 apply
 
+### 2.6 故障排查
+
+| 现象 | 根因 | 处理 |
+|------|------|------|
+| Deployment rs-worker 回到 1/1 | `hpa/rs-worker` minReplicas=1 | `kubectl delete hpa rs-worker`；`scale deployment/rs-worker --replicas=0` |
+| 阶段 10 永久「等待中」 | Redis 重启后 `od.jobs` 在、**消费者组丢失** | `redis-cli XGROUP CREATE od.jobs od-workers 0` |
+| od-worker 日志 `NOGROUP` | 同上 | 上式 + 部署含 NOGROUP 自愈的新镜像 |
+| 任务 completed 但阶段 10 仍 running | 重复 od.jobs 把 stage 改回 running | 部署 `shouldSkipODJob` 修复；或 SQL 修 stage（见归档 §4） |
+| master 上 `ls` NFS 失败 | NFS 在 worker22，master 无挂载 | 在 od-worker Pod 或 worker22 上查路径 |
+
+**od.jobs 消费者组恢复**：
+
+```bash
+REDIS=$(kubectl -n gitlab-runner get pod -l app=redis --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+kubectl -n gitlab-runner exec "$REDIS" -c redis -- redis-cli XGROUP CREATE od.jobs od-workers 0
+kubectl -n gitlab-runner exec "$REDIS" -c redis -- redis-cli XINFO GROUPS od.jobs
+```
+
+**阶段 10 DB 展示修复**（任务已 completed、stage 卡在 running 时）：
+
+```sql
+UPDATE remote_sensing_task_stages
+SET status='success', finished_at=COALESCE(finished_at, NOW()), updated_at=NOW()
+WHERE task_id IN (232,234) AND name='object_detection' AND status='running';
+
+UPDATE remote_sensing_tasks
+SET current_stage=NULL, updated_at=NOW()
+WHERE id IN (232,234) AND status='completed';
+```
+
 ---
 
 ## 3. 相关路径
@@ -198,8 +232,9 @@ kubectl -n gitlab-runner set env deployment/rs-worker \
 | `k8s/phase5/rs-worker-daemonset.yaml` | P5-06b DaemonSet |
 | `.gitlab-ci.yml` → `deploy-phase5-plus-pilot` | CI 一键部署 |
 | [archives/2026-07-03_phase5-05-closure.md](./archives/2026-07-03_phase5-05-closure.md) | P5-05 收口 |
+| [archives/2026-07-08_phase5-06b-closure.md](./archives/2026-07-08_phase5-06b-closure.md) | P5-06b 收口 |
 | [archives/2026-06-26_phase5-closure.md](./archives/2026-06-26_phase5-closure.md) | Phase 5 收口 |
 
 ---
 
-*P5-06b 验收通过后更新 §2 状态并新建归档。*
+*Phase 5+（P5-05 / P5-06b）均已验收；后续迭代见 P5-07 / P5-08。*

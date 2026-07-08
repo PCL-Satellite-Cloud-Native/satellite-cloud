@@ -1,0 +1,8 @@
+# P5-06b：保留 Deployment 对象供回滚，副本固定为 0，避免与 DaemonSet 双消费。
+# 须删除 hpa/rs-worker（Resource 指标 HPA 无法 minReplicas=0，会持续把 Deployment 拉回 1）。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rs-worker
+spec:
+  replicas: 0

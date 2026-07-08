@@ -5,4 +5,3 @@ namespace: gitlab-runner
 
 resources:
   - rs-worker-daemonset.yaml
-  - rs-worker-deployment-scale.yaml

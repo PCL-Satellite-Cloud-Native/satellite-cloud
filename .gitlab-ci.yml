@@ -296,9 +296,10 @@ deploy-phase5-plus-pilot:
     - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
     - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
-    - echo "── 4) 部署 rs-worker DaemonSet + Deployment replicas=0（P5-06b）"
+    - echo "── 4) 部署 rs-worker DaemonSet（P5-06b）"
     - kubectl apply -k k8s/phase5/
-    - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0
+    - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0 || true
+    - kubectl -n gitlab-runner patch deployment/rs-worker --type=merge -p '{"spec":{"replicas":0}}' || true
     - kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status daemonset/rs-worker --timeout=600s

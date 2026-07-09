@@ -15,8 +15,8 @@
 | **P5-05** | NFS 按 `task_id` 隔离中间产物 | **先** | ✅ **已验收**（p5-path-v4-0703） |
 | **P5-06b** | 每节点 rs-worker + 卫星感知消费 + required affinity | 后 | ✅ **已验收**（p5-6b-v2-0707） |
 | P5-07 | STK 对齐、移除 +5 星历桥接 | STK 就绪后 | ⏸ |
-| P5-08 | `phase5_acceptance.sh` 回归脚本 | 可选 | ⏸ |
-| Phase 6 | MinIO + 120 Node | P5-05 后 | ⏸ |
+| P5-08 | `phase5_acceptance.sh` 回归脚本 | 可选 | ✅ **已提供** |
+| Phase 6 | MinIO + 120 Node | 门禁通过后 | ⏸ 见 [PHASE6_README.md](./PHASE6_README.md) |
 
 用户决议：**6b 方案**，顺序 **先 P5-05 再 P5-06**。
 
@@ -222,6 +222,32 @@ SET current_stage=NULL, updated_at=NOW()
 WHERE id IN (232,234) AND status='completed';
 ```
 
+### 2.7 Phase 5+ 收尾闭合 ✅
+
+> 归档：[2026-07-09_phase5-plus-closure.md](./archives/2026-07-09_phase5-plus-closure.md)
+
+| run_id | 结果 |
+|--------|------|
+| p5-closure-smoke-0708 | 235/236 completed；237 pan_merge 算法失败（非调度） |
+| p5-closure-retry-0709 | 238 completed → **三锚点全绿** |
+
+**P5-08 回归（k8s-master）**：
+
+```bash
+kubectl -n gitlab-runner port-forward svc/satellite-backend 8080:8080 &
+
+# 仅 preflight
+bash scripts/phase5_acceptance.sh --preflight-only
+
+# 完整回归（提交 + 断言）
+bash scripts/phase5_acceptance.sh --run-id p5-regression-$(date +%m%d)
+
+# 对已有 summary 断言
+bash scripts/phase5_acceptance.sh --no-submit --run-id p5-closure-retry-0709
+```
+
+**Phase 6**：不在 `main` 直接开发 → 见 [PHASE6_README.md](./PHASE6_README.md) 创建 `feat/phase6-*` 分支。
+
 ---
 
 ## 3. 相关路径
@@ -234,8 +260,10 @@ WHERE id IN (232,234) AND status='completed';
 | `.gitlab-ci.yml` → `deploy-phase5-plus-pilot` | CI 一键部署 |
 | [archives/2026-07-03_phase5-05-closure.md](./archives/2026-07-03_phase5-05-closure.md) | P5-05 收口 |
 | [archives/2026-07-08_phase5-06b-closure.md](./archives/2026-07-08_phase5-06b-closure.md) | P5-06b 收口 |
+| [archives/2026-07-09_phase5-plus-closure.md](./archives/2026-07-09_phase5-plus-closure.md) | Phase 5+ 收尾（smoke + retry） |
+| [PHASE6_README.md](./PHASE6_README.md) | Phase 6 入口（新分支） |
 | [archives/2026-06-26_phase5-closure.md](./archives/2026-06-26_phase5-closure.md) | Phase 5 收口 |
 
 ---
 
-*Phase 5+（P5-05 / P5-06b）均已验收；后续迭代见 P5-07 / P5-08。*
+*Phase 5+ 已正式闭合（2026-07-09）。Phase 6 见 [PHASE6_README.md](./PHASE6_README.md)。*

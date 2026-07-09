@@ -116,8 +116,9 @@ kubectl -n gitlab-runner exec "$REDIS" -c redis -- redis-cli XINFO GROUPS od.job
 ## 7. 下一步决议
 
 1. **P5-06b 正式闭合** — 本文归档  
-2. push → `build-backend` → `deploy-phase5-plus-pilot`（含 OD 重复 job 防护）  
-3. 可选：P5-07 / P5-08
+2. **Phase 5+ 收尾** — [2026-07-09_phase5-plus-closure.md](./2026-07-09_phase5-plus-closure.md)  
+3. Phase 6 → [PHASE6_README.md](../PHASE6_README.md)（**新分支** `feat/phase6-*`）  
+4. 可选：P5-07 STK；`scripts/phase5_acceptance.sh` 定期回归
 
 ---
 

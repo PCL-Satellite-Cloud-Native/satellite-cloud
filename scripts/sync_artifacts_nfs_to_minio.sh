@@ -10,7 +10,8 @@ NAMESPACE="${NAMESPACE:-gitlab-runner}"
 BUCKET="${MINIO_BUCKET:-satellite-artifacts}"
 MC_IMAGE="${MC_IMAGE:-192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1}"
 JOB_NAME="${JOB_NAME:-minio-artifact-sync}"
-WAIT_TIMEOUT="${WAIT_TIMEOUT:-3600s}"
+WAIT_TIMEOUT="${WAIT_TIMEOUT:-7200s}"
+NO_WAIT=false
 DRY_RUN=false
 RS_ONLY=false
 OD_ONLY=false
@@ -30,6 +31,7 @@ usage() {
   --rs-only            仅同步 remote_sensing 产物
   --od-only            仅同步 object_detection 产物
   --verify-only        仅列出 bucket 摘要（不跑 sync Job）
+  --no-wait            创建 Job 后立即返回（大目录 mirror 耗时长时用）
   --dry-run            打印将执行的 kubectl 命令
   -h, --help
 
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --rs-only) RS_ONLY=true; shift ;;
     --od-only) OD_ONLY=true; shift ;;
     --verify-only) VERIFY_ONLY=true; shift ;;
+    --no-wait) NO_WAIT=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数: $1"; usage; exit 1 ;;
@@ -60,8 +63,6 @@ if [[ "${RS_ONLY}" == true && "${OD_ONLY}" == true ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-MANIFEST="${REPO_ROOT}/k8s/phase6/minio-artifact-sync-job.yaml"
 
 if ! command -v kubectl >/dev/null; then
   echo "需要 kubectl"
@@ -77,6 +78,27 @@ sync_rs="true"
 sync_od="true"
 [[ "${RS_ONLY}" == true ]] && sync_od="false"
 [[ "${OD_ONLY}" == true ]] && sync_rs="false"
+
+print_job_diagnostics() {
+  echo ""
+  echo "== Job 诊断 (${JOB_NAME}) =="
+  kubectl -n "${NAMESPACE}" get job "${JOB_NAME}" -o wide 2>/dev/null || true
+  kubectl -n "${NAMESPACE}" get pods -l "job-name=${JOB_NAME}" -o wide 2>/dev/null || true
+  local pod
+  pod="$(kubectl -n "${NAMESPACE}" get pods -l "job-name=${JOB_NAME}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  if [[ -n "${pod}" ]]; then
+    echo ""
+    echo "-- describe pod ${pod} (Events) --"
+    kubectl -n "${NAMESPACE}" describe pod "${pod}" | tail -30
+    echo ""
+    echo "-- logs ${pod} (tail) --"
+    kubectl -n "${NAMESPACE}" logs "${pod}" --tail=80 2>/dev/null || true
+  fi
+  echo ""
+  echo "Job 可能仍在运行（大数据 mirror 常 >1h）。跟踪："
+  echo "  kubectl -n ${NAMESPACE} logs -f job/${JOB_NAME}"
+  echo "  kubectl -n ${NAMESPACE} get job ${JOB_NAME} -w"
+}
 
 run_mc_verify() {
   local name="${JOB_NAME}-verify-$$"
@@ -152,11 +174,6 @@ if [[ "${VERIFY_ONLY}" == true ]]; then
   exit 0
 fi
 
-if [[ ! -f "${MANIFEST}" ]]; then
-  echo "缺少 manifest: ${MANIFEST}"
-  exit 1
-fi
-
 echo "== P6-04 NFS → MinIO artifact sync =="
 echo "   namespace=${NAMESPACE} bucket=${BUCKET} job=${JOB_NAME} rs=${sync_rs} od=${sync_od}"
 
@@ -175,7 +192,7 @@ kind: Job
 metadata:
   name: ${JOB_NAME}
 spec:
-  ttlSecondsAfterFinished: 600
+  ttlSecondsAfterFinished: 86400
   backoffLimit: 1
   template:
     spec:
@@ -240,9 +257,20 @@ spec:
             claimName: remote-sensing-data
 EOF
 
-kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${JOB_NAME}" --timeout="${WAIT_TIMEOUT}"
+if [[ "${NO_WAIT}" == true ]]; then
+  echo ""
+  echo "Job 已创建（--no-wait）。跟踪进度："
+  echo "  kubectl -n ${NAMESPACE} logs -f job/${JOB_NAME}"
+  echo "  kubectl -n ${NAMESPACE} wait --for=condition=complete job/${JOB_NAME} --timeout=${WAIT_TIMEOUT}"
+  exit 0
+fi
+
+if ! kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${JOB_NAME}" --timeout="${WAIT_TIMEOUT}"; then
+  print_job_diagnostics
+  exit 1
+fi
 kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}"
 
 echo ""
-echo "同步完成。验证：bash scripts/sync_artifacts_nfs_to_minio.sh --verify-only"
+echo "同步完成。验证：bash ${SCRIPT_DIR}/sync_artifacts_nfs_to_minio.sh --verify-only"
 echo "启用 API MinIO 下载见 docs/PHASE6_RUNBOOK.md §3（确认对象已存在后再 patch backend）"

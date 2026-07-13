@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # P5-08：Phase 5+ Pilot 回归 — 集群 preflight + 三锚点星提交 + 落点断言
 set -euo pipefail
 

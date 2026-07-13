@@ -1,11 +1,8 @@
 package handlers
 
 import (
-	"fmt"
 	"io"
-	"mime"
 	"net/http"
-	"path/filepath"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -159,21 +156,15 @@ func (h *ObjectDetectionHandler) DownloadArtifact(c *gin.Context) {
 		return
 	}
 	absPath, err := h.svc.ArtifactAbsolutePath(artifact)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err == nil {
+		serveArtifactFile(c, h.logger, absPath, artifact.Path, artifact.Type)
 		return
 	}
-	contentType := http.DetectContentType([]byte{})
-	if ext := filepath.Ext(absPath); ext != "" {
-		if mt := mime.TypeByExtension(ext); mt != "" {
-			contentType = mt
-		}
+	rc, openErr := h.svc.OpenArtifact(c.Request.Context(), artifact)
+	if openErr != nil {
+		h.logger.Error("打开检测产物失败", zap.Error(openErr))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": openErr.Error()})
+		return
 	}
-	disposition := "attachment"
-	if artifact.Type == "preview" || artifact.Type == "tile" {
-		disposition = "inline"
-	}
-	c.Header("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, filepath.Base(absPath)))
-	c.Header("Content-Type", contentType)
-	c.File(absPath)
+	serveArtifactStream(c, h.logger, rc, artifact.Path, artifact.Type)
 }

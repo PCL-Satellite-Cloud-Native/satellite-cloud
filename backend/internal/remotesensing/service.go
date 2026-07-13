@@ -22,6 +22,7 @@ import (
 	"satellite-cloud/backend/internal/model"
 	"satellite-cloud/backend/internal/objectdetection"
 	"satellite-cloud/backend/internal/queue"
+	"satellite-cloud/backend/internal/storage"
 )
 
 const (
@@ -149,6 +150,7 @@ type RemoteSensingService struct {
 	detectionCfg    config.ObjectDetectionConfig
 	queueCfg        config.QueueConfig
 	argoCfg         config.ArgoConfig
+	storage         storage.Backend
 	metricsWorker   string
 	redisClient     *queue.Client
 	redisMu         sync.Mutex
@@ -163,17 +165,23 @@ type pipelineJob struct {
 	Req    CreateTaskRequest
 }
 
-func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig, detectionCfg config.ObjectDetectionConfig, argoCfg config.ArgoConfig, opts Options) *RemoteSensingService {
+func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteSensingConfig, detectionCfg config.ObjectDetectionConfig, argoCfg config.ArgoConfig, storageCfg config.StorageConfig, opts Options) *RemoteSensingService {
 	queueSize := cfg.WorkerQueueSize
 	if queueSize <= 0 {
 		queueSize = 64
 	}
+	store, err := storage.New(storageCfg)
+	if err != nil {
+		logger.Warn("storage backend 初始化失败，回退 nfs", zap.Error(err))
+		store, _ = storage.New(config.StorageConfig{Backend: "nfs"})
+	}
 	s := &RemoteSensingService{
-		db:           db,
-		logger:       logger,
-		cfg:          cfg,
-		detectionCfg: detectionCfg,
+		db:            db,
+		logger:        logger,
+		cfg:           cfg,
+		detectionCfg:  detectionCfg,
 		queueCfg:      opts.Queue,
+		storage:       store,
 		metricsWorker: opts.MetricsWorker,
 		subscribers:   make(map[uint][]chan RemoteSensingStageEvent),
 		queue:        make(chan pipelineJob, queueSize),
@@ -383,6 +391,13 @@ func (s *RemoteSensingService) Subscribe(taskID uint) (<-chan RemoteSensingStage
 	}
 }
 
+func (s *RemoteSensingService) artifactRootAbs(rootKey string) string {
+	if rootKey == "object_detection" {
+		return s.detectionCfg.RootPath
+	}
+	return s.cfg.RootPath
+}
+
 func (s *RemoteSensingService) ArtifactAbsolutePath(artifact *model.RemoteSensingTaskArtifact) (string, error) {
 	rootKey := ""
 	if artifact.Metadata != nil {
@@ -390,19 +405,24 @@ func (s *RemoteSensingService) ArtifactAbsolutePath(artifact *model.RemoteSensin
 			rootKey = v
 		}
 	}
-	rootPath := s.cfg.RootPath
-	if rootKey == "object_detection" {
-		rootPath = s.detectionCfg.RootPath
+	return s.storage.ResolveLocalPath(s.artifactRootAbs(rootKey), artifact.Path)
+}
+
+func (s *RemoteSensingService) OpenArtifact(ctx context.Context, artifact *model.RemoteSensingTaskArtifact) (io.ReadCloser, error) {
+	rootKey := ""
+	if artifact.Metadata != nil {
+		if v, ok := artifact.Metadata["artifact_root"].(string); ok {
+			rootKey = v
+		}
 	}
-	rootAbs, err := filepath.Abs(rootPath)
-	if err != nil {
-		return "", err
+	return s.storage.Open(ctx, s.artifactRootAbs(rootKey), artifact.Path)
+}
+
+func (s *RemoteSensingService) StorageMode() string {
+	if s.storage == nil {
+		return "nfs"
 	}
-	target := filepath.Clean(filepath.Join(rootAbs, artifact.Path))
-	if !strings.HasPrefix(target, rootAbs) {
-		return "", fmt.Errorf("artifact path 越界")
-	}
-	return target, nil
+	return s.storage.Mode()
 }
 
 func (s *RemoteSensingService) createStagesForTask(ctx context.Context, taskID uint) error {

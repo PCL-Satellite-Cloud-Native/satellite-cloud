@@ -81,7 +81,7 @@ func main() {
 	)
 
 	// 独立检测 API 保留供后续 K8s 微服务拆分；主流程已并入遥感串行流水线
-	objectDetectionService := objectdetection.NewObjectDetectionService(db, zapLogger, cfg.ObjectDetection)
+	objectDetectionService := objectdetection.NewObjectDetectionService(db, zapLogger, cfg.ObjectDetection, cfg.Storage)
 	if cfg.RemoteSensing.Device != "cpu" {
 		zapLogger.Warn(
 			"Remote sensing device is not cpu; current production workflow is validated on cpu path. "+
@@ -210,7 +210,7 @@ func main() {
 	go metrics.RunQueueCollector(context.Background(), cfg.Queue, zapLogger)
 
 	remoteSensingService := remotesensing.NewRemoteSensingService(
-		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection, cfg.Argo,
+		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection, cfg.Argo, cfg.Storage,
 		remotesensing.DefaultOptions(cfg.Queue),
 	)
 

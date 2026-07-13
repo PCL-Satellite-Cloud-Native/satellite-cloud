@@ -38,7 +38,7 @@ func main() {
 	}
 
 	rsSvc := remotesensing.NewRemoteSensingService(
-		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection, cfg.Argo,
+		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection, cfg.Argo, cfg.Storage,
 		remotesensing.WorkerOptions(cfg.Queue),
 	)
 

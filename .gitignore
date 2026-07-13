@@ -50,3 +50,5 @@ k8s/secrets/
 # CI 克隆的 sibling 仓库源码（构建上下文，勿提交）
 backend/remote-sensing-src/
 backend/object-detection-src/
+
+.cursor/

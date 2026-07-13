@@ -7,7 +7,7 @@ type: Opaque
 stringData:
   # 部署前请修改；与 backend SATELLITE_MINIO_* 对齐（启用 minio 模式时）
   MINIO_ROOT_USER: satellite-minio
-  MINIO_ROOT_PASSWORD: CHANGE_ME_minio_pilot
+  MINIO_ROOT_PASSWORD: CHANGE_ME_minio_pilot  # 生产用 kubectl create secret，勿提交明文
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -28,6 +28,8 @@ spec:
       labels:
         app: minio
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: k8s-worker22
       containers:
         - name: minio
           image: 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z

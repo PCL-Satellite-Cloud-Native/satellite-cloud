@@ -37,6 +37,7 @@
 | 2026-07-03 | [2026-07-03_phase5-05-closure.md](./2026-07-03_phase5-05-closure.md) | P5-05 NFS 路径隔离收口；p5-path-v4-0703 **3/3**；2T NFS 扩容 | [PHASE5_PLUS_RUNBOOK.md](../PHASE5_PLUS_RUNBOOK.md) §1 |
 | 2026-07-08 | [2026-07-08_phase5-06b-closure.md](./2026-07-08_phase5-06b-closure.md) | P5-06b DaemonSet rs-worker + 卫星感知队列；p5-6b-v2-0707 **3/3** | [PHASE5_PLUS_RUNBOOK.md](../PHASE5_PLUS_RUNBOOK.md) §2 |
 | 2026-07-09 | [2026-07-09_phase5-plus-closure.md](./2026-07-09_phase5-plus-closure.md) | Phase 5+ 收尾；closure smoke + retry；P5-08 脚本 | [PHASE5_PLUS_RUNBOOK.md](../PHASE5_PLUS_RUNBOOK.md) §2.7 |
+| 2026-07-13 | [2026-07-13_phase6-minio-pilot-deploy.md](./2026-07-13_phase6-minio-pilot-deploy.md) | P6-01 MinIO Pilot；PVC/NFS/CrashLoop；hostPath@worker22 定稿 | [PHASE6_RUNBOOK.md](../PHASE6_RUNBOOK.md) §2 |
 
 ---
 

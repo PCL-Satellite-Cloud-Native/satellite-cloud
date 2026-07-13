@@ -61,19 +61,36 @@ docker push 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z
 
 在能 pull `minio/mc` 的机器上 `docker save`，scp 到 k8s-repository 后 `docker load`，再 tag/push Harbor。
 
-### 2.2 修改 Secret
+### 2.2 Secret 与 worker22 数据目录
 
-编辑 `k8s/phase6/minio.yaml` 中 `minio-credentials` 的 `MINIO_ROOT_PASSWORD`（或使用 `kubectl create secret` 覆盖）。
-
-**NFS 目录（Pilot 必做，worker22 / 192.168.10.112）**：
+**Secret（不进 Git）**：在 master 写入 `minio-credentials`：
 
 ```bash
-# 在 NFS 主机 worker22 上（ssh，非 kubectl）
+kubectl -n gitlab-runner create secret generic minio-credentials \
+  --from-literal=MINIO_ROOT_USER=satellite-minio \
+  --from-literal=MINIO_ROOT_PASSWORD='***' \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**worker22 本地目录（必做）**：
+
+```bash
+# ssh k8s-worker22
 sudo mkdir -p /export/minio-data
 sudo chmod 0777 /export/minio-data
 ```
 
-Pilot 使用静态 PV `minio-data-pv` → `/export/minio-data`（见 `k8s/phase6/minio-pv-pvc.yaml`）。若无 StorageClass，**不要**仅用默认 PVC，否则 Pod 永久 Pending。
+**存储模型（Pilot 定稿）**：MinIO Pod **必须调度在 k8s-worker22**，使用 **hostPath** `/export/minio-data`（`minio-pv-pvc.yaml`）。  
+**不要用 NFS PV 挂载到 worker11 等远程节点** — MinIO 会 **CrashLoopBackOff**（要求本地文件系统）。
+
+可选：若需从其它节点备份访问，可保留 `/etc/exports` 中 `/export/minio-data` export；MinIO 进程仍只跑 worker22。
+
+确认 worker22 可调度：
+
+```bash
+kubectl get node k8s-worker22
+# 若 SchedulingDisabled：kubectl uncordon k8s-worker22（Pilot 需 MinIO 落 worker22）
+```
 
 ### 2.3 Apply
 
@@ -96,15 +113,20 @@ kubectl -n gitlab-runner get events --sort-by='.lastTimestamp' | tail -20
 
 | 现象 | 处理 |
 |------|------|
-| PVC `Pending` | 先 apply `minio-pv-pvc.yaml`；NFS 上建 `/export/minio-data` |
+| PVC `Pending` + `local-storage` | 删 PVC，apply `minio-pv-pvc.yaml`（hostPath + worker22） |
+| `FailedMount` No such file | worker22 建 `/export/minio-data` |
+| **CrashLoopBackOff**（NFS 挂载成功） | 改 **hostPath + nodeSelector worker22**（§2.2） |
 | `ImagePullBackOff` | Harbor 确认 `library/minio` / `library/mc` 已 push |
+| Pod Pending 在 worker22 | `kubectl uncordon k8s-worker22` |
 | init Job 失败 | minio Ready 后 `kubectl delete job minio-init-bucket && kubectl apply -k k8s/phase6/` |
 
-**修复 Pending PVC 后重装**
+**修复 Pending PVC 后重装（含 NFS→hostPath 迁移）**
 
 ```bash
 kubectl -n gitlab-runner delete deployment minio --ignore-not-found
+kubectl -n gitlab-runner delete job minio-init-bucket --ignore-not-found
 kubectl -n gitlab-runner delete pvc minio-data --ignore-not-found
+kubectl delete pv minio-data-pv --ignore-not-found
 kubectl apply -k k8s/phase6/
 kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s
 ```
@@ -193,6 +215,7 @@ kubectl -n gitlab-runner delete -k k8s/phase6/ --ignore-not-found
 |------|------|
 | [PHASE6_README.md](./PHASE6_README.md) | 立项与分支策略 |
 | [archives/2026-07-09_phase5-plus-closure.md](./archives/2026-07-09_phase5-plus-closure.md) | Phase 5+ 收尾 |
+| [archives/2026-07-13_phase6-minio-pilot-deploy.md](./archives/2026-07-13_phase6-minio-pilot-deploy.md) | P6-01 MinIO Pilot 部署踩坑与 hostPath 定稿 |
 
 ---
 

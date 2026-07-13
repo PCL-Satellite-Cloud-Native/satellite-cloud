@@ -1,5 +1,6 @@
-# Pilot：MinIO 数据卷 — 绑定 NFS（worker22 / 192.168.10.112）
-# 部署前在 NFS 主机执行：
+# Pilot：MinIO 数据卷 — worker22 **本地 hostPath**（非 NFS 挂载）
+# MinIO 不接受 NFS 客户端挂载盘（Remote 节点 mount 会 CrashLoop）；数据目录仍在 worker22 本地 /export/minio-data。
+# 部署前在 worker22：
 #   sudo mkdir -p /export/minio-data && sudo chmod 0777 /export/minio-data
 apiVersion: v1
 kind: PersistentVolume
@@ -9,11 +10,20 @@ spec:
   capacity:
     storage: 200Gi
   accessModes:
-    - ReadWriteMany
+    - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
-  nfs:
-    server: 192.168.10.112
+  storageClassName: ""
+  hostPath:
     path: /export/minio-data
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - k8s-worker22
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -23,7 +33,7 @@ metadata:
 spec:
   storageClassName: ""
   accessModes:
-    - ReadWriteMany
+    - ReadWriteOnce
   resources:
     requests:
       storage: 200Gi

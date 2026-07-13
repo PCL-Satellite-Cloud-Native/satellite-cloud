@@ -65,6 +65,16 @@ docker push 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z
 
 编辑 `k8s/phase6/minio.yaml` 中 `minio-credentials` 的 `MINIO_ROOT_PASSWORD`（或使用 `kubectl create secret` 覆盖）。
 
+**NFS 目录（Pilot 必做，worker22 / 192.168.10.112）**：
+
+```bash
+# 在 NFS 主机 worker22 上（ssh，非 kubectl）
+sudo mkdir -p /export/minio-data
+sudo chmod 0777 /export/minio-data
+```
+
+Pilot 使用静态 PV `minio-data-pv` → `/export/minio-data`（见 `k8s/phase6/minio-pv-pvc.yaml`）。若无 StorageClass，**不要**仅用默认 PVC，否则 Pod 永久 Pending。
+
 ### 2.3 Apply
 
 **完整部署（Harbor 已有 minio + mc）**
@@ -72,7 +82,31 @@ docker push 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z
 ```bash
 kubectl apply -k k8s/phase6/
 kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s
-kubectl -n gitlab-runner wait --for=condition=complete job/minio-init-bucket --timeout=120s
+kubectl -n gitlab-runner wait --for=condition=complete job/minio-init-bucket --timeout=180s
+```
+
+**rollout 超时排查**
+
+```bash
+kubectl -n gitlab-runner get pods -l app=minio -o wide
+kubectl -n gitlab-runner describe pod -l app=minio
+kubectl -n gitlab-runner describe pvc minio-data
+kubectl -n gitlab-runner get events --sort-by='.lastTimestamp' | tail -20
+```
+
+| 现象 | 处理 |
+|------|------|
+| PVC `Pending` | 先 apply `minio-pv-pvc.yaml`；NFS 上建 `/export/minio-data` |
+| `ImagePullBackOff` | Harbor 确认 `library/minio` / `library/mc` 已 push |
+| init Job 失败 | minio Ready 后 `kubectl delete job minio-init-bucket && kubectl apply -k k8s/phase6/` |
+
+**修复 Pending PVC 后重装**
+
+```bash
+kubectl -n gitlab-runner delete deployment minio --ignore-not-found
+kubectl -n gitlab-runner delete pvc minio-data --ignore-not-found
+kubectl apply -k k8s/phase6/
+kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s
 ```
 
 **仅 minio、无 mc 镜像时（方案 B）**

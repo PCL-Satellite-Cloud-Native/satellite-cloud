@@ -9,19 +9,6 @@ stringData:
   MINIO_ROOT_USER: satellite-minio
   MINIO_ROOT_PASSWORD: CHANGE_ME_minio_pilot
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: minio-data
-  namespace: gitlab-runner
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 200Gi
-  # 使用集群默认 StorageClass；pilot 若无动态供给，可改为绑定 hostPath PV
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

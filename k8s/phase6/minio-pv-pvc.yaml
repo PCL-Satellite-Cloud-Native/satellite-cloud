@@ -1,0 +1,30 @@
+# Pilot：MinIO 数据卷 — 绑定 NFS（worker22 / 192.168.10.112）
+# 部署前在 NFS 主机执行：
+#   sudo mkdir -p /export/minio-data && sudo chmod 0777 /export/minio-data
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: minio-data-pv
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: 192.168.10.112
+    path: /export/minio-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: gitlab-runner
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 200Gi
+  volumeName: minio-data-pv

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 
 	"satellite-cloud/backend/internal/config"
 	"satellite-cloud/backend/internal/model"
+	"satellite-cloud/backend/internal/storage"
 )
 
 const (
@@ -65,6 +67,7 @@ type ObjectDetectionService struct {
 	db          *gorm.DB
 	logger      *zap.Logger
 	cfg         config.ObjectDetectionConfig
+	storage     storage.Backend
 	subsMu      sync.Mutex
 	subscribers map[uint][]chan ObjectDetectionStageEvent
 	queue       chan pipelineJob
@@ -75,9 +78,14 @@ type pipelineJob struct {
 	Req    CreateTaskRequest
 }
 
-func NewObjectDetectionService(db *gorm.DB, logger *zap.Logger, cfg config.ObjectDetectionConfig) *ObjectDetectionService {
+func NewObjectDetectionService(db *gorm.DB, logger *zap.Logger, cfg config.ObjectDetectionConfig, storageCfg config.StorageConfig) *ObjectDetectionService {
 	if strings.TrimSpace(cfg.RootPath) == "" {
 		return nil
+	}
+	store, err := storage.New(storageCfg)
+	if err != nil {
+		logger.Warn("storage backend 初始化失败，回退 nfs", zap.Error(err))
+		store, _ = storage.New(config.StorageConfig{Backend: "nfs"})
 	}
 	queueSize := cfg.WorkerQueueSize
 	if queueSize <= 0 {
@@ -91,6 +99,7 @@ func NewObjectDetectionService(db *gorm.DB, logger *zap.Logger, cfg config.Objec
 		db:          db,
 		logger:      logger,
 		cfg:         cfg,
+		storage:     store,
 		subscribers: make(map[uint][]chan ObjectDetectionStageEvent),
 		queue:       make(chan pipelineJob, queueSize),
 	}
@@ -248,15 +257,11 @@ func (s *ObjectDetectionService) Subscribe(taskID uint) (<-chan ObjectDetectionS
 }
 
 func (s *ObjectDetectionService) ArtifactAbsolutePath(artifact *model.ObjectDetectionTaskArtifact) (string, error) {
-	rootAbs, err := filepath.Abs(s.cfg.RootPath)
-	if err != nil {
-		return "", err
-	}
-	target := filepath.Clean(filepath.Join(rootAbs, artifact.Path))
-	if !strings.HasPrefix(target, rootAbs) {
-		return "", fmt.Errorf("artifact path 越界")
-	}
-	return target, nil
+	return s.storage.ResolveLocalPath(s.cfg.RootPath, artifact.Path)
+}
+
+func (s *ObjectDetectionService) OpenArtifact(ctx context.Context, artifact *model.ObjectDetectionTaskArtifact) (io.ReadCloser, error) {
+	return s.storage.Open(ctx, s.cfg.RootPath, artifact.Path)
 }
 
 func (s *ObjectDetectionService) createStagesForTask(ctx context.Context, taskID uint) error {

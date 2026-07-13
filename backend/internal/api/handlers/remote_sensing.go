@@ -3,9 +3,7 @@ package handlers
 import (
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
-	"path/filepath"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -238,24 +236,17 @@ func (h *RemoteSensingHandler) DownloadArtifact(c *gin.Context) {
 		return
 	}
 	absPath, err := h.svc.ArtifactAbsolutePath(artifact)
-	if err != nil {
-		h.logger.Error("解析产物路径失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err == nil {
+		serveArtifactFile(c, h.logger, absPath, artifact.Path, artifact.Type)
 		return
 	}
-	contentType := http.DetectContentType([]byte{})
-	if ext := filepath.Ext(absPath); ext != "" {
-		if mt := mime.TypeByExtension(ext); mt != "" {
-			contentType = mt
-		}
+	rc, openErr := h.svc.OpenArtifact(c.Request.Context(), artifact)
+	if openErr != nil {
+		h.logger.Error("打开产物失败", zap.Error(openErr), zap.String("storage", h.svc.StorageMode()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": openErr.Error()})
+		return
 	}
-	disposition := "attachment"
-	if artifact.Type == "preview" || artifact.Type == "detection_preview" || artifact.Type == "detection_tile" {
-		disposition = "inline"
-	}
-	c.Header("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, filepath.Base(absPath)))
-	c.Header("Content-Type", contentType)
-	c.File(absPath)
+	serveArtifactStream(c, h.logger, rc, artifact.Path, artifact.Type)
 }
 
 func parseUintParam(c *gin.Context, name string) (uint, error) {

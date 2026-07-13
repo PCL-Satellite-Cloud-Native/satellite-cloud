@@ -22,6 +22,7 @@ type Config struct {
 	RemoteSensing   RemoteSensingConfig
 	ObjectDetection ObjectDetectionConfig
 	Argo            ArgoConfig
+	Storage         StorageConfig
 }
 
 type ServerConfig struct {
@@ -108,6 +109,17 @@ type ObjectDetectionConfig struct {
 	WorkerQueueSize     int
 }
 
+// StorageConfig Phase 6 产物存储（默认 nfs；minio 为试点/压测路径）
+type StorageConfig struct {
+	Backend        string // nfs | minio
+	MinIOEndpoint  string
+	MinIOAccessKey string
+	MinIOSecretKey string
+	MinIOBucket    string
+	MinIOPrefix    string
+	MinIOUseSSL    bool
+}
+
 // UseCPU 当 device 不为 gpu 时使用 CPU 推理（本地默认 cpu；服务器 GPU 就绪后设 SATELLITE_OBJECT_DETECTION_DEVICE=gpu）
 func (c ObjectDetectionConfig) UseCPU() bool {
 	return strings.ToLower(strings.TrimSpace(c.Device)) != "gpu"
@@ -149,6 +161,7 @@ func Load() *Config {
 		RemoteSensing:   remoteSensingConfigFromEnvOrViper(),
 		ObjectDetection: objectDetectionConfigFromEnvOrViper(),
 		Argo:            argoConfigFromEnvOrViper(),
+		Storage:         storageConfigFromEnvOrViper(),
 	}
 
 	return config
@@ -259,6 +272,12 @@ func setDefaults() {
 	viper.SetDefault("argo.namespace", "gitlab-runner")
 	viper.SetDefault("argo.pan_rpc_template", "rs-pan-rpc-parallel")
 	viper.SetDefault("argo.workflow_image", "")
+
+	viper.SetDefault("storage.backend", "nfs")
+	viper.SetDefault("storage.minio_endpoint", "")
+	viper.SetDefault("storage.minio_bucket", "satellite-artifacts")
+	viper.SetDefault("storage.minio_prefix", "")
+	viper.SetDefault("storage.minio_use_ssl", false)
 }
 
 func queueConfigFromEnvOrViper() QueueConfig {
@@ -437,6 +456,27 @@ func objectDetectionConfigFromEnvOrViper() ObjectDetectionConfig {
 		CommandHeartbeatSec: commandHeartbeatSec,
 		WorkerConcurrency:   workerConcurrency,
 		WorkerQueueSize:     workerQueueSize,
+	}
+}
+
+func storageConfigFromEnvOrViper() StorageConfig {
+	get := func(envKey, viperKey, defaultVal string) string {
+		if v := os.Getenv(envKey); v != "" {
+			return v
+		}
+		if v := viper.GetString(viperKey); v != "" {
+			return v
+		}
+		return defaultVal
+	}
+	return StorageConfig{
+		Backend:        get("SATELLITE_STORAGE_BACKEND", "storage.backend", "nfs"),
+		MinIOEndpoint:  get("SATELLITE_MINIO_ENDPOINT", "storage.minio_endpoint", ""),
+		MinIOAccessKey: get("SATELLITE_MINIO_ACCESS_KEY", "storage.minio_access_key", ""),
+		MinIOSecretKey: get("SATELLITE_MINIO_SECRET_KEY", "storage.minio_secret_key", ""),
+		MinIOBucket:    get("SATELLITE_MINIO_BUCKET", "storage.minio_bucket", "satellite-artifacts"),
+		MinIOPrefix:    get("SATELLITE_MINIO_PREFIX", "storage.minio_prefix", ""),
+		MinIOUseSSL:    getBool("SATELLITE_MINIO_USE_SSL", "storage.minio_use_ssl", false),
 	}
 }
 

@@ -16,7 +16,7 @@
 | **P5-06b** | 每节点 rs-worker + 卫星感知消费 + required affinity | 后 | ✅ **已验收**（p5-6b-v2-0707） |
 | P5-07 | STK 对齐、移除 +5 星历桥接 | STK 就绪后 | ⏸ |
 | P5-08 | `phase5_acceptance.sh` 回归脚本 | 可选 | ✅ **已提供** |
-| Phase 6 | MinIO + 120 Node | 门禁通过后 | ⏸ 见 [PHASE6_README.md](./PHASE6_README.md) |
+| Phase 6 | MinIO + 120 Node | 进行中 | 🚧 [PHASE6_RUNBOOK.md](./PHASE6_RUNBOOK.md) |
 
 用户决议：**6b 方案**，顺序 **先 P5-05 再 P5-06**。
 
@@ -262,6 +262,7 @@ bash scripts/phase5_acceptance.sh --no-submit --run-id p5-closure-retry-0709
 | [archives/2026-07-08_phase5-06b-closure.md](./archives/2026-07-08_phase5-06b-closure.md) | P5-06b 收口 |
 | [archives/2026-07-09_phase5-plus-closure.md](./archives/2026-07-09_phase5-plus-closure.md) | Phase 5+ 收尾（smoke + retry） |
 | [PHASE6_README.md](./PHASE6_README.md) | Phase 6 入口（新分支） |
+| [PHASE6_RUNBOOK.md](./PHASE6_RUNBOOK.md) | Phase 6 MinIO 部署与存储抽象 |
 | [archives/2026-06-26_phase5-closure.md](./archives/2026-06-26_phase5-closure.md) | Phase 5 收口 |
 
 ---

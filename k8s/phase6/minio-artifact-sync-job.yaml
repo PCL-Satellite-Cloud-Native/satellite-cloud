@@ -1,0 +1,71 @@
+# P6-04：一次性 Job — NFS 产物 → MinIO（勿加入 kustomization 默认 apply）
+# 用法: bash scripts/sync_artifacts_nfs_to_minio.sh
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-artifact-sync
+  namespace: gitlab-runner
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+            - name: MINIO_BUCKET
+              value: satellite-artifacts
+            - name: SYNC_RS
+              value: "true"
+            - name: SYNC_OD
+              value: "true"
+          volumeMounts:
+            - name: remote-sensing-data
+              mountPath: /nfs/output_preprocessing
+              subPath: output_preprocessing
+            - name: remote-sensing-data
+              mountPath: /nfs/object_detection_output
+              subPath: object_detection_output
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+              if [ "$SYNC_RS" = "true" ]; then
+                echo "mirror RS: /nfs/output_preprocessing → ${MINIO_BUCKET}/remote_sensing/persist_output_preprocessing"
+                mc mirror --overwrite /nfs/output_preprocessing \
+                  "local/${MINIO_BUCKET}/remote_sensing/persist_output_preprocessing"
+              fi
+              if [ "$SYNC_OD" = "true" ]; then
+                echo "mirror OD: /nfs/object_detection_output → ${MINIO_BUCKET}/object_detection/output_detection"
+                mc mirror --overwrite /nfs/object_detection_output \
+                  "local/${MINIO_BUCKET}/object_detection/output_detection"
+              fi
+              echo "artifact sync complete"
+              mc du "local/${MINIO_BUCKET}/remote_sensing" 2>/dev/null || true
+              mc du "local/${MINIO_BUCKET}/object_detection" 2>/dev/null || true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+      volumes:
+        - name: remote-sensing-data
+          persistentVolumeClaim:
+            claimName: remote-sensing-data

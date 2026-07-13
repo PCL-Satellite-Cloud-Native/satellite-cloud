@@ -7,20 +7,7 @@ type: Opaque
 stringData:
   # 部署前请修改；与 backend SATELLITE_MINIO_* 对齐（启用 minio 模式时）
   MINIO_ROOT_USER: satellite-minio
-  MINIO_ROOT_PASSWORD: CHANGE_ME_minio_pilot
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: minio-data
-  namespace: gitlab-runner
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 200Gi
-  # 使用集群默认 StorageClass；pilot 若无动态供给，可改为绑定 hostPath PV
+  MINIO_ROOT_PASSWORD: CHANGE_ME_minio_pilot  # 生产用 kubectl create secret，勿提交明文
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -41,9 +28,27 @@ spec:
       labels:
         app: minio
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: k8s-worker22
+      # worker22 为 NFS 节点，常有 disk-pressure；MinIO 需 tolerate 才能调度
+      tolerations:
+        - key: node.kubernetes.io/disk-pressure
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/memory-pressure
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 300
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 300
       containers:
         - name: minio
-          image: 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z
+          image: 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z-cpuv1
           imagePullPolicy: IfNotPresent
           args:
             - server
@@ -123,7 +128,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: mc
-          image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-07-38Z
+          image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1
           imagePullPolicy: IfNotPresent
           env:
             - name: MINIO_ROOT_USER

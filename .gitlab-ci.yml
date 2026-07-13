@@ -342,6 +342,22 @@ deploy-phase6-pilot:
     - main
     - feat/phase6-minio
 
+sync-artifacts-to-minio:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  script:
+    - echo "P6-04：NFS 产物 mirror → MinIO（Worker 仍写 NFS）"
+    - echo "在 k8s-master 执行：bash scripts/sync_artifacts_nfs_to_minio.sh"
+    - echo "或 GitLab Runner 需挂载仓库且含 bash；推荐 master 手工跑"
+  tags:
+    - k8s-cluster-runner
+  needs: []
+  only:
+    - main
+    - feat/phase6-minio
+
 sync-topology-csv-to-nfs:
   stage: topology-sync
   image: "$CI_ALPINE_IMAGE"

@@ -1,7 +1,10 @@
-# Pilot：MinIO 数据卷 — worker22 **本地 hostPath**（非 NFS 挂载）
-# MinIO 不接受 NFS 客户端挂载盘（Remote 节点 mount 会 CrashLoop）；数据目录仍在 worker22 本地 /export/minio-data。
+# Pilot：MinIO 数据卷 — worker22 **vdb** 本地路径（2T 盘）
+# worker22 上 /export/minio-data 在 vda 系统盘（易 disk-pressure Evicted）；
+# 定稿使用 vdb 挂载点内路径：
+#   /export/remote-sensing-data/minio-data
 # 部署前在 worker22：
-#   sudo mkdir -p /export/minio-data && sudo chmod 0777 /export/minio-data
+#   sudo mkdir -p /export/remote-sensing-data/minio-data
+#   sudo chmod 0777 /export/remote-sensing-data/minio-data
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -14,7 +17,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   hostPath:
-    path: /export/minio-data
+    path: /export/remote-sensing-data/minio-data
     type: DirectoryOrCreate
   nodeAffinity:
     required:

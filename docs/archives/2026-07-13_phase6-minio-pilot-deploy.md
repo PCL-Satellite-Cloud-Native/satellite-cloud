@@ -43,7 +43,8 @@ Phase 6 立项后在 pilot 15 节点集群首次部署 MinIO。完成 Harbor 镜
 | worker22 未建 `/export/minio-data` | **FailedMount** `No such file or directory` |
 | worker22 建目录 + `/etc/exports` | NFS mount 成功 |
 | Pod 启动 | **CrashLoopBackOff**（MinIO 不接受 NFS 客户端文件系统） |
-| **定稿修复** | hostPath PV + `nodeSelector: k8s-worker22` |
+| vda 85% + hostPath `/export/minio-data` | **Evicted** 循环；改 vdb 路径 `/export/remote-sensing-data/minio-data` |
+| **定稿修复** | hostPath@worker22 **vdb** + disk-pressure tolerations |
 
 ---
 

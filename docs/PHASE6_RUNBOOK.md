@@ -72,12 +72,14 @@ kubectl -n gitlab-runner create secret generic minio-credentials \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-**worker22 本地目录（必做）**：
+**worker22 本地目录（必做，须在 vdb 2T 盘内）**：
 
 ```bash
 # ssh k8s-worker22
-sudo mkdir -p /export/minio-data
-sudo chmod 0777 /export/minio-data
+# 勿用 /export/minio-data（落在 vda 系统盘 ~85%%，会 Evicted）
+sudo mkdir -p /export/remote-sensing-data/minio-data
+sudo chmod 0777 /export/remote-sensing-data/minio-data
+df -h /export/remote-sensing-data/minio-data   # 应显示 vdb1 ~2T
 ```
 
 **存储模型（Pilot 定稿）**：MinIO Pod **必须调度在 k8s-worker22**，使用 **hostPath** `/export/minio-data`（`minio-pv-pvc.yaml`）。  
@@ -122,8 +124,9 @@ kubectl -n gitlab-runner get events --sort-by='.lastTimestamp' | tail -20
 | PVC `Pending` + `local-storage` | 删 PVC，apply `minio-pv-pvc.yaml`（hostPath + worker22） |
 | `FailedMount` No such file | worker22 建 `/export/minio-data` |
 | **CrashLoopBackOff**（NFS 挂载成功） | 改 **hostPath + nodeSelector worker22**（§2.2） |
+| **Evicted**（disk-pressure） | MinIO 数据必须在 **vdb**：`/export/remote-sensing-data/minio-data` |
 | `ImagePullBackOff` | Harbor 确认 `library/minio` / `library/mc` 已 push |
-| Pod Pending 在 worker22 | `kubectl uncordon k8s-worker22` |
+| Pod **Evicted** on worker22 | 数据目录若在 vda 系统盘 → 改 **vdb** 路径 `/export/remote-sensing-data/minio-data` |
 | init Job 失败 | minio Ready 后 `kubectl delete job minio-init-bucket && kubectl apply -k k8s/phase6/` |
 
 **修复 Pending PVC 后重装（含 NFS→hostPath 迁移）**

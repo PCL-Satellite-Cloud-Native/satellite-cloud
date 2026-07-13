@@ -48,7 +48,7 @@ spec:
           tolerationSeconds: 300
       containers:
         - name: minio
-          image: 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z
+          image: 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z-cpuv1
           imagePullPolicy: IfNotPresent
           args:
             - server
@@ -128,7 +128,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: mc
-          image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z
+          image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1
           imagePullPolicy: IfNotPresent
           env:
             - name: MINIO_ROOT_USER

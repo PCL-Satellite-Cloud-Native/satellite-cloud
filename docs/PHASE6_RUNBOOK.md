@@ -27,8 +27,20 @@
 
 1. Phase 5+ preflight 通过：`bash scripts/phase5_acceptance.sh --preflight-only`
 2. Harbor 已镜像（在 **k8s-repository** 或能访问外网的机器执行）：
-   - `minio/minio:RELEASE.2024-01-16T16-07-38Z` → `192.168.10.238/library/minio:...`
+   - `minio/minio:RELEASE.2024-01-16T16-07-38Z` → Harbor（**Pilot CPU 旧：须 `-cpuv1`**）
    - `minio/mc` **若 Docker Hub TLS 失败**，改用 Quay（见 §2.1.1）
+
+#### 2.1.0 Pilot CPU 较旧（x86-64-v1）
+
+容器日志 `Fatal glibc error: CPU does not support x86-64-v2` → 标准 MinIO 镜像需 **x86-64-v2**，与 `amd64` 标签无关。
+
+**须用 `-cpuv1` 变体**（Quay）：
+
+```bash
+docker pull quay.io/minio/minio:RELEASE.2024-01-16T16-07-38Z-cpuv1
+docker pull quay.io/minio/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1
+# push Harbor tag 见 §2.1.1
+```
 
 #### 2.1.1 Docker Hub 拉 mc 失败（x509 / facebook.com 证书）
 
@@ -41,9 +53,15 @@
 docker pull quay.io/minio/mc:RELEASE.2024-01-16T16-06-34Z
 
 docker tag quay.io/minio/mc:RELEASE.2024-01-16T16-06-34Z \
-  192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z
+  192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1
 docker login 192.168.10.238
-docker push 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z
+docker push 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1
+
+# minio server（cpuv1，Pilot 必须）
+docker pull quay.io/minio/minio:RELEASE.2024-01-16T16-07-38Z-cpuv1
+docker tag quay.io/minio/minio:RELEASE.2024-01-16T16-07-38Z-cpuv1 \
+  192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z-cpuv1
+docker push 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z-cpuv1
 ```
 
 **方案 B — 仅 push 已拉到的 minio，bucket 手工创建（可跳过 mc Job）**
@@ -76,7 +94,7 @@ kubectl -n gitlab-runner create secret generic minio-credentials \
 
 ```bash
 # ssh k8s-worker22
-# 勿用 /export/minio-data（落在 vda 系统盘 ~85%%，会 Evicted）
+# 勿用 /export/minio-data（落在 vda 系统盘 ~85%，会 Evicted）
 sudo mkdir -p /export/remote-sensing-data/minio-data
 sudo chmod 0777 /export/remote-sensing-data/minio-data
 df -h /export/remote-sensing-data/minio-data   # 应显示 vdb1 ~2T
@@ -124,7 +142,7 @@ kubectl -n gitlab-runner get events --sort-by='.lastTimestamp' | tail -20
 | PVC `Pending` + `local-storage` | 删 PVC，apply `minio-pv-pvc.yaml`（hostPath + worker22） |
 | `FailedMount` No such file | worker22 建 `/export/minio-data` |
 | **CrashLoopBackOff**（NFS 挂载成功） | 改 **hostPath + nodeSelector worker22**（§2.2） |
-| **Evicted**（disk-pressure） | MinIO 数据必须在 **vdb**：`/export/remote-sensing-data/minio-data` |
+| **CrashLoop** `x86-64-v2` | 换 **`-cpuv1`** 镜像（§2.1.0） |
 | `ImagePullBackOff` | Harbor 确认 `library/minio` / `library/mc` 已 push |
 | Pod **Evicted** on worker22 | 数据目录若在 vda 系统盘 → 改 **vdb** 路径 `/export/remote-sensing-data/minio-data` |
 | init Job 失败 | minio Ready 后 `kubectl delete job minio-init-bucket && kubectl apply -k k8s/phase6/` |

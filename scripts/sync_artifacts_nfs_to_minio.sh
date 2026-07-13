@@ -192,7 +192,7 @@ kind: Job
 metadata:
   name: ${JOB_NAME}
 spec:
-  ttlSecondsAfterFinished: 600
+  ttlSecondsAfterFinished: 86400
   backoffLimit: 1
   template:
     spec:

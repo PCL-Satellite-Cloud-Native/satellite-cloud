@@ -42,3 +42,13 @@ func objectKey(prefix, rootKey, relPath string) string {
 	}
 	return strings.Join(parts, "/")
 }
+
+// rootKeyForObject 决定 MinIO 对象键中的 root 段。
+// 检测产物 path 以 output_detection/ 开头，即使 rootAbs 误为 RS Root 也须用 object_detection。
+func rootKeyForObject(rootAbs, relPath string) string {
+	rel := filepath.ToSlash(filepath.Clean(relPath))
+	if strings.HasPrefix(rel, "output_detection/") {
+		return "object_detection"
+	}
+	return rootKeyFromAbs(rootAbs)
+}

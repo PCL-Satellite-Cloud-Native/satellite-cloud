@@ -35,7 +35,7 @@ func (b *minioBackend) ResolveLocalPath(rootAbs, relPath string) (string, error)
 }
 
 func (b *minioBackend) Open(ctx context.Context, rootAbs, relPath string) (io.ReadCloser, error) {
-	key := objectKey(b.prefix, rootKeyFromAbs(rootAbs), relPath)
+	key := objectKey(b.prefix, rootKeyForObject(rootAbs, relPath), relPath)
 	obj, err := b.client.GetObject(ctx, b.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("minio get %q: %w", key, err)

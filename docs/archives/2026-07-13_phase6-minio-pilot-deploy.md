@@ -73,7 +73,7 @@ job/minio-init-bucket: bucket satellite-artifacts ready
 
 | 编号 | 内容 |
 |------|------|
-| P6-04 | NFS 产物 upload → MinIO；再启用 `SATELLITE_STORAGE_BACKEND=minio` |
+| P6-04 | NFS 产物 mirror → MinIO；再启用 `SATELLITE_STORAGE_BACKEND=minio` |
 | P6-05 | 120 Node / pilot-map |
 | 合并 | `feat/phase6-minio` → `main` + `phase6_preflight.sh` |
 
@@ -86,7 +86,8 @@ job/minio-init-bucket: bucket satellite-artifacts ready
 | `k8s/phase6/minio-pv-pvc.yaml` | hostPath@vdb on worker22 |
 | `k8s/phase6/minio.yaml` | Deployment + Service + init Job（cpuv1） |
 | `backend/internal/storage/` | nfs / minio 抽象 |
-| `scripts/phase6_preflight.sh` | 验收脚本 |
+| `scripts/sync_artifacts_nfs_to_minio.sh` | P6-04 NFS→MinIO mirror |
+| `k8s/phase6/minio-artifact-sync-job.yaml` | 同步 Job 模板（envsubst） |
 
 ---
 

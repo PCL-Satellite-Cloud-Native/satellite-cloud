@@ -41,7 +41,7 @@ git checkout -b feat/phase6-minio   # 已创建
 
 | 主题 | 方向 | 状态 |
 |------|------|------|
-| 存储 | MinIO 试点 + `internal/storage` | ✅ P6-01；P6-04 同步待做 |
+| 存储 | MinIO 试点 + `internal/storage` | ✅ P6-01～03；P6-04 同步脚本 |
 | 扩容 | 120 逻辑星 / pilot-map | ⏸ |
 | 调度 | HPA / Argo parallelism 上调 | ⏸ |
 | CI | `deploy-phase6-pilot` | 🚧 |
@@ -56,6 +56,10 @@ kubectl apply -k k8s/phase6/
 
 # 验收
 bash scripts/phase6_preflight.sh
+
+# P6-04：NFS → MinIO 产物同步（API minio 模式前）
+bash scripts/sync_artifacts_nfs_to_minio.sh
+bash scripts/sync_artifacts_nfs_to_minio.sh --verify-only
 ```
 
 ---

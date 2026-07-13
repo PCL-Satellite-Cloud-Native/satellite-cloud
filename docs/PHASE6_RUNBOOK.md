@@ -1,7 +1,7 @@
 # Phase 6 Runbook — MinIO 试点 + 存储抽象
 
 > **分支**：`feat/phase6-minio`（不在 `main` 直接开发）  
-> **状态**：🚧 **进行中** — P6-01 ✅；P6-04 NFS→MinIO 同步待做  
+> **状态**：🚧 **进行中** — P6-01 ✅；P6-02～03 ✅；P6-04 同步脚本已就绪  
 > **SSOT 方案**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §阶段 6  
 > **前置**：[PHASE5_PLUS_RUNBOOK.md](./PHASE5_PLUS_RUNBOOK.md)（Phase 5+ 已闭合）
 
@@ -12,9 +12,9 @@
 | 编号 | 内容 | 状态 |
 |------|------|------|
 | P6-01 | MinIO 试点部署（`k8s/phase6/`） | ✅ **已签收** 2026-07-13 |
-| P6-02 | `internal/storage` 抽象（nfs 默认 / minio 可选） | 🚧 |
-| P6-03 | 产物 API 流式下载（MinIO 模式） | 🚧 |
-| P6-04 | Worker 仍写 NFS；MinIO 同步/upload（后续） | ⏸ |
+| P6-02 | `internal/storage` 抽象（nfs 默认 / minio 可选） | ✅ |
+| P6-03 | 产物 API 流式下载（MinIO 模式） | ✅ |
+| P6-04 | Worker 仍写 NFS；NFS→MinIO mirror（后续启用 API minio） | 🚧 |
 | P6-05 | 120 Node / pilot-map 扩展 | ⏸ |
 
 **Pilot 原则**：默认 **`SATELLITE_STORAGE_BACKEND=nfs`**，Phase 5+ DaemonSet rs-worker **不受影响**。
@@ -216,18 +216,58 @@ kubectl -n gitlab-runner port-forward svc/minio 9001:9001
 
 ---
 
-## 4. CI
+## 4. P6-04 — NFS 产物同步到 MinIO
+
+> Worker / rs-worker **仍写 NFS**；本步骤仅把已有产物 **mirror** 到 MinIO，供 API 试点下载。  
+> **勿**在同步完成前把 backend 设为 `SATELLITE_STORAGE_BACKEND=minio`。
+
+### 4.1 对象键映射（与 `internal/storage/minio.go` 一致）
+
+| NFS（PVC `remote-sensing-data` subPath） | MinIO 对象前缀 |
+|------------------------------------------|----------------|
+| `output_preprocessing/` | `remote_sensing/persist_output_preprocessing/` |
+| `object_detection_output/` | `object_detection/output_detection/` |
+
+DB 中 `artifact.Path` 形如 `persist_output_preprocessing/tasks/{id}/...` 或 `output_detection/tasks/{id}/...`，backend 在 minio 模式下会拼成上表右侧键。
+
+### 4.2 执行同步（k8s-master）
+
+```bash
+cd ~/code/satellite-cloud   # 或 clone 的仓库路径
+bash scripts/sync_artifacts_nfs_to_minio.sh
+# 仅 RS 或 OD：--rs-only / --od-only
+# 增量重跑：再次执行同名 Job（脚本会先 delete 旧 Job）
+```
+
+依赖：MinIO Deployment Ready；PVC `remote-sensing-data` 已 Bound。
+
+### 4.3 验证
+
+```bash
+bash scripts/sync_artifacts_nfs_to_minio.sh --verify-only
+```
+
+可选：对已知 task 的 artifact 路径做 `mc stat local/satellite-artifacts/remote_sensing/{artifact.Path}`。
+
+### 4.4 启用 API MinIO 下载（同步完成后）
+
+见 §3 patch `satellite-backend` env；提交一条 RS/OD 任务或 curl 下载 artifact 对比 NFS 与 MinIO 字节一致。
+
+---
+
+## 5. CI
 
 | Job | 说明 |
 |-----|------|
 | `build-backend` | 含 `minio-go` 依赖 |
 | `deploy-phase6-pilot` | manual；apply `k8s/phase6/` + preflight 提示 |
+| `sync-artifacts-to-minio` | manual；P6-04 mirror Job |
 
 合并 `main` 前：`phase5_acceptance.sh --preflight-only` 仍必须通过（MinIO 为可选组件）。
 
 ---
 
-## 5. 回滚
+## 6. 回滚
 
 ```bash
 kubectl -n gitlab-runner delete -k k8s/phase6/ --ignore-not-found
@@ -236,7 +276,7 @@ kubectl -n gitlab-runner delete -k k8s/phase6/ --ignore-not-found
 
 ---
 
-## 6. 相关文档
+## 7. 相关文档
 
 | 文档 | 说明 |
 |------|------|

@@ -60,8 +60,6 @@ if [[ "${RS_ONLY}" == true && "${OD_ONLY}" == true ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-MANIFEST="${REPO_ROOT}/k8s/phase6/minio-artifact-sync-job.yaml"
 
 if ! command -v kubectl >/dev/null; then
   echo "需要 kubectl"
@@ -152,11 +150,6 @@ if [[ "${VERIFY_ONLY}" == true ]]; then
   exit 0
 fi
 
-if [[ ! -f "${MANIFEST}" ]]; then
-  echo "缺少 manifest: ${MANIFEST}"
-  exit 1
-fi
-
 echo "== P6-04 NFS → MinIO artifact sync =="
 echo "   namespace=${NAMESPACE} bucket=${BUCKET} job=${JOB_NAME} rs=${sync_rs} od=${sync_od}"
 
@@ -244,5 +237,5 @@ kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${JOB_NAME}" --time
 kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}"
 
 echo ""
-echo "同步完成。验证：bash scripts/sync_artifacts_nfs_to_minio.sh --verify-only"
+echo "同步完成。验证：bash ${SCRIPT_DIR}/sync_artifacts_nfs_to_minio.sh --verify-only"
 echo "启用 API MinIO 下载见 docs/PHASE6_RUNBOOK.md §3（确认对象已存在后再 patch backend）"

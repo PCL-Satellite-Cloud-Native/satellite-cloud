@@ -1,7 +1,7 @@
 # Phase 6 Runbook — MinIO 试点 + 存储抽象
 
 > **分支**：`feat/phase6-minio`（不在 `main` 直接开发）  
-> **状态**：🚧 **进行中** — P6-01 MinIO 部署 + 存储 backend 抽象  
+> **状态**：🚧 **进行中** — P6-01 ✅；P6-04 NFS→MinIO 同步待做  
 > **SSOT 方案**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §阶段 6  
 > **前置**：[PHASE5_PLUS_RUNBOOK.md](./PHASE5_PLUS_RUNBOOK.md)（Phase 5+ 已闭合）
 
@@ -11,7 +11,7 @@
 
 | 编号 | 内容 | 状态 |
 |------|------|------|
-| P6-01 | MinIO 试点部署（`k8s/phase6/`） | 🚧 |
+| P6-01 | MinIO 试点部署（`k8s/phase6/`） | ✅ **已签收** 2026-07-13 |
 | P6-02 | `internal/storage` 抽象（nfs 默认 / minio 可选） | 🚧 |
 | P6-03 | 产物 API 流式下载（MinIO 模式） | 🚧 |
 | P6-04 | Worker 仍写 NFS；MinIO 同步/upload（后续） | ⏸ |

@@ -41,7 +41,7 @@ git checkout -b feat/phase6-minio   # 已创建
 
 | 主题 | 方向 | 状态 |
 |------|------|------|
-| 存储 | MinIO 试点 + `internal/storage` | 🚧 P6-01～03 |
+| 存储 | MinIO 试点 + `internal/storage` | ✅ P6-01；P6-04 同步待做 |
 | 扩容 | 120 逻辑星 / pilot-map | ⏸ |
 | 调度 | HPA / Argo parallelism 上调 | ⏸ |
 | CI | `deploy-phase6-pilot` | 🚧 |

@@ -1,8 +1,8 @@
 # 归档：Phase 6 — MinIO Pilot 首次部署（P6-01）
 
 > **归档日期**：2026-07-13  
-> **阶段 / 主题**：MinIO 试点部署、Harbor 镜像、PVC/NFS/hostPath 踩坑  
-> **状态**：🚧 **进行中** — hostPath@worker22 修复待复验  
+> **阶段 / 主题**：MinIO 试点部署、Harbor 镜像、存储/调度/CPU 踩坑  
+> **状态**：✅ **P6-01 已签收**（MinIO Running + bucket init）  
 > **SSOT**：[PHASE6_RUNBOOK.md](../PHASE6_RUNBOOK.md)  
 > **分支**：`feat/phase6-minio`  
 > **前置**：[2026-07-09_phase5-plus-closure.md](./2026-07-09_phase5-plus-closure.md)
@@ -11,16 +11,16 @@
 
 ## 1. 摘要
 
-Phase 6 立项后在 pilot 15 节点集群首次部署 MinIO。完成 Harbor 镜像推送（minio server + mc@Quay）、Secret 配置、静态 PV 绑定；排查 PVC `local-storage` Pending、NFS `FailedMount`、远程 NFS 挂载 **CrashLoopBackOff** 三类问题。**定稿**：MinIO 仅调度 **k8s-worker22**，数据卷为 **hostPath `/export/minio-data`**（本地盘，非跨节点 NFS 客户端挂载）。
+Phase 6 立项后在 pilot 15 节点集群完成 MinIO 试点部署。经历 PVC `local-storage`、NFS 跨节点 CrashLoop、vda disk-pressure Eviction、**x86-64-v2** 镜像不兼容等排查后定稿：**worker22 + vdb hostPath + `-cpuv1` 镜像**。`minio-init-bucket` 创建 `satellite-artifacts` 成功。
 
 ---
 
-## 2. 镜像（k8s-repository）
+## 2. 镜像（Harbor / Quay）
 
-| 镜像 | 来源 | Harbor |
-|------|------|--------|
-| minio server | `minio/minio:RELEASE.2024-01-16T16-07-38Z` | `192.168.10.238/library/minio:...` |
-| mc client | `quay.io/minio/mc:RELEASE.2024-01-16T16-06-34Z`（Docker Hub TLS 失败） | `192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z` |
+| 组件 | Harbor tag | 备注 |
+|------|------------|------|
+| minio server | `library/minio:RELEASE.2024-01-16T16-07-38Z-cpuv1` | **必须 cpuv1**（Pilot CPU 无 x86-64-v2） |
+| mc | `library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1` | Quay 拉取（Docker Hub TLS 失败） |
 
 ---
 
@@ -30,73 +30,64 @@ Phase 6 立项后在 pilot 15 节点集群首次部署 MinIO。完成 Harbor 镜
 |----|-----|
 | Secret | `gitlab-runner/minio-credentials` |
 | `MINIO_ROOT_USER` | `satellite-minio` |
-| `MINIO_ROOT_PASSWORD` | 已写入集群 Secret（**不进 Git**） |
+| `MINIO_ROOT_PASSWORD` | 集群 Secret（**不进 Git**） |
 
 ---
 
-## 4. 部署时间线
+## 4. 踩坑时间线
 
-| 步骤 | 结果 |
-|------|------|
-| `kubectl apply -k phase6/`（初版 PVC 无 PV） | PVC 绑定 `local-storage`，Pod **Pending** |
-| `minio-pv-pvc.yaml`（NFS PV） | PVC **Bound**；Pod 调度 **worker11** |
-| worker22 未建 `/export/minio-data` | **FailedMount** `No such file or directory` |
-| worker22 建目录 + `/etc/exports` | NFS mount 成功 |
-| Pod 启动 | **CrashLoopBackOff**（MinIO 不接受 NFS 客户端文件系统） |
-| vda 85% + hostPath `/export/minio-data` | **Evicted** 循环；改 vdb 路径 `/export/remote-sensing-data/minio-data` |
-| **定稿修复** | hostPath@worker22 **vdb** + disk-pressure tolerations |
-
----
-
-## 5. worker22 NFS export（可选，非 MinIO 进程挂载）
-
-```text
-/export/minio-data 192.168.0.0/16(rw,sync,no_subtree_check,no_root_squash)
-```
-
-目录：`/export/minio-data`，`chmod 0777`。
+| 问题 | 根因 | 定稿 |
+|------|------|------|
+| PVC Pending | 默认 `local-storage` | 静态 PV |
+| FailedMount | NFS export 未建 | worker22 `/export/minio-data` |
+| NFS CrashLoop | MinIO 不接受 NFS 客户端 FS | **hostPath 本地盘** |
+| Evicted 循环 | vda 85%；数据在系统盘 | **vdb** `/export/remote-sensing-data/minio-data` |
+| Pending + Evicted | disk-pressure taint | tolerations + 删 `.vda-bak` 腾 vda |
+| CrashLoop `x86-64-v2` | 标准 MinIO 镜像 CPU 要求 | **`-cpuv1`** 镜像 |
 
 ---
 
-## 6. 定稿拓扑
+## 5. 定稿拓扑（2026-07-13 签收）
 
 | 项 | 值 |
 |----|-----|
-| Namespace | `gitlab-runner` |
-| Deployment | `minio` replicas=1 |
-| **nodeSelector** | `kubernetes.io/hostname: k8s-worker22` |
-| PV | `minio-data-pv` — hostPath `/export/minio-data` |
+| Pod | `minio-546b66c464-tqdpf` **1/1 Running** @ **k8s-worker22** |
+| PV hostPath | `/export/remote-sensing-data/minio-data`（**vdb1 2T**） |
 | Service | `minio:9000` / `:9001` |
-| Bucket | `satellite-artifacts`（init Job 或 Console） |
+| Bucket | **`satellite-artifacts`**（init Job ✅） |
+| backend 存储 | 默认 **`nfs`**（Phase 5+ 不变） |
 
 ---
 
-## 7. 待复验（hostPath 修复 apply 后）
+## 6. 签收命令输出摘要
 
-```bash
-kubectl -n gitlab-runner get pods -l app=minio -o wide   # 期望 worker22, 1/1 Ready
-bash scripts/phase6_preflight.sh --skip-p5
-kubectl -n gitlab-runner logs job/minio-init-bucket
+```text
+minio 1/1 Running @ k8s-worker22
+Version: RELEASE.2024-01-16T16-07-38Z (go1.21.6 linux/amd64)
+job/minio-init-bucket: bucket satellite-artifacts ready
 ```
 
 ---
 
-## 8. 与 Phase 5+ 关系
+## 7. 下一步（P6-02+）
 
-- `SATELLITE_STORAGE_BACKEND` 默认 **nfs** — rs-worker DaemonSet / NFS 产物路径 **不变**。
-- MinIO 为并行可选组件，P6-04 再做 NFS→MinIO 同步。
+| 编号 | 内容 |
+|------|------|
+| P6-04 | NFS 产物 upload → MinIO；再启用 `SATELLITE_STORAGE_BACKEND=minio` |
+| P6-05 | 120 Node / pilot-map |
+| 合并 | `feat/phase6-minio` → `main` + `phase6_preflight.sh` |
 
 ---
 
-## 9. 代码 / manifest
+## 8. 代码 / manifest
 
 | 路径 | 说明 |
 |------|------|
-| `k8s/phase6/minio-pv-pvc.yaml` | hostPath@worker22 |
-| `k8s/phase6/minio.yaml` | Deployment + Service + init Job |
+| `k8s/phase6/minio-pv-pvc.yaml` | hostPath@vdb on worker22 |
+| `k8s/phase6/minio.yaml` | Deployment + Service + init Job（cpuv1） |
 | `backend/internal/storage/` | nfs / minio 抽象 |
-| `docs/PHASE6_RUNBOOK.md` | 运维 SSOT |
+| `scripts/phase6_preflight.sh` | 验收脚本 |
 
 ---
 
-*hostPath 修复 commit 见 `feat/phase6-minio`；复验通过后更新 §7 为 ✅。*
+*P6-01 签收：2026-07-13。Phase 5+ rs-worker / NFS 流水线未切换 MinIO。*

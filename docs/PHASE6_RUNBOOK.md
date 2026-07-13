@@ -26,9 +26,44 @@
 ### 2.1 前置
 
 1. Phase 5+ preflight 通过：`bash scripts/phase5_acceptance.sh --preflight-only`
-2. Harbor 已镜像（若无则 master 拉取并 push）：
-   - `minio/minio:RELEASE.2024-01-16T16-07-38Z`
-   - `minio/mc:RELEASE.2024-01-16T16-07-38Z`
+2. Harbor 已镜像：
+   - **必须**：`192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z`
+   - **可选**：`192.168.10.238/library/mc:...`（init Job 用；拉不到见 §2.1.1）
+
+在 **k8s-repository**（已 pull minio 时）：
+
+```bash
+bash scripts/mirror_minio_to_harbor.sh
+```
+
+#### 2.1.1 Docker Hub TLS 错误（`x509: certificate is valid for *.facebook.com`）
+
+说明：Docker 走了错误代理/中间人，**不是 MinIO 问题**。`minio/minio` 能 pull 不代表 `mc` 也能；**可跳过 mc 镜像**。
+
+**方案 A — 只 push minio，bucket 用手动脚本（推荐）**
+
+```bash
+docker tag minio/minio:RELEASE.2024-01-16T16-07-38Z \
+  192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z
+docker login 192.168.10.238
+docker push 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z
+# 部署后在 k8s-master：bash scripts/minio_init_bucket.sh
+```
+
+**方案 B — 离线导入 mc 镜像**
+
+```bash
+# 在有正常网络的机器
+docker pull minio/mc:RELEASE.2024-01-16T16-07-38Z
+docker save minio/mc:RELEASE.2024-01-16T16-07-38Z | gzip > mc-minio.tar.gz
+scp mc-minio.tar.gz pcl@k8s-repository:~/
+# k8s-repository
+docker load < mc-minio.tar.gz
+docker tag minio/mc:RELEASE.2024-01-16T16-07-38Z 192.168.10.238/library/mc:RELEASE.2024-01-16T16-07-38Z
+docker push 192.168.10.238/library/mc:RELEASE.2024-01-16T16-07-38Z
+```
+
+**方案 C — 修复 Docker 代理/CA**：检查 `HTTP_PROXY`、`/etc/docker/daemon.json`、企业根证书。
 
 ### 2.2 修改 Secret
 
@@ -39,7 +74,23 @@
 ```bash
 kubectl apply -k k8s/phase6/
 kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s
-kubectl -n gitlab-runner wait --for=condition=complete job/minio-init-bucket --timeout=120s
+```
+
+**建 bucket**（二选一）：
+
+```bash
+# A) init Job（需 Harbor 已有 library/mc）
+kubectl -n gitlab-runner wait --for=condition=complete job/minio-init-bucket --timeout=180s
+
+# B) 无 mc 镜像 — k8s-master 手动（推荐）
+bash scripts/minio_init_bucket.sh
+```
+
+Job 若 ImagePullBackOff：
+
+```bash
+kubectl -n gitlab-runner delete job minio-init-bucket --ignore-not-found
+bash scripts/minio_init_bucket.sh
 ```
 
 ### 2.4 验证

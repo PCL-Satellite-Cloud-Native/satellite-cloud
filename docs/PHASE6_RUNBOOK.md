@@ -26,44 +26,40 @@
 ### 2.1 前置
 
 1. Phase 5+ preflight 通过：`bash scripts/phase5_acceptance.sh --preflight-only`
-2. Harbor 已镜像：
-   - **必须**：`192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z`
-   - **可选**：`192.168.10.238/library/mc:...`（init Job 用；拉不到见 §2.1.1）
+2. Harbor 已镜像（在 **k8s-repository** 或能访问外网的机器执行）：
+   - `minio/minio:RELEASE.2024-01-16T16-07-38Z` → `192.168.10.238/library/minio:...`
+   - `minio/mc` **若 Docker Hub TLS 失败**，改用 Quay（见 §2.1.1）
 
-在 **k8s-repository**（已 pull minio 时）：
+#### 2.1.1 Docker Hub 拉 mc 失败（x509 / facebook.com 证书）
+
+现象：`docker pull minio/mc:...` 报 `certificate is valid for *.facebook.com ... not registry-1.docker.io` — 内网代理劫持 Docker Hub。
+
+**方案 A — Quay（推荐，Pilot 实测 tag）**
 
 ```bash
-bash scripts/mirror_minio_to_harbor.sh
+# k8s-repository
+docker pull quay.io/minio/mc:RELEASE.2024-01-16T16-06-34Z
+
+docker tag quay.io/minio/mc:RELEASE.2024-01-16T16-06-34Z \
+  192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z
+docker login 192.168.10.238
+docker push 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z
 ```
 
-#### 2.1.1 Docker Hub TLS 错误（`x509: certificate is valid for *.facebook.com`）
-
-说明：Docker 走了错误代理/中间人，**不是 MinIO 问题**。`minio/minio` 能 pull 不代表 `mc` 也能；**可跳过 mc 镜像**。
-
-**方案 A — 只 push minio，bucket 用手动脚本（推荐）**
+**方案 B — 仅 push 已拉到的 minio，bucket 手工创建（可跳过 mc Job）**
 
 ```bash
+# minio 已成功 pull 时先 push server 镜像
 docker tag minio/minio:RELEASE.2024-01-16T16-07-38Z \
   192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z
-docker login 192.168.10.238
 docker push 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z
-# 部署后在 k8s-master：bash scripts/minio_init_bucket.sh
+
+# 部署时跳过 init Job（见 §2.3），Console 手工建 bucket satellite-artifacts
 ```
 
-**方案 B — 离线导入 mc 镜像**
+**方案 C — 从已有机器 docker save/load**
 
-```bash
-# 在有正常网络的机器
-docker pull minio/mc:RELEASE.2024-01-16T16-07-38Z
-docker save minio/mc:RELEASE.2024-01-16T16-07-38Z | gzip > mc-minio.tar.gz
-scp mc-minio.tar.gz pcl@k8s-repository:~/
-# k8s-repository
-docker load < mc-minio.tar.gz
-docker tag minio/mc:RELEASE.2024-01-16T16-07-38Z 192.168.10.238/library/mc:RELEASE.2024-01-16T16-07-38Z
-docker push 192.168.10.238/library/mc:RELEASE.2024-01-16T16-07-38Z
-```
-
-**方案 C — 修复 Docker 代理/CA**：检查 `HTTP_PROXY`、`/etc/docker/daemon.json`、企业根证书。
+在能 pull `minio/mc` 的机器上 `docker save`，scp 到 k8s-repository 后 `docker load`，再 tag/push Harbor。
 
 ### 2.2 修改 Secret
 
@@ -71,26 +67,25 @@ docker push 192.168.10.238/library/mc:RELEASE.2024-01-16T16-07-38Z
 
 ### 2.3 Apply
 
+**完整部署（Harbor 已有 minio + mc）**
+
 ```bash
 kubectl apply -k k8s/phase6/
 kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s
+kubectl -n gitlab-runner wait --for=condition=complete job/minio-init-bucket --timeout=120s
 ```
 
-**建 bucket**（二选一）：
+**仅 minio、无 mc 镜像时（方案 B）**
 
 ```bash
-# A) init Job（需 Harbor 已有 library/mc）
-kubectl -n gitlab-runner wait --for=condition=complete job/minio-init-bucket --timeout=180s
-
-# B) 无 mc 镜像 — k8s-master 手动（推荐）
-bash scripts/minio_init_bucket.sh
-```
-
-Job 若 ImagePullBackOff：
-
-```bash
+# 只 apply Secret/PVC/Deployment/Service，不跑 init Job
+kubectl apply -f k8s/phase6/minio.yaml
 kubectl -n gitlab-runner delete job minio-init-bucket --ignore-not-found
-bash scripts/minio_init_bucket.sh
+kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s
+
+# Console 建 bucket（§2.4）
+kubectl -n gitlab-runner port-forward svc/minio 9001:9001 &
+# 浏览器 http://127.0.0.1:9001 → Buckets → Create → satellite-artifacts
 ```
 
 ### 2.4 验证

@@ -123,7 +123,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: mc
-          image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-07-38Z
+          image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z
           imagePullPolicy: IfNotPresent
           env:
             - name: MINIO_ROOT_USER

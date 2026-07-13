@@ -89,8 +89,14 @@ sudo chmod 0777 /export/minio-data
 
 ```bash
 kubectl get node k8s-worker22
-# 若 SchedulingDisabled：kubectl uncordon k8s-worker22（Pilot 需 MinIO 落 worker22）
+kubectl describe node k8s-worker22 | grep -E "Taints|Unschedulable|Conditions" -A3
 ```
+
+| 状态 | 处理 |
+|------|------|
+| `SchedulingDisabled` | `kubectl uncordon k8s-worker22` |
+| `disk-pressure` taint | manifest 已含 tolerations；`kubectl apply -f minio.yaml` 重建 Pod |
+| 仍 Pending | `kubectl describe pod -l app=minio` 看 Events |
 
 ### 2.3 Apply
 

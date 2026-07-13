@@ -30,6 +30,22 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/hostname: k8s-worker22
+      # worker22 为 NFS 节点，常有 disk-pressure；MinIO 需 tolerate 才能调度
+      tolerations:
+        - key: node.kubernetes.io/disk-pressure
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/memory-pressure
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 300
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 300
       containers:
         - name: minio
           image: 192.168.10.238/library/minio:RELEASE.2024-01-16T16-07-38Z

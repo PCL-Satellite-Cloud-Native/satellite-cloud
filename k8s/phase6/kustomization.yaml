@@ -4,4 +4,5 @@ namespace: gitlab-runner
 resources:
   - minio-pvc.yaml
   - minio.yaml
+  - minio-console-nodeport.yaml
 # 注意：minio-pv.yaml 为集群 PV，gitlab-runner SA 无权限；须 admin 一次性 apply

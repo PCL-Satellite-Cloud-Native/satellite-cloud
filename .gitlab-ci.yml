@@ -329,10 +329,21 @@ deploy-phase6-pilot:
     - echo "Phase 6 Pilot：MinIO 对象存储试点（不影响 Phase 5+ NFS/DaemonSet）"
     - echo "── 1) 部署 MinIO + init bucket Job（命名空间资源；PV 须已存在）"
     - |
-      if ! kubectl get pv minio-data-pv >/dev/null 2>&1; then
-        echo "ERROR minio-data-pv 不存在。cluster-admin 一次性执行："
-        echo "  kubectl apply -f k8s/phase6/minio-pv.yaml"
+      # gitlab-runner SA 无 cluster get pv；用 namespace PVC 验证（PV 须已由 admin apply）
+      PVC_PHASE=$(kubectl -n gitlab-runner get pvc minio-data -o jsonpath='{.status.phase}' 2>/dev/null || true)
+      if [ "$PVC_PHASE" = "Bound" ]; then
+        VOL=$(kubectl -n gitlab-runner get pvc minio-data -o jsonpath='{.spec.volumeName}' 2>/dev/null || true)
+        if [ "$VOL" != "minio-data-pv" ]; then
+          echo "ERROR minio-data PVC 绑定到意外 volume: $VOL（期望 minio-data-pv）"
+          exit 1
+        fi
+        echo "OK minio-data PVC Bound → $VOL"
+      elif [ -n "$PVC_PHASE" ]; then
+        echo "ERROR minio-data PVC status=$PVC_PHASE"
+        echo "cluster-admin 确认 PV 已 apply：kubectl apply -f k8s/phase6/minio-pv.yaml"
         exit 1
+      else
+        echo "INFO minio-data PVC 尚不存在，apply 后须绑定 minio-data-pv（PV 须已由 admin 创建）"
       fi
     - kubectl apply -k k8s/phase6/
     - kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s

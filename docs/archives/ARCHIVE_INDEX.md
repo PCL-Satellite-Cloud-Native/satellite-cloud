@@ -40,6 +40,7 @@
 | 2026-07-13 | [2026-07-13_phase6-minio-pilot-deploy.md](./2026-07-13_phase6-minio-pilot-deploy.md) | P6-01 MinIO Pilot；PVC/NFS/CrashLoop；hostPath@worker22 定稿 | [PHASE6_RUNBOOK.md](../PHASE6_RUNBOOK.md) §2 |
 | 2026-07-14 | [2026-07-14_phase6-storage-sync-api-closure.md](./2026-07-14_phase6-storage-sync-api-closure.md) | P6-03/04 NFS mirror 298GiB + API MinIO 下载签收 | [PHASE6_RUNBOOK.md](../PHASE6_RUNBOOK.md) §3–§4 |
 | 2026-07-14 | [2026-07-14_phase6-closure.md](./2026-07-14_phase6-closure.md) | **Phase 6 Pilot 正式收口**；CI deploy-phase6-pilot；Console NodePort 30901 | [PHASE6_RUNBOOK.md](../PHASE6_RUNBOOK.md) |
+| 2026-07-14 | [2026-07-14_post-p6-pilot-60node-roadmap.md](./2026-07-14_post-p6-pilot-60node-roadmap.md) | **后续路线图**：60 节点新集群复制、MinIO 主存储三阶段、P6-05 延后 | [PHASE6_README.md](../PHASE6_README.md) |
 
 ---
 

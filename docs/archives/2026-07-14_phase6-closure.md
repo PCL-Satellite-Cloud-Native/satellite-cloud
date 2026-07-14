@@ -112,11 +112,10 @@ Console 登录：`minio-credentials` Secret（`MINIO_ROOT_USER` / `MINIO_ROOT_PA
 
 | 编号 | 内容 | 优先级 |
 |------|------|--------|
-| **P6-05** | 120 Node / `pilot-map` 扩展 | 下一 Phase |
-| 运维 | 新产物增量 mirror | ongoing |
-| 可选 | `build-backend` 将 minio env 写入 deployment yaml（免手工 patch） | 低 |
-| 可选 | Phase 6 压测 / Worker 直写 MinIO | 规划 |
+| **路线图** | [2026-07-14_post-p6-pilot-60node-roadmap.md](./2026-07-14_post-p6-pilot-60node-roadmap.md) — 60 节点**新集群复制**、MinIO 主存储、P6-05 延后 | **SSOT** |
+| 运维 | 新产物增量 mirror（Pilot 按需） | ongoing |
+| P6-05 | 120 Node / pilot-map | 阶段 3（延后） |
 
 ---
 
-*Phase 6 Pilot 正式收口：2026-07-14。*
+*Phase 6 Pilot 收口：2026-07-14。Phase 6 总归档待路线图阶段 3。*

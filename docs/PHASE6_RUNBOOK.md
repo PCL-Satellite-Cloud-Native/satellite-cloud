@@ -334,7 +334,8 @@ kubectl -n gitlab-runner delete -k k8s/phase6/ --ignore-not-found
 | [archives/2026-07-13_phase6-minio-pilot-deploy.md](./archives/2026-07-13_phase6-minio-pilot-deploy.md) | P6-01 MinIO Pilot 部署踩坑与 hostPath 定稿 |
 | [archives/2026-07-14_phase6-storage-sync-api-closure.md](./archives/2026-07-14_phase6-storage-sync-api-closure.md) | P6-03/04 同步 + API 下载签收 |
 | [archives/2026-07-14_phase6-closure.md](./archives/2026-07-14_phase6-closure.md) | **Phase 6 Pilot 正式收口**（CI、preflight、Console 30901） |
+| [archives/2026-07-14_post-p6-pilot-60node-roadmap.md](./archives/2026-07-14_post-p6-pilot-60node-roadmap.md) | **后续路线图**（60 节点新集群、MinIO 主存储） |
 
 ---
 
-*P6-01～04 已闭合（2026-07-14）。详见 [archives/2026-07-14_phase6-closure.md](./archives/2026-07-14_phase6-closure.md)。下一项：P6-05。*
+*P6-01～04 已闭合（2026-07-14）。后续计划见 [archives/2026-07-14_post-p6-pilot-60node-roadmap.md](./archives/2026-07-14_post-p6-pilot-60node-roadmap.md)。Phase 6 总归档待 P6-05 与 60 节点完成。*

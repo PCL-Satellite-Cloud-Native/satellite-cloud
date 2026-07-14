@@ -116,10 +116,10 @@ preflight() {
   local redis_pod
   redis_pod="$(kubectl -n "${NAMESPACE}" get pod -l app=redis --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
   if [[ -n "${redis_pod}" ]]; then
-    check "Redis PONG" \
-      kubectl -n "${NAMESPACE}" exec "${redis_pod}" -c redis -- redis-cli PONG 2>/dev/null | grep -q PONG
-    check "od.jobs 消费者组 od-workers" \
-      kubectl -n "${NAMESPACE}" exec "${redis_pod}" -c redis -- redis-cli XINFO GROUPS od.jobs 2>/dev/null | grep -q od-workers
+    check "Redis PONG" bash -c \
+      "kubectl -n \"${NAMESPACE}\" exec \"${redis_pod}\" -c redis -- redis-cli PONG 2>/dev/null | grep -q PONG"
+    check "od.jobs 消费者组 od-workers" bash -c \
+      "kubectl -n \"${NAMESPACE}\" exec \"${redis_pod}\" -c redis -- redis-cli XINFO GROUPS od.jobs 2>/dev/null | grep -q od-workers"
   else
     echo "  FAIL Redis Pod 未 Running"
     FAIL=1

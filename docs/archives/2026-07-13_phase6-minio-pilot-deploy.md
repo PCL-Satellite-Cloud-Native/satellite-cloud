@@ -84,7 +84,8 @@ P6-03 / P6-04 签收见 [2026-07-14_phase6-storage-sync-api-closure.md](./2026-0
 
 | 路径 | 说明 |
 |------|------|
-| `k8s/phase6/minio-pv-pvc.yaml` | hostPath@vdb on worker22 |
+| `k8s/phase6/minio-pv.yaml` | hostPath@vdb PV（admin 一次性） |
+| `k8s/phase6/minio-pvc.yaml` | PVC（CI/kustomize） |
 | `k8s/phase6/minio.yaml` | Deployment + Service + init Job（cpuv1） |
 | `backend/internal/storage/` | nfs / minio 抽象 |
 | `scripts/sync_artifacts_nfs_to_minio.sh` | P6-04 NFS→MinIO mirror |

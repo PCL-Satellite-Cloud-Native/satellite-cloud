@@ -199,7 +199,21 @@ kubectl -n gitlab-runner get deploy rs-worker -o wide
 kubectl -n gitlab-runner get ds rs-worker
 ```
 
-Console（可选 port-forward）：
+**Console（Web 浏览 bucket）**
+
+与 Grafana `30001`、Prometheus `30090` 相同，经 **NodePort** 访问（manifest：`minio-console-nodeport.yaml`）：
+
+```bash
+kubectl apply -f k8s/phase6/minio-console-nodeport.yaml
+# 或 kubectl apply -k k8s/phase6/（已含 console Service）
+kubectl -n gitlab-runner get svc minio-console
+```
+
+浏览器：**http://\<node-ip\>:30901**（例：隧道后 `http://192.168.10.113:30901`）。  
+登录：`minio-credentials` Secret 的 `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`。  
+进入 bucket **`satellite-artifacts`** → Object Browser。
+
+备选 port-forward（无 NodePort 时）：
 
 ```bash
 kubectl -n gitlab-runner port-forward svc/minio 9001:9001
@@ -319,7 +333,8 @@ kubectl -n gitlab-runner delete -k k8s/phase6/ --ignore-not-found
 | [archives/2026-07-09_phase5-plus-closure.md](./archives/2026-07-09_phase5-plus-closure.md) | Phase 5+ 收尾 |
 | [archives/2026-07-13_phase6-minio-pilot-deploy.md](./archives/2026-07-13_phase6-minio-pilot-deploy.md) | P6-01 MinIO Pilot 部署踩坑与 hostPath 定稿 |
 | [archives/2026-07-14_phase6-storage-sync-api-closure.md](./archives/2026-07-14_phase6-storage-sync-api-closure.md) | P6-03/04 同步 + API 下载签收 |
+| [archives/2026-07-14_phase6-closure.md](./archives/2026-07-14_phase6-closure.md) | **Phase 6 Pilot 正式收口**（CI、preflight、Console 30901） |
 
 ---
 
-*P6-01～04 已签收（2026-07-14）。P6-05 与合并 main 见 archives/2026-07-14_phase6-storage-sync-api-closure.md §7。*
+*P6-01～04 已闭合（2026-07-14）。详见 [archives/2026-07-14_phase6-closure.md](./archives/2026-07-14_phase6-closure.md)。下一项：P6-05。*

@@ -63,7 +63,8 @@ if kubectl -n "${NAMESPACE}" get job minio-init-bucket >/dev/null 2>&1; then
     FAIL=1
   fi
 else
-  echo "  WARN minio-init-bucket Job 不存在（请 apply k8s/phase6/）"
+  echo "  OK   minio-init-bucket Job 不存在（TTL 已清理；P6-01 已建 bucket 时可忽略）"
+  echo "       可选验证：bash scripts/sync_artifacts_nfs_to_minio.sh --verify-only"
 fi
 
 if [[ "${CHECK_P5}" == true && -f "${SCRIPT_DIR}/phase5_acceptance.sh" ]]; then

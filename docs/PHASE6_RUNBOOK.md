@@ -178,6 +178,23 @@ bash scripts/phase6_preflight.sh
 # 或跳过 P5：bash scripts/phase6_preflight.sh --skip-p5
 ```
 
+**preflight 常见 FAIL**
+
+| 现象 | 处理 |
+|------|------|
+| `Deployment/rs-worker replicas=1（期望 0）` | P5-06b 须保留 Deployment **0/0** + DaemonSet；见下方一键修复 |
+| `minio-init-bucket Job 不存在` | Job TTL 清理后正常；bucket 已在 P6-01 创建则 **OK**（新脚本不再 WARN） |
+
+P5-06b 稳态修复（k8s-master）：
+
+```bash
+kubectl -n gitlab-runner delete hpa rs-worker --ignore-not-found
+kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0
+kubectl -n gitlab-runner patch deployment/rs-worker --type=merge -p '{"spec":{"replicas":0}}'
+kubectl -n gitlab-runner get deploy rs-worker -o wide
+kubectl -n gitlab-runner get ds rs-worker
+```
+
 Console（可选 port-forward）：
 
 ```bash

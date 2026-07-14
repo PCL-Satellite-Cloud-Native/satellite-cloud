@@ -1,6 +1,6 @@
 # Phase 6 — 入口说明（MinIO + 120 Node 扩容）
 
-> **状态**：🚧 **进行中** — 分支 `feat/phase6-minio`；P6-01 MinIO + 存储抽象  
+> **状态**：✅ **P6-01～04 已签收**（2026-07-14）— 分支 `feat/phase6-minio`；P6-05 待做  
 > **Runbook**：[PHASE6_RUNBOOK.md](./PHASE6_RUNBOOK.md)  
 > **SSOT 方案**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §阶段 6  
 > **前置 Runbook**：[PHASE5_PLUS_RUNBOOK.md](./PHASE5_PLUS_RUNBOOK.md)（P5-05 / P5-06b 已验收）
@@ -41,10 +41,10 @@ git checkout -b feat/phase6-minio   # 已创建
 
 | 主题 | 方向 | 状态 |
 |------|------|------|
-| 存储 | MinIO 试点 + `internal/storage` | ✅ P6-01～03；P6-04 同步脚本 |
-| 扩容 | 120 逻辑星 / pilot-map | ⏸ |
+| 存储 | MinIO 试点 + `internal/storage` + NFS mirror | ✅ P6-01～04 |
+| 扩容 | 120 逻辑星 / pilot-map | ⏸ P6-05 |
 | 调度 | HPA / Argo parallelism 上调 | ⏸ |
-| CI | `deploy-phase6-pilot` | 🚧 |
+| CI | `deploy-phase6-pilot` | ✅ manual job |
 
 ---
 

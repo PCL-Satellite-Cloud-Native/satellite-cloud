@@ -82,6 +82,7 @@ check() {
 }
 
 preflight() {
+  FAIL=0
   echo "== Phase 5+ preflight (namespace=${NAMESPACE}) =="
 
   if ! command -v kubectl >/dev/null; then
@@ -89,8 +90,12 @@ preflight() {
     exit 1
   fi
 
-  check "hpa/rs-worker 不存在（P5-06b DaemonSet 模式）" \
-    ! kubectl -n "${NAMESPACE}" get hpa rs-worker >/dev/null 2>&1
+  if kubectl -n "${NAMESPACE}" get hpa rs-worker >/dev/null 2>&1; then
+    echo "  FAIL hpa/rs-worker 仍存在（P5-06b 应 kubectl delete hpa rs-worker）"
+    FAIL=1
+  else
+    echo "  OK   hpa/rs-worker 不存在（P5-06b DaemonSet 模式）"
+  fi
 
   local dep_ready dep_spec
   dep_spec="$(kubectl -n "${NAMESPACE}" get deploy rs-worker -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "missing")"
@@ -116,10 +121,10 @@ preflight() {
   local redis_pod
   redis_pod="$(kubectl -n "${NAMESPACE}" get pod -l app=redis --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
   if [[ -n "${redis_pod}" ]]; then
-    check "Redis PONG" \
-      kubectl -n "${NAMESPACE}" exec "${redis_pod}" -c redis -- redis-cli PONG 2>/dev/null | grep -q PONG
-    check "od.jobs 消费者组 od-workers" \
-      kubectl -n "${NAMESPACE}" exec "${redis_pod}" -c redis -- redis-cli XINFO GROUPS od.jobs 2>/dev/null | grep -q od-workers
+    check "Redis PONG" bash -c \
+      "kubectl -n \"${NAMESPACE}\" exec \"${redis_pod}\" -c redis -- redis-cli PONG 2>/dev/null | grep -q PONG"
+    check "od.jobs 消费者组 od-workers" bash -c \
+      "kubectl -n \"${NAMESPACE}\" exec \"${redis_pod}\" -c redis -- redis-cli XINFO GROUPS od.jobs 2>/dev/null | grep -q od-workers"
   else
     echo "  FAIL Redis Pod 未 Running"
     FAIL=1

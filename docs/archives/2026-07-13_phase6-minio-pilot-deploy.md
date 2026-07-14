@@ -69,13 +69,14 @@ job/minio-init-bucket: bucket satellite-artifacts ready
 
 ---
 
-## 7. 下一步（P6-02+）
+## 7. 后续归档
+
+P6-03 / P6-04 签收见 [2026-07-14_phase6-storage-sync-api-closure.md](./2026-07-14_phase6-storage-sync-api-closure.md)。
 
 | 编号 | 内容 |
 |------|------|
-| P6-04 | NFS 产物 mirror → MinIO；再启用 `SATELLITE_STORAGE_BACKEND=minio` |
 | P6-05 | 120 Node / pilot-map |
-| 合并 | `feat/phase6-minio` → `main` + `phase6_preflight.sh` |
+| 合并 | `feat/phase6-minio` → `main` |
 
 ---
 
@@ -87,7 +88,7 @@ job/minio-init-bucket: bucket satellite-artifacts ready
 | `k8s/phase6/minio.yaml` | Deployment + Service + init Job（cpuv1） |
 | `backend/internal/storage/` | nfs / minio 抽象 |
 | `scripts/sync_artifacts_nfs_to_minio.sh` | P6-04 NFS→MinIO mirror |
-| `k8s/phase6/minio-artifact-sync-job.yaml` | 同步 Job 模板（envsubst） |
+| `k8s/phase6/minio-artifact-sync-job.yaml` | 同步 Job 模板（参考） |
 
 ---
 

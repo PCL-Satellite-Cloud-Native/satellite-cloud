@@ -1,7 +1,7 @@
 # Phase 6 Runbook — MinIO 试点 + 存储抽象
 
 > **分支**：`feat/phase6-minio`（不在 `main` 直接开发）  
-> **状态**：🚧 **进行中** — P6-01 ✅；P6-02～03 ✅；P6-04 同步脚本已就绪  
+> **状态**：✅ **Pilot 签收** — P6-01～04 ✅（2026-07-14）；P6-05 待做  
 > **SSOT 方案**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §阶段 6  
 > **前置**：[PHASE5_PLUS_RUNBOOK.md](./PHASE5_PLUS_RUNBOOK.md)（Phase 5+ 已闭合）
 
@@ -13,11 +13,11 @@
 |------|------|------|
 | P6-01 | MinIO 试点部署（`k8s/phase6/`） | ✅ **已签收** 2026-07-13 |
 | P6-02 | `internal/storage` 抽象（nfs 默认 / minio 可选） | ✅ |
-| P6-03 | 产物 API 流式下载（MinIO 模式） | ✅ |
-| P6-04 | Worker 仍写 NFS；NFS→MinIO mirror（后续启用 API minio） | 🚧 |
+| P6-03 | 产物 API 流式下载（MinIO 模式） | ✅ **已签收** 2026-07-14 |
+| P6-04 | Worker 仍写 NFS；NFS→MinIO mirror | ✅ **已签收** 2026-07-14 |
 | P6-05 | 120 Node / pilot-map 扩展 | ⏸ |
 
-**Pilot 原则**：默认 **`SATELLITE_STORAGE_BACKEND=nfs`**，Phase 5+ DaemonSet rs-worker **不受影响**。
+**Pilot 原则**：rs-worker **仍写 NFS**；`satellite-backend` **API 下载** 已试点 MinIO（集群态 2026-07-14）。合并 `main` 前 backend 默认仍可保持 `nfs`，按环境 patch。
 
 ---
 
@@ -212,7 +212,14 @@ kubectl -n gitlab-runner port-forward svc/minio 9001:9001
       key: MINIO_ROOT_PASSWORD
 ```
 
-对象键约定：`{prefix/}{remote_sensing|object_detection}/{artifact.Path}`（见 `internal/storage/minio.go`）。
+对象键约定：`{prefix/}{remote_sensing|object_detection}/{artifact.Path}`（见 `internal/storage/minio.go`）。  
+**检测产物**：`path` 以 `output_detection/` 开头时须用 `object_detection` 前缀（`rootKeyForObject`，commit `122dcd8`）。
+
+**Backend 镜像路径（Harbor）**：`192.168.10.238/satellite/backend:$CI_COMMIT_SHORT_SHA`（**不是** `library/satellite-backend`）。
+
+### 3.1 签收示例（2026-07-14）
+
+task 217 / artifact 74324：HTTP 200，JPEG 940×640，170,267 bytes。详见 [archives/2026-07-14_phase6-storage-sync-api-closure.md](./archives/2026-07-14_phase6-storage-sync-api-closure.md)。
 
 ---
 
@@ -251,7 +258,14 @@ bash scripts/sync_artifacts_nfs_to_minio.sh --verify-only
 
 ### 4.4 启用 API MinIO 下载（同步完成后）
 
-见 §3 patch `satellite-backend` env；提交一条 RS/OD 任务或 curl 下载 artifact 对比 NFS 与 MinIO 字节一致。
+见 §3 patch `satellite-backend` env；curl 下载 artifact 验证 HTTP 200。
+
+### 4.5 签收（2026-07-14）
+
+| 指标 | 值 |
+|------|-----|
+| `--verify-only` | 298 GiB，19,302 objects |
+| RS `tasks/` | 288 GiB，734 objects |
 
 ---
 
@@ -283,7 +297,8 @@ kubectl -n gitlab-runner delete -k k8s/phase6/ --ignore-not-found
 | [PHASE6_README.md](./PHASE6_README.md) | 立项与分支策略 |
 | [archives/2026-07-09_phase5-plus-closure.md](./archives/2026-07-09_phase5-plus-closure.md) | Phase 5+ 收尾 |
 | [archives/2026-07-13_phase6-minio-pilot-deploy.md](./archives/2026-07-13_phase6-minio-pilot-deploy.md) | P6-01 MinIO Pilot 部署踩坑与 hostPath 定稿 |
+| [archives/2026-07-14_phase6-storage-sync-api-closure.md](./archives/2026-07-14_phase6-storage-sync-api-closure.md) | P6-03/04 同步 + API 下载签收 |
 
 ---
 
-*随 P6-04（NFS→MinIO 同步）与 120 Node 扩容持续更新。*
+*P6-01～04 已签收（2026-07-14）。P6-05 与合并 main 见 archives/2026-07-14_phase6-storage-sync-api-closure.md §7。*

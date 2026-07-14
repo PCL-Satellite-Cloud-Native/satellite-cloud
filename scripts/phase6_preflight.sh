@@ -69,7 +69,16 @@ fi
 
 if [[ "${CHECK_P5}" == true && -f "${SCRIPT_DIR}/phase5_acceptance.sh" ]]; then
   echo ""
-  bash "${SCRIPT_DIR}/phase5_acceptance.sh" --preflight-only --namespace "${NAMESPACE}" || FAIL=1
+  set +e
+  bash "${SCRIPT_DIR}/phase5_acceptance.sh" --preflight-only --namespace "${NAMESPACE}"
+  p5_rc=$?
+  set -e
+  if [[ "${p5_rc}" -ne 0 ]]; then
+    echo "  FAIL Phase 5+ preflight 子脚本 exit=${p5_rc}"
+    echo "       若上方检查均为 OK，多为 master 上 phase5_acceptance.sh 过旧（缺少 --preflight-only exit 0）"
+    echo "       请从 feat/phase6-minio 更新 scripts/，或本机已确认稳态时用：phase6_preflight.sh --skip-p5"
+    FAIL=1
+  fi
 fi
 
 if [[ "${FAIL}" -ne 0 ]]; then

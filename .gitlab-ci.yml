@@ -327,7 +327,13 @@ deploy-phase6-pilot:
   allow_failure: true
   script:
     - echo "Phase 6 Pilot：MinIO 对象存储试点（不影响 Phase 5+ NFS/DaemonSet）"
-    - echo "── 1) 部署 MinIO + init bucket Job"
+    - echo "── 1) 部署 MinIO + init bucket Job（命名空间资源；PV 须已存在）"
+    - |
+      if ! kubectl get pv minio-data-pv >/dev/null 2>&1; then
+        echo "ERROR minio-data-pv 不存在。cluster-admin 一次性执行："
+        echo "  kubectl apply -f k8s/phase6/minio-pv.yaml"
+        exit 1
+      fi
     - kubectl apply -k k8s/phase6/
     - kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s
     - kubectl -n gitlab-runner wait --for=condition=complete job/minio-init-bucket --timeout=180s || echo "WARN init job 超时，请在 master 检查"

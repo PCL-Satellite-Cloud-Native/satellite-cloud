@@ -100,7 +100,7 @@ sudo chmod 0777 /export/remote-sensing-data/minio-data
 df -h /export/remote-sensing-data/minio-data   # 应显示 vdb1 ~2T
 ```
 
-**存储模型（Pilot 定稿）**：MinIO Pod **必须调度在 k8s-worker22**，使用 **hostPath** `/export/minio-data`（`minio-pv-pvc.yaml`）。  
+**存储模型（Pilot 定稿）**：MinIO Pod **必须调度在 k8s-worker22**，hostPath 见 `minio-pv.yaml`（**cluster-admin 一次性 apply**，不进 CI）。  
 **不要用 NFS PV 挂载到 worker11 等远程节点** — MinIO 会 **CrashLoopBackOff**（要求本地文件系统）。
 
 可选：若需从其它节点备份访问，可保留 `/etc/exports` 中 `/export/minio-data` export；MinIO 进程仍只跑 worker22。
@@ -123,6 +123,10 @@ kubectl describe node k8s-worker22 | grep -E "Taints|Unschedulable|Conditions" -
 **完整部署（Harbor 已有 minio + mc）**
 
 ```bash
+# cluster-admin 一次性（CI/gitlab-runner SA 无 PV 权限）
+kubectl apply -f k8s/phase6/minio-pv.yaml
+
+# 命名空间资源（CI deploy-phase6-pilot 或 master）
 kubectl apply -k k8s/phase6/
 kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s
 kubectl -n gitlab-runner wait --for=condition=complete job/minio-init-bucket --timeout=180s
@@ -139,7 +143,7 @@ kubectl -n gitlab-runner get events --sort-by='.lastTimestamp' | tail -20
 
 | 现象 | 处理 |
 |------|------|
-| PVC `Pending` + `local-storage` | 删 PVC，apply `minio-pv-pvc.yaml`（hostPath + worker22） |
+| PVC `Pending` + `local-storage` | 确认 PV 已 apply：`kubectl apply -f k8s/phase6/minio-pv.yaml`（admin）；再 apply kustomize |
 | `FailedMount` No such file | worker22 建 `/export/minio-data` |
 | **CrashLoopBackOff**（NFS 挂载成功） | 改 **hostPath + nodeSelector worker22**（§2.2） |
 | **CrashLoop** `x86-64-v2` | 换 **`-cpuv1`** 镜像（§2.1.0） |

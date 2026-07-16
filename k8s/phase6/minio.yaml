@@ -149,4 +149,6 @@ spec:
               mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
               mc mb --ignore-existing local/satellite-artifacts
               mc anonymous set none local/satellite-artifacts
-              echo "bucket satellite-artifacts ready"
+              mc mb --ignore-existing local/satellite-inputs
+              mc anonymous set none local/satellite-inputs
+              echo "buckets satellite-artifacts + satellite-inputs ready"

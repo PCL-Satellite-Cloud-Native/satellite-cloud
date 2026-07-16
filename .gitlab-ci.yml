@@ -95,14 +95,20 @@ build-backend:
       fi
       docker build $BUILD_ARGS -t "$BACKEND_IMAGE" .
     - docker push "$BACKEND_IMAGE"
-    - docker tag "$BACKEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
-    - docker push "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "cluster-120" ]; then
+        docker tag "$BACKEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/backend:cluster-120-latest"
+        docker push "$HARBOR_URL/$HARBOR_PROJECT/backend:cluster-120-latest"
+      else
+        docker tag "$BACKEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
+        docker push "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
+      fi
   tags:
     - k8s-cluster-runner
   only:
     - main
     - feat/phase6-minio
-    - feat/p5-60node-q9-q11
+    - cluster-120
 
 # 构建并推送前端镜像
 build-frontend:
@@ -128,11 +134,16 @@ build-frontend:
       fi
       docker build --build-arg BASE_IMAGE_REGISTRY="$BASE_IMAGE_REGISTRY" $BUILD_ARGS -t "$FRONTEND_IMAGE" .
     - docker push "$FRONTEND_IMAGE"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "cluster-120" ]; then
+        docker tag "$FRONTEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/frontend:cluster-120-latest"
+        docker push "$HARBOR_URL/$HARBOR_PROJECT/frontend:cluster-120-latest"
+      fi
   tags:
     - k8s-cluster-runner
   only:
     - main
-    - feat/p5-60node-q9-q11
+    - cluster-120
 
 deploy:
   stage: deploy
@@ -322,9 +333,41 @@ deploy-phase5-plus-pilot:
   only:
     - main
 
-# Phase 5 60 节点：手动 deploy（tag k8s-120-runner → 120 集群）
-# push feat/p5-60node-q9-q11 → build → Pipeline 手动点本 job
-deploy-phase5-60node:
+# ── cluster-120 专用（60→120 节点；tag k8s-120-runner；main 不触发）──
+
+sync-inputs-to-minio:
+  stage: topology-sync
+  image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1
+  when: manual
+  allow_failure: true
+  tags:
+    - k8s-120-runner
+  needs:
+    - build-backend
+  only:
+    - cluster-120
+  script:
+    - echo "frontend/public/data 拓扑 → MinIO satellite-inputs（需 CI 变量 MINIO_ROOT_USER/PASSWORD）"
+    - sh scripts/sync_inputs_to_minio.sh
+
+import-topology-60:
+  stage: topology-sync
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  tags:
+    - k8s-120-runner
+  needs: []
+  only:
+    - cluster-120
+  script:
+    - echo "从 sat57 hostPath 导入拓扑（须先 mc mirror MinIO → /export/topology-import/ 或 scp）"
+    - kubectl -n gitlab-runner delete job import-topology-60 --ignore-not-found
+    - kubectl apply -f k8s/backend/import-topology-job-60.yaml
+    - kubectl -n gitlab-runner wait --for=condition=complete --timeout=600s job/import-topology-60
+    - kubectl -n gitlab-runner logs job/import-topology-60 --tail=100
+
+deploy-cluster-120:
   stage: deploy
   image: "$CI_KUBECTL_IMAGE"
   when: manual
@@ -335,10 +378,9 @@ deploy-phase5-60node:
     - build-backend
     - build-frontend
   only:
-    - feat/p5-60node-q9-q11
-    - main
+    - cluster-120
   script:
-    - echo "Phase 5 60-node：backend + phase5 DaemonSet（前置 bootstrap 见 scripts/p5_60node_bootstrap.sh）"
+    - echo "cluster-120 部署（120 集群；Pilot main 不受影响）"
     - echo "BACKEND_IMAGE=$BACKEND_IMAGE"
     - kubectl -n gitlab-runner get pvc remote-sensing-data
     - kubectl apply -f k8s/backend/deployment.yaml
@@ -360,7 +402,7 @@ deploy-phase5-60node:
             }
           }
         }
-      }' || echo "WARN pilot-map volume patch（请确认 ConfigMap pilot-map-60 已 create）"
+      }' || echo "WARN pilot-map volume patch（先跑 p5_60node_bootstrap.sh）"
     - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner set env deployment/satellite-backend \
         SATELLITE_TOPOLOGY_SCENARIO=Scenario60_3x20 \
@@ -369,7 +411,7 @@ deploy-phase5-60node:
         SATELLITE_PILOT_MAP_FILE=/etc/satellite/pilot-map-60.json
     - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
     - kubectl apply -f k8s/frontend/deployment.yaml
-    - kubectl -n gitlab-runner set image deployment/satellite-frontend satellite-frontend="$FRONTEND_IMAGE" || echo "WARN frontend image set skipped"
+    - kubectl -n gitlab-runner set image deployment/satellite-frontend satellite-frontend="$FRONTEND_IMAGE"
     - kubectl apply -k k8s/phase2/
     - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
@@ -383,7 +425,7 @@ deploy-phase5-60node:
         SATELLITE_RS_SATELLITE_AWARE_QUEUE=true
     - EXPECTED_IMAGE="$BACKEND_IMAGE" sh scripts/phase5_wait_ds_rollout.sh --namespace gitlab-runner --timeout 900 --min-ready "${P5_60_MIN_DS_READY:-50}"
     - kubectl -n gitlab-runner get ds rs-worker -o wide
-    - echo "完成。sat10-m1：port-forward + CLUSTER_PROFILE=60node bash scripts/phase5_acceptance.sh"
+    - echo "完成。验收：CLUSTER_PROFILE=60node bash scripts/phase5_acceptance.sh"
 
 deploy-phase6-pilot:
   stage: deploy

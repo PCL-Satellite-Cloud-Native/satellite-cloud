@@ -93,5 +93,4 @@ else
 fi
 
 echo ""
-echo "bootstrap 完成。下一步：GitLab Pipeline 手动触发 deploy-phase5-60node"
-echo "验收前确认 sat1/sat21/sat41 上也有 RS 输入（scp 或 MinIO Console 同步）"
+echo "bootstrap 完成。下一步：见 docs/CLUSTER120_SAT10_STEPS.md（mirror → import → deploy-cluster-120）"

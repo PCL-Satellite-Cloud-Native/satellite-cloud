@@ -13,6 +13,9 @@
 - **`000005_remote_sensing_tasks.up.sql`**
   - 创建遥感任务、阶段、产物与日志表，支撑远程感知流水线 API
 
+- **`000010_scenario60_3x20_seed.up.sql`**
+  - 60 节点场景 `Scenario60_3x20` 及 60 颗卫星（`sat-1-1`…`sat-3-20`）
+
 - **`embed.go`**
   - 将 `*.up.sql` 打进二进制，供启动时通过 golang-migrate 执行
 

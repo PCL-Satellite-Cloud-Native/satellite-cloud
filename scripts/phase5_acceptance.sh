@@ -1,27 +1,24 @@
 #!/usr/bin/env bash
-# P5-08：Phase 5+ Pilot 回归 — 集群 preflight + 三锚点星提交 + 落点断言
+# P5-08：Phase 5+ 回归 — 集群 preflight + 三锚点星提交 + 落点断言
+# 支持 Pilot 15 节点（默认）与 60 节点（CLUSTER_PROFILE=60node）
 set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-gitlab-runner}"
 API_BASE="${SATELLITE_API_BASE:-http://127.0.0.1:8080}"
-SCENARIO_ID="${SCENARIO_ID:-2}"
-SATELLITE_IDS="${SATELLITE_IDS:-4,26,48}"
+CLUSTER_PROFILE="${CLUSTER_PROFILE:-pilot}"  # pilot | 60node
+SCENARIO_ID="${SCENARIO_ID:-}"
+SCENARIO_NAME="${SCENARIO_NAME:-}"
+SATELLITE_IDS="${SATELLITE_IDS:-}"
 RUN_ID=""
 TIMEOUT_SEC="${TIMEOUT_SEC:-7200}"
 PREFLIGHT_ONLY=false
 SKIP_PREFLIGHT=false
 SUBMIT=true
-MIN_DS_READY="${MIN_DS_READY:-12}"
+MIN_DS_READY="${MIN_DS_READY:-}"
 FAIL=0
 
-# satellite_id -> expected executed_sat_id:host_node
+# satellite_id (DB PK) -> expected executed_sat_id / host_node_name
 declare -A EXPECT_SAT EXPECT_NODE
-EXPECT_SAT[4]="sat-1-1"
-EXPECT_NODE[4]="k8s-worker11"
-EXPECT_SAT[26]="sat-2-1"
-EXPECT_NODE[26]="k8s-worker21"
-EXPECT_SAT[48]="sat-3-1"
-EXPECT_NODE[48]="k8s-worker31"
 
 usage() {
   cat <<'EOF'
@@ -29,24 +26,29 @@ usage() {
   scripts/phase5_acceptance.sh [--run-id p5-regression-MMDD] [选项]
 
 选项:
-  --namespace gitlab-runner   K8s namespace
-  --api-base URL              backend API（默认 http://127.0.0.1:8080，需 port-forward）
-  --scenario-id N             场景 ID（默认 2）
-  --satellite-ids 4,26,48     三锚点 satellite 主键
-  --timeout SEC               任务轮询超时（默认 7200）
-  --min-ds-ready N            DaemonSet 最少 Ready Pod（默认 12）
-  --preflight-only            仅集群 preflight，不提交任务
-  --skip-preflight            跳过 preflight（仅提交+断言）
-  --no-submit                 不提交；对已有 summary 断言（需 --run-id）
+  --namespace gitlab-runner       K8s namespace
+  --api-base URL                  backend API（默认 http://127.0.0.1:8080，需 port-forward）
+  --cluster-profile pilot|60node  集群配置（默认 pilot）
+  --scenario-id N                 场景 ID（60node 可省略，按 SCENARIO_NAME 解析）
+  --scenario-name NAME            场景名（60node 默认 Scenario60_3x20）
+  --satellite-ids 4,26,48         三锚点 satellite 主键（省略时 60node 按 sat-1-1/2-1/3-1 解析）
+  --timeout SEC                   任务轮询超时（默认 7200）
+  --min-ds-ready N                DaemonSet 最少 Ready Pod
+  --preflight-only                仅集群 preflight，不提交任务
+  --skip-preflight                跳过 preflight（仅提交+断言）
+  --no-submit                     不提交；对已有 summary 断言（需 --run-id）
 
 通过标准:
   - 无 hpa/rs-worker；Deployment/rs-worker 0/0；DaemonSet ready>=min
   - Redis PONG；od.jobs 消费者组 od-workers 存在
   - 3/3 completed；executed_sat_id / host_node_name 与 pilot-map 锚点一致
 
-示例（k8s-master）:
-  kubectl -n gitlab-runner port-forward svc/satellite-backend 8080:8080 &
+Pilot 示例:
   bash scripts/phase5_acceptance.sh --run-id p5-regression-$(date +%m%d)
+
+60 节点示例:
+  CLUSTER_PROFILE=60node MIN_DS_READY=50 \
+    bash scripts/phase5_acceptance.sh --run-id p5-60-$(date +%m%d)
 EOF
 }
 
@@ -54,7 +56,9 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --namespace) NAMESPACE="$2"; shift 2 ;;
     --api-base) API_BASE="$2"; shift 2 ;;
+    --cluster-profile) CLUSTER_PROFILE="$2"; shift 2 ;;
     --scenario-id) SCENARIO_ID="$2"; shift 2 ;;
+    --scenario-name) SCENARIO_NAME="$2"; shift 2 ;;
     --satellite-ids) SATELLITE_IDS="$2"; shift 2 ;;
     --run-id) RUN_ID="$2"; shift 2 ;;
     --timeout) TIMEOUT_SEC="$2"; shift 2 ;;
@@ -67,8 +71,109 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+apply_cluster_defaults() {
+  case "${CLUSTER_PROFILE}" in
+    60node)
+      SCENARIO_NAME="${SCENARIO_NAME:-Scenario60_3x20}"
+      MIN_DS_READY="${MIN_DS_READY:-50}"
+      ANCHOR_SAT_LABELS="${ANCHOR_SAT_LABELS:-sat-1-1,sat-2-1,sat-3-1}"
+      ANCHOR_NODES="${ANCHOR_NODES:-sat1,sat21,sat41}"
+      ;;
+    pilot|*)
+      SCENARIO_ID="${SCENARIO_ID:-2}"
+      MIN_DS_READY="${MIN_DS_READY:-12}"
+      ANCHOR_SAT_LABELS="${ANCHOR_SAT_LABELS:-sat-1-1,sat-2-1,sat-3-1}"
+      ANCHOR_NODES="${ANCHOR_NODES:-k8s-worker11,k8s-worker21,k8s-worker31}"
+      if [[ -z "${SATELLITE_IDS}" ]]; then
+        SATELLITE_IDS="4,26,48"
+      fi
+      EXPECT_SAT[4]="sat-1-1"
+      EXPECT_NODE[4]="k8s-worker11"
+      EXPECT_SAT[26]="sat-2-1"
+      EXPECT_NODE[26]="k8s-worker21"
+      EXPECT_SAT[48]="sat-3-1"
+      EXPECT_NODE[48]="k8s-worker31"
+      ;;
+  esac
+}
+
+apply_cluster_defaults
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+resolve_scenario_id() {
+  if [[ -n "${SCENARIO_ID}" ]]; then
+    return
+  fi
+  if [[ -z "${SCENARIO_NAME}" ]]; then
+    echo "需要 --scenario-id 或 --scenario-name"
+    exit 1
+  fi
+  SCENARIO_ID="$(curl -sf "${API_BASE}/api/scenarios" | python3 -c "
+import json,sys
+name=sys.argv[1]
+data=json.load(sys.stdin)
+rows=data.get('results') or data
+for s in rows:
+    if s.get('name')==name:
+        print(s.get('id',''))
+        break
+" "${SCENARIO_NAME}")"
+  if [[ -z "${SCENARIO_ID}" ]]; then
+    echo "未找到场景 ${SCENARIO_NAME}"
+    exit 1
+  fi
+  echo "resolved scenario_id=${SCENARIO_ID} name=${SCENARIO_NAME}"
+}
+
+resolve_60node_anchor_ids() {
+  if [[ "${CLUSTER_PROFILE}" != "60node" ]]; then
+    return
+  fi
+  if [[ -n "${SATELLITE_IDS}" ]]; then
+    IFS=',' read -r -a _pk_list <<< "${SATELLITE_IDS}"
+    IFS=',' read -r -a _sat_list <<< "${ANCHOR_SAT_LABELS}"
+    IFS=',' read -r -a _node_list <<< "${ANCHOR_NODES}"
+    for i in "${!_pk_list[@]}"; do
+      pk="${_pk_list[$i]}"
+      EXPECT_SAT["${pk}"]="${_sat_list[$i]:-}"
+      EXPECT_NODE["${pk}"]="${_node_list[$i]:-}"
+    done
+    return
+  fi
+  mapfile -t _resolved < <(python3 - "${API_BASE}" "${SCENARIO_ID}" "${ANCHOR_SAT_LABELS}" "${ANCHOR_NODES}" <<'PY'
+import json, sys, urllib.request
+
+api, scenario_id, sat_labels, nodes = sys.argv[1], int(sys.argv[2]), sys.argv[3].split(","), sys.argv[4].split(",")
+
+def fetch(url):
+    with urllib.request.urlopen(url, timeout=30) as r:
+        return json.load(r)
+
+sats = fetch(f"{api}/api/scenarios/{scenario_id}/satellites")
+if isinstance(sats, dict):
+    sats = sats.get("results") or sats.get("satellites") or []
+by_sat_id = {s["sat_id"]: s for s in sats if s.get("sat_id")}
+
+for sat_label, node in zip(sat_labels, nodes):
+    row = by_sat_id.get(sat_label)
+    if not row:
+        print(f"锚点 {sat_label} 不在场景 {scenario_id}", file=sys.stderr)
+        sys.exit(1)
+    print(f"{row['id']},{sat_label},{node}")
+PY
+)
+  SATellite_pk_list=()
+  for line in "${_resolved[@]}"; do
+    IFS=',' read -r pk sat node <<< "${line}"
+    SATellite_pk_list+=("${pk}")
+    EXPECT_SAT["${pk}"]="${sat}"
+    EXPECT_NODE["${pk}"]="${node}"
+  done
+  SATELLITE_IDS="$(IFS=,; echo "${SATellite_pk_list[*]}")"
+  echo "60node anchors: SATELLITE_IDS=${SATELLITE_IDS}"
+}
 
 check() {
   local name="$1"
@@ -83,7 +188,7 @@ check() {
 
 preflight() {
   FAIL=0
-  echo "== Phase 5+ preflight (namespace=${NAMESPACE}) =="
+  echo "== Phase 5+ preflight (namespace=${NAMESPACE}, profile=${CLUSTER_PROFILE}) =="
 
   if ! command -v kubectl >/dev/null; then
     echo "需要 kubectl"
@@ -191,11 +296,14 @@ if [[ "${PREFLIGHT_ONLY}" == true ]]; then
 fi
 
 if [[ "${SUBMIT}" == true ]]; then
+  resolve_scenario_id
+  resolve_60node_anchor_ids
   if [[ -z "${RUN_ID}" ]]; then
     RUN_ID="p5-regression-$(date +%m%d)"
   fi
   echo ""
-  echo "== 提交三锚点任务 run_id=${RUN_ID} =="
+  echo "== 提交三锚点任务 run_id=${RUN_ID} profile=${CLUSTER_PROFILE} =="
+  export ANCHOR_SAT_IDS="${ANCHOR_SAT_LABELS}"
   bash "${SCRIPT_DIR}/submit_multi_satellite_tasks.sh" \
     --run-id "${RUN_ID}" \
     --api-base "${API_BASE}" \
@@ -207,6 +315,11 @@ else
   if [[ -z "${RUN_ID}" ]]; then
     echo " --no-submit 需要 --run-id"
     exit 1
+  fi
+  apply_cluster_defaults
+  if [[ "${CLUSTER_PROFILE}" == "60node" && -z "${SATELLITE_IDS}" ]]; then
+    resolve_scenario_id
+    resolve_60node_anchor_ids
   fi
   SUMMARY="${REPO_ROOT}/artifacts/benchmarks/${RUN_ID}/summary.csv"
 fi

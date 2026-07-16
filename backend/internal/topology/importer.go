@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -139,15 +140,40 @@ func LoadDelayEdgesFromCSV(filePath string) ([]DelayEdgeCSV, error) {
 	return edges, nil
 }
 
-// T0 星历 CSV 文件名列表（与 handlers/topology 中一致）
-var t0EphemFiles = []string{
+// Pilot 15 星 legacy 星历文件名（Sat_6_6 … Sat_8_10）；目录扫描为空时回退。
+var t0EphemFilesLegacy = []string{
 	"Sat_6_6_ephem_ext.csv", "Sat_6_7_ephem_ext.csv", "Sat_6_8_ephem_ext.csv", "Sat_6_9_ephem_ext.csv", "Sat_6_10_ephem_ext.csv",
 	"Sat_7_6_ephem_ext.csv", "Sat_7_7_ephem_ext.csv", "Sat_7_8_ephem_ext.csv", "Sat_7_9_ephem_ext.csv", "Sat_7_10_ephem_ext.csv",
 	"Sat_8_6_ephem_ext.csv", "Sat_8_7_ephem_ext.csv", "Sat_8_8_ephem_ext.csv", "Sat_8_9_ephem_ext.csv", "Sat_8_10_ephem_ext.csv",
 }
 
-// ImportSatStatesFromCSV 将 15 个星历 CSV 的第 2 行（T0）导入 satellite_states。
-// - dirPath: 存放 Sat_*_ephem_ext.csv 的目录
+var ephemExtPattern = regexp.MustCompile(`^Sat_\d+_\d+_ephem_ext\.csv$`)
+
+// listT0EphemFiles 扫描 dirPath 下全部 Sat_*_ephem_ext.csv；无匹配时回退 legacy 15 星列表。
+func listT0EphemFiles(dirPath string) ([]string, error) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("read dir: %w", err)
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if ephemExtPattern.MatchString(name) {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return append([]string(nil), t0EphemFilesLegacy...), nil
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// ImportSatStatesFromCSV 将星历 CSV 的第 2 行（T0）导入 satellite_states。
+// - dirPath: 存放 Sat_*_ephem_ext.csv 的目录（如 ephem_15/ 或 ephem_60/）
 func ImportSatStatesFromCSV(db *gorm.DB, scenarioName, dirPath string) error {
 	if scenarioName == "" {
 		return fmt.Errorf("scenarioName is empty")
@@ -190,8 +216,13 @@ func ImportSatStatesFromCSV(db *gorm.DB, scenarioName, dirPath string) error {
 		coeTA       float64
 	}
 
+	ephemFiles, err := listT0EphemFiles(dirPath)
+	if err != nil {
+		return err
+	}
+
 	var rows []stateRow
-	for _, name := range t0EphemFiles {
+	for _, name := range ephemFiles {
 		path := filepath.Join(dirPath, name)
 		f, err := os.Open(path)
 		if err != nil {

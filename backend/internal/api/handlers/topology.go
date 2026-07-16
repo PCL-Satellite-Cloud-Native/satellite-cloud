@@ -159,12 +159,18 @@ func buildEphemIndex(sats []TopoSatT0) (byID map[string]TopoSatT0, byOrbitSlot m
 	return byID, byOrbitSlot
 }
 
-func lookupPilotEphem(pilot pilotcluster.Entry, byID map[string]TopoSatT0, byOrbitSlot map[orbitSlotKey]TopoSatT0) (TopoSatT0, bool) {
+func lookupPilotEphem(pilot pilotcluster.Entry, byID map[string]TopoSatT0, byOrbitSlot map[orbitSlotKey]TopoSatT0, bridgeLegacy bool) (TopoSatT0, bool) {
 	if s, ok := byID[pilot.SatID]; ok && topoHasPosition(s) {
 		return s, true
 	}
 	if s, ok := byID[pilot.SatName]; ok && topoHasPosition(s) {
 		return s, true
+	}
+	if s, ok := byOrbitSlot[orbitSlotKey{pilot.Orbit, pilot.Slot}]; ok && topoHasPosition(s) {
+		return s, true
+	}
+	if !bridgeLegacy {
+		return TopoSatT0{}, false
 	}
 	ephemID := pilotcluster.EphemSTKName(pilot.Orbit, pilot.Slot)
 	if s, ok := byID[ephemID]; ok {
@@ -208,7 +214,7 @@ func applyPilotClusterT0(sats []TopoSatT0) []TopoSatT0 {
 	byID, byOrbitSlot := buildEphemIndex(sats)
 	out := make([]TopoSatT0, 0, len(m.Entries))
 	for _, e := range m.Entries {
-		if src, ok := lookupPilotEphem(e, byID, byOrbitSlot); ok {
+		if src, ok := lookupPilotEphem(e, byID, byOrbitSlot, m.BridgeLegacy); ok {
 			out = append(out, topoSatFromPilotEphem(src, e))
 			continue
 		}
@@ -227,6 +233,15 @@ func applyPilotClusterDelay(edges []DelayEdge) []DelayEdge {
 	m := pilotcluster.Current()
 	if !m.Enabled {
 		return edges
+	}
+	if !m.BridgeLegacy {
+		out := make([]DelayEdge, 0, len(edges))
+		for _, e := range edges {
+			if m.ContainsSatID(e.AId) && m.ContainsSatID(e.BId) {
+				out = append(out, e)
+			}
+		}
+		return out
 	}
 	ephemToPilot := make(map[string]string, len(m.Entries))
 	for _, e := range m.Entries {

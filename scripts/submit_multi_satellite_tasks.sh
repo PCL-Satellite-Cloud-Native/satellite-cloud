@@ -81,11 +81,13 @@ if [[ -n "${SATELLITE_IDS}" ]]; then
     SAT_ROWS+=("${row}")
   done
 else
-# 从 pilot-map 取前 N 颗 Pilot 星，再在场景卫星列表中按 sat_id / stk_name / legacy 星历名解析 DB 主键
+# 从 pilot-map 或 ANCHOR_SAT_IDS 取锚点星，再在场景卫星列表中解析 DB 主键
 mapfile -t SAT_ROWS < <(python3 - "${API_BASE}" "${SCENARIO_ID}" "${COUNT}" <<'PY'
-import json, sys, urllib.error, urllib.request
+import json, os, sys, urllib.error, urllib.request
 
 api, scenario_id, count = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+anchor_env = os.environ.get("ANCHOR_SAT_IDS", "sat-1-1,sat-2-1,sat-3-1")
+anchor_ids = [s.strip() for s in anchor_env.split(",") if s.strip()]
 
 def fetch(url):
     req = urllib.request.Request(url)
@@ -105,10 +107,16 @@ except urllib.error.URLError as e:
 if isinstance(sats, dict):
     sats = sats.get("results") or sats.get("satellites") or []
 
-all_nodes = pilot.get("nodes") or []
-if len(all_nodes) < count:
-    print(f"pilot-map 不足 {count} 颗（enabled={pilot.get('enabled')}）", file=sys.stderr)
-    sys.exit(1)
+by_sat_id, by_stk, by_ephem = {}, {}, {}
+for s in sats:
+    sid = s.get("sat_id")
+    if sid:
+        by_sat_id[sid] = s
+        if sid.startswith("Sat_"):
+            by_ephem[sid] = s
+    stk = s.get("stk_name")
+    if stk:
+        by_stk[stk] = s
 
 def resolve_sat(e, by_sat_id, by_stk, by_ephem):
     sid = e["sat_id"]
@@ -122,30 +130,38 @@ def resolve_sat(e, by_sat_id, by_stk, by_ephem):
         return by_stk[name]
     return None
 
-by_sat_id, by_stk, by_ephem = {}, {}, {}
-for s in sats:
-    sid = s.get("sat_id")
-    if sid:
-        by_sat_id[sid] = s
-        if sid.startswith("Sat_"):
-            by_ephem[sid] = s
-    stk = s.get("stk_name")
-    if stk:
-        by_stk[stk] = s
-
 selected = []
 used_ids = set()
-for e in all_nodes:
-    if len(selected) >= count:
-        break
-    cand = resolve_sat(e, by_sat_id, by_stk, by_ephem)
-    if not cand:
-        continue
-    pk = cand.get("id")
-    if pk in used_ids:
-        continue
-    used_ids.add(pk)
-    selected.append(cand)
+
+if pilot.get("enabled"):
+    all_nodes = pilot.get("nodes") or []
+    if len(all_nodes) < count:
+        print(f"pilot-map 不足 {count} 颗（enabled={pilot.get('enabled')}）", file=sys.stderr)
+        sys.exit(1)
+    for e in all_nodes:
+        if len(selected) >= count:
+            break
+        cand = resolve_sat(e, by_sat_id, by_stk, by_ephem)
+        if not cand:
+            continue
+        pk = cand.get("id")
+        if pk in used_ids:
+            continue
+        used_ids.add(pk)
+        selected.append(cand)
+else:
+    for aid in anchor_ids:
+        if len(selected) >= count:
+            break
+        cand = by_sat_id.get(aid)
+        if not cand:
+            print(f"场景 {scenario_id} 无锚点 {aid}", file=sys.stderr)
+            sys.exit(1)
+        pk = cand.get("id")
+        if pk in used_ids:
+            continue
+        used_ids.add(pk)
+        selected.append(cand)
 
 if len(selected) < count:
     print(f"场景 {scenario_id} 仅解析到 {len(selected)} 颗不同卫星（需要 {count} 颗）", file=sys.stderr)

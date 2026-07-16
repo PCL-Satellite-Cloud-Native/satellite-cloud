@@ -102,6 +102,7 @@ build-backend:
   only:
     - main
     - feat/phase6-minio
+    - feat/p5-60node-q9-q11
 
 # 构建并推送前端镜像
 build-frontend:
@@ -131,6 +132,7 @@ build-frontend:
     - k8s-cluster-runner
   only:
     - main
+    - feat/p5-60node-q9-q11
 
 deploy:
   stage: deploy
@@ -319,6 +321,69 @@ deploy-phase5-plus-pilot:
     - build-backend
   only:
     - main
+
+# Phase 5 60 节点：手动 deploy（tag k8s-120-runner → 120 集群）
+# push feat/p5-60node-q9-q11 → build → Pipeline 手动点本 job
+deploy-phase5-60node:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  tags:
+    - k8s-120-runner
+  needs:
+    - build-backend
+    - build-frontend
+  only:
+    - feat/p5-60node-q9-q11
+    - main
+  script:
+    - echo "Phase 5 60-node：backend + phase5 DaemonSet（前置 bootstrap 见 scripts/p5_60node_bootstrap.sh）"
+    - echo "BACKEND_IMAGE=$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner get pvc remote-sensing-data
+    - kubectl apply -f k8s/backend/deployment.yaml
+    - |
+      kubectl -n gitlab-runner patch deployment satellite-backend --type=strategic -p '{
+        "spec": {
+          "template": {
+            "spec": {
+              "volumes": [{"name": "pilot-map-60", "configMap": {"name": "pilot-map-60"}}],
+              "containers": [{
+                "name": "satellite-backend",
+                "volumeMounts": [{
+                  "name": "pilot-map-60",
+                  "mountPath": "/etc/satellite/pilot-map-60.json",
+                  "subPath": "pilot-map-60.json",
+                  "readOnly": true
+                }]
+              }]
+            }
+          }
+        }
+      }' || echo "WARN pilot-map volume patch（请确认 ConfigMap pilot-map-60 已 create）"
+    - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env deployment/satellite-backend \
+        SATELLITE_TOPOLOGY_SCENARIO=Scenario60_3x20 \
+        SATELLITE_PILOT_CLUSTER=false \
+        SATELLITE_RS_SATELLITE_AWARE_QUEUE=true \
+        SATELLITE_PILOT_MAP_FILE=/etc/satellite/pilot-map-60.json
+    - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
+    - kubectl apply -f k8s/frontend/deployment.yaml
+    - kubectl -n gitlab-runner set image deployment/satellite-frontend satellite-frontend="$FRONTEND_IMAGE" || echo "WARN frontend image set skipped"
+    - kubectl apply -k k8s/phase2/
+    - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
+    - kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml || true
+    - kubectl -n gitlab-runner delete hpa rs-worker --ignore-not-found
+    - kubectl apply -k k8s/phase5/
+    - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0 || true
+    - kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env daemonset/rs-worker \
+        SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE" \
+        SATELLITE_RS_SATELLITE_AWARE_QUEUE=true
+    - EXPECTED_IMAGE="$BACKEND_IMAGE" sh scripts/phase5_wait_ds_rollout.sh --namespace gitlab-runner --timeout 900 --min-ready "${P5_60_MIN_DS_READY:-50}"
+    - kubectl -n gitlab-runner get ds rs-worker -o wide
+    - echo "完成。sat10-m1：port-forward + CLUSTER_PROFILE=60node bash scripts/phase5_acceptance.sh"
 
 deploy-phase6-pilot:
   stage: deploy

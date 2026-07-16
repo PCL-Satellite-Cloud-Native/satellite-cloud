@@ -1,0 +1,50 @@
+# 60 节点 P5：remote-sensing-data 单节点 hostPath（sat57，vdb 数据盘）。
+#
+# 首通：产物写 PVC；静态输入从 MinIO 同步到此目录后再跑 RS。
+# 锚点验收（sat1/sat21/sat41）需在对应节点也有 input/dem/models 副本，或后续 D0 全 MinIO。
+#
+# sat57 准备：
+#   sudo mkdir -p /export/remote-sensing-data/{input,dem,models,object_detection_output,output_preprocessing,persist_output_preprocessing}
+#   sudo chmod -R 0777 /export/remote-sensing-data
+#
+# MinIO → hostPath 示例（sat57）：
+#   mc mirror minio/satellite-inputs/dem/ /export/remote-sensing-data/dem/
+#   mc mirror minio/satellite-inputs/models/ /export/remote-sensing-data/models/
+#   mc mirror minio/satellite-inputs/input/GF2_PMS1_E118.6_N37.4_20160826_L1A0001792619/ /export/remote-sensing-data/input/GF2_PMS1_E118.6_N37.4_20160826_L1A0001792619/
+#
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: remote-sensing-data-pv-60
+spec:
+  capacity:
+    storage: 500Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /export/remote-sensing-data
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - sat57
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: remote-sensing-data
+  namespace: gitlab-runner
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Gi
+  volumeName: remote-sensing-data-pv-60

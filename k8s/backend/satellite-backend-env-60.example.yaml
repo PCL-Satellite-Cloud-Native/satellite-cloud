@@ -1,0 +1,31 @@
+# 60 节点 backend/worker 环境 Secret 示例（kubectl create secret generic … --from-literal=…）。
+#
+#   kubectl -n gitlab-runner create secret generic satellite-backend-env \
+#     --from-literal=SATELLITE_TOPOLOGY_SCENARIO=Scenario60_3x20 \
+#     --from-literal=SATELLITE_TOPOLOGY_AUTO_IMPORT=false \
+#     --from-literal=SATELLITE_PILOT_CLUSTER=false \
+#     --from-literal=SATELLITE_RS_SATELLITE_AWARE_QUEUE=true \
+#     --from-literal=SATELLITE_STORAGE_BACKEND=nfs \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#
+# pilot-map ConfigMap（挂载到 /etc/satellite/pilot-map-60.json）：
+#   kubectl -n gitlab-runner create configmap pilot-map-60 \
+#     --from-file=pilot-map-60.json=k8s/backend/pilot-map-60.json \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#
+# backend Deployment 追加 env + volume（片段）：
+#   SATELLITE_PILOT_MAP_FILE=/etc/satellite/pilot-map-60.json
+#   volumeMount: /etc/satellite/pilot-map-60.json ← subPath pilot-map-60.json
+#
+apiVersion: v1
+kind: Secret
+metadata:
+  name: satellite-backend-env
+  namespace: gitlab-runner
+type: Opaque
+stringData:
+  SATELLITE_TOPOLOGY_SCENARIO: Scenario60_3x20
+  SATELLITE_TOPOLOGY_AUTO_IMPORT: "false"
+  SATELLITE_PILOT_CLUSTER: "false"
+  SATELLITE_RS_SATELLITE_AWARE_QUEUE: "true"
+  SATELLITE_STORAGE_BACKEND: nfs

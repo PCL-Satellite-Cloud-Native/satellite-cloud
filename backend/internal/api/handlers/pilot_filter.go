@@ -35,13 +35,15 @@ func filterPilotSatellites(sats []model.Satellite) []model.Satellite {
 			out = append(out, s)
 			continue
 		}
-		ephem := pilotcluster.EphemSTKName(e.Orbit, e.Slot)
-		if s, ok := byStk[ephem]; ok {
-			out = append(out, s)
-			continue
-		}
-		if s, ok := bySatID[ephem]; ok {
-			out = append(out, s)
+		if m.BridgeLegacy {
+			ephem := pilotcluster.EphemSTKName(e.Orbit, e.Slot)
+			if s, ok := byStk[ephem]; ok {
+				out = append(out, s)
+				continue
+			}
+			if s, ok := bySatID[ephem]; ok {
+				out = append(out, s)
+			}
 		}
 	}
 
@@ -61,8 +63,10 @@ func satelliteMatchesPilot(s model.Satellite, m *pilotcluster.Map) bool {
 		if s.SatID == e.SatName || s.StkName == e.SatName {
 			return true
 		}
-		if s.SatID == pilotcluster.EphemSTKName(e.Orbit, e.Slot) || s.StkName == pilotcluster.EphemSTKName(e.Orbit, e.Slot) {
-			return true
+		if m.BridgeLegacy {
+			if s.SatID == pilotcluster.EphemSTKName(e.Orbit, e.Slot) || s.StkName == pilotcluster.EphemSTKName(e.Orbit, e.Slot) {
+				return true
+			}
 		}
 	}
 	return false

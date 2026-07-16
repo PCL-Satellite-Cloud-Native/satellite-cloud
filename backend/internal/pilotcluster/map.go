@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -30,11 +31,12 @@ type file struct {
 
 // Map Pilot 集群节点与卫星映射表。
 type Map struct {
-	Enabled bool
-	Entries []Entry
-	bySat   map[string]Entry
-	byNode  map[string]Entry
-	satIDs  map[string]struct{}
+	Enabled      bool
+	BridgeLegacy bool // Pilot 15 星 STK 偏移桥接（Sat_6_6…）；60 节点原生 Sat_1_1 时为 false
+	Entries      []Entry
+	bySat        map[string]Entry
+	byNode       map[string]Entry
+	satIDs       map[string]struct{}
 }
 
 var (
@@ -51,18 +53,24 @@ func Current() *Map {
 }
 
 func load() *Map {
-	if os.Getenv(envEnabled) == "false" {
-		return &Map{Enabled: false}
-	}
-	raw := embeddedMapJSON
+	bridgeLegacy := strings.ToLower(strings.TrimSpace(os.Getenv(envEnabled))) != "false"
+
+	var raw []byte
 	if path := os.Getenv(envMapFile); path != "" {
 		if b, err := os.ReadFile(path); err == nil && len(b) > 0 {
 			raw = b
 		}
 	}
+	if len(raw) == 0 {
+		if !bridgeLegacy {
+			return &Map{Enabled: false, BridgeLegacy: false}
+		}
+		raw = embeddedMapJSON
+	}
+
 	var f file
 	if err := json.Unmarshal(raw, &f); err != nil || len(f.Nodes) == 0 {
-		return &Map{Enabled: false}
+		return &Map{Enabled: false, BridgeLegacy: bridgeLegacy}
 	}
 	for i := range f.Nodes {
 		if f.Nodes[i].SatName == "" {
@@ -70,11 +78,12 @@ func load() *Map {
 		}
 	}
 	m := &Map{
-		Enabled: true,
-		Entries: f.Nodes,
-		bySat:   make(map[string]Entry, len(f.Nodes)),
-		byNode:  make(map[string]Entry, len(f.Nodes)),
-		satIDs:  make(map[string]struct{}, len(f.Nodes)),
+		Enabled:      true,
+		BridgeLegacy: bridgeLegacy,
+		Entries:      f.Nodes,
+		bySat:        make(map[string]Entry, len(f.Nodes)),
+		byNode:       make(map[string]Entry, len(f.Nodes)),
+		satIDs:       make(map[string]struct{}, len(f.Nodes)),
 	}
 	for _, e := range f.Nodes {
 		m.bySat[e.SatID] = e

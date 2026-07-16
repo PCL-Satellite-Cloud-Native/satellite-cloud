@@ -1,0 +1,78 @@
+# 60 节点拓扑导入 Job（仅 delay + t0；无 router）。
+#
+# 前置：
+# 1. migration 000010 已应用（Scenario60_3x20 + 60 satellites）
+# 2. 拓扑 CSV 已放到 sat57 hostPath（或 mc 同步后 rsync 到该目录）：
+#      /export/topology-import/
+#        delay_60x60.csv          ← 自 delay_0000_20260715_000000.csv 复制
+#        ephem_60/
+#          Sat_1_1_ephem_ext.csv … Sat_3_20_ephem_ext.csv
+# 3. satellite-db-secret、satellite-backend-env（SATELLITE_TOPOLOGY_SCENARIO=Scenario60_3x20）
+#
+# 用法：
+#   kubectl apply -f k8s/backend/topology-import-pv-60.yaml
+#   kubectl apply -f k8s/backend/import-topology-job-60.yaml
+#   kubectl logs -f job/import-topology-60 -n gitlab-runner
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: import-topology-60
+  namespace: gitlab-runner
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        kubernetes.io/hostname: sat57
+      containers:
+        - name: import
+          image: 192.168.10.238/satellite/backend:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              SCENARIO="${SATELLITE_TOPOLOGY_SCENARIO:-Scenario60_3x20}"
+              echo "import delay for ${SCENARIO}"
+              ./import_topology -scenario "$SCENARIO" -mode=delay -file /data/topology/delay_60x60.csv
+              echo "import t0 ephem for ${SCENARIO}"
+              ./import_topology -scenario "$SCENARIO" -mode=t0 -dir /data/topology/ephem_60
+              echo "done (no router import for 60-node)"
+          env:
+            - name: SATELLITE_DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: host
+            - name: SATELLITE_DATABASE_PORT
+              value: "5432"
+            - name: SATELLITE_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: user
+            - name: SATELLITE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: password
+            - name: SATELLITE_DATABASE_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: dbname
+            - name: SATELLITE_TOPOLOGY_SCENARIO
+              value: Scenario60_3x20
+          volumeMounts:
+            - name: topology-data
+              mountPath: /data/topology
+              readOnly: true
+      volumes:
+        - name: topology-data
+          hostPath:
+            path: /export/topology-import
+            type: DirectoryOrCreate

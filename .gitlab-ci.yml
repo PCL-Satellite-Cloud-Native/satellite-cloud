@@ -414,11 +414,12 @@ deploy-cluster-120:
     - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
     - kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml || true
     - kubectl -n gitlab-runner delete hpa rs-worker --ignore-not-found
-    - kubectl apply -k k8s/phase5/
+    - kubectl apply -f k8s/phase5/worker-node-reader.yaml
+    - kubectl apply -f k8s/phase5/rs-worker-daemonset-60.yaml
     - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0 || true
     - kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
     - kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE" SATELLITE_RS_SATELLITE_AWARE_QUEUE=true
-    - EXPECTED_IMAGE="$BACKEND_IMAGE" sh scripts/phase5_wait_ds_rollout.sh --namespace gitlab-runner --timeout 900 --min-ready "${P5_60_MIN_DS_READY:-50}"
+    - EXPECTED_IMAGE="$BACKEND_IMAGE" sh scripts/phase5_wait_ds_rollout.sh --namespace gitlab-runner --timeout 1800 --min-ready "${P5_60_MIN_DS_READY:-50}"
     - kubectl -n gitlab-runner get ds rs-worker -o wide
     - echo "完成。验收：CLUSTER_PROFILE=60node bash scripts/phase5_acceptance.sh"
 

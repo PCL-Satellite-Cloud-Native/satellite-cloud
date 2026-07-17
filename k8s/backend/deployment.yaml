@@ -90,6 +90,24 @@ spec:
                 secretKeyRef:
                   name: satellite-backend-env
                   key: SATELLITE_DELAY_CSV
+            - name: SATELLITE_PILOT_CLUSTER
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-backend-env
+                  key: SATELLITE_PILOT_CLUSTER
+                  optional: true
+            - name: SATELLITE_PILOT_MAP_FILE
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-backend-env
+                  key: SATELLITE_PILOT_MAP_FILE
+                  optional: true
+            - name: SATELLITE_RS_SATELLITE_AWARE_QUEUE
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-backend-env
+                  key: SATELLITE_RS_SATELLITE_AWARE_QUEUE
+                  optional: true
             - name: SATELLITE_REMOTE_SENSING_ROOT
               value: "/opt/remote-sensing"
             - name: SATELLITE_REMOTE_SENSING_PYTHON

@@ -383,6 +383,8 @@ deploy-cluster-120:
     - echo "cluster-120 部署（120 集群；Pilot main 不受影响）"
     - echo "BACKEND_IMAGE=$BACKEND_IMAGE"
     - kubectl -n gitlab-runner get pvc remote-sensing-data
+    - kubectl apply -f k8s/backend/satellite-backend-env-60.example.yaml
+    - kubectl -n gitlab-runner set env deployment/satellite-backend SATELLITE_TOPOLOGY_SCENARIO- SATELLITE_TOPOLOGY_AUTO_IMPORT- SATELLITE_DELAY_CSV- SATELLITE_PILOT_CLUSTER- SATELLITE_PILOT_MAP_FILE- SATELLITE_RS_SATELLITE_AWARE_QUEUE- 2>/dev/null || true
     - kubectl apply -f k8s/backend/deployment.yaml
     - |
       kubectl -n gitlab-runner patch deployment satellite-backend --type=strategic -p '{
@@ -404,7 +406,6 @@ deploy-cluster-120:
         }
       }' || echo "WARN pilot-map volume patch（先跑 p5_60node_bootstrap.sh）"
     - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
-    - kubectl -n gitlab-runner set env deployment/satellite-backend SATELLITE_TOPOLOGY_SCENARIO=Scenario60_3x20 SATELLITE_PILOT_CLUSTER=false SATELLITE_RS_SATELLITE_AWARE_QUEUE=true SATELLITE_PILOT_MAP_FILE=/etc/satellite/pilot-map-60.json
     - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
     - kubectl apply -f k8s/frontend/deployment.yaml
     - kubectl -n gitlab-runner set image deployment/satellite-frontend satellite-frontend="$FRONTEND_IMAGE"

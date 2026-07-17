@@ -361,11 +361,11 @@ import-topology-60:
   only:
     - cluster-120
   script:
-    - echo "从 sat57 hostPath 导入拓扑（须先 mc mirror MinIO → /export/topology-import/ 或 scp）"
+    - echo "MinIO → emptyDir → import_topology（避开 sat57 hostPath / Istio Job 问题）"
     - kubectl -n gitlab-runner delete job import-topology-60 --ignore-not-found
-    - kubectl apply -f k8s/backend/import-topology-job-60.yaml
+    - kubectl apply -f k8s/backend/import-topology-job-60-minio.yaml
     - kubectl -n gitlab-runner wait --for=condition=complete --timeout=600s job/import-topology-60
-    - kubectl -n gitlab-runner logs job/import-topology-60 --tail=100
+    - kubectl -n gitlab-runner logs job/import-topology-60 -c import --tail=100
 
 deploy-cluster-120:
   stage: deploy
@@ -404,11 +404,7 @@ deploy-cluster-120:
         }
       }' || echo "WARN pilot-map volume patch（先跑 p5_60node_bootstrap.sh）"
     - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
-    - kubectl -n gitlab-runner set env deployment/satellite-backend \
-        SATELLITE_TOPOLOGY_SCENARIO=Scenario60_3x20 \
-        SATELLITE_PILOT_CLUSTER=false \
-        SATELLITE_RS_SATELLITE_AWARE_QUEUE=true \
-        SATELLITE_PILOT_MAP_FILE=/etc/satellite/pilot-map-60.json
+    - kubectl -n gitlab-runner set env deployment/satellite-backend SATELLITE_TOPOLOGY_SCENARIO=Scenario60_3x20 SATELLITE_PILOT_CLUSTER=false SATELLITE_RS_SATELLITE_AWARE_QUEUE=true SATELLITE_PILOT_MAP_FILE=/etc/satellite/pilot-map-60.json
     - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
     - kubectl apply -f k8s/frontend/deployment.yaml
     - kubectl -n gitlab-runner set image deployment/satellite-frontend satellite-frontend="$FRONTEND_IMAGE"
@@ -420,9 +416,7 @@ deploy-cluster-120:
     - kubectl apply -k k8s/phase5/
     - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0 || true
     - kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
-    - kubectl -n gitlab-runner set env daemonset/rs-worker \
-        SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE" \
-        SATELLITE_RS_SATELLITE_AWARE_QUEUE=true
+    - kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE" SATELLITE_RS_SATELLITE_AWARE_QUEUE=true
     - EXPECTED_IMAGE="$BACKEND_IMAGE" sh scripts/phase5_wait_ds_rollout.sh --namespace gitlab-runner --timeout 900 --min-ready "${P5_60_MIN_DS_READY:-50}"
     - kubectl -n gitlab-runner get ds rs-worker -o wide
     - echo "完成。验收：CLUSTER_PROFILE=60node bash scripts/phase5_acceptance.sh"

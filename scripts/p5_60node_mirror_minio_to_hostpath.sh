@@ -6,6 +6,7 @@ set -euo pipefail
 NAMESPACE="${NAMESPACE:-gitlab-runner}"
 NODE="${MIRROR_NODE:-sat57}"
 JOB_NAME="${JOB_NAME:-mc-mirror-inputs-hostpath}"
+WAIT_TIMEOUT="${WAIT_TIMEOUT:-1800s}"
 
 usage() {
   cat <<'EOF'
@@ -51,7 +52,13 @@ metadata:
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 2
+  activeDeadlineSeconds: 3600
   template:
+    metadata:
+      labels:
+        job: ${JOB_NAME}
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       restartPolicy: Never
       nodeSelector:
@@ -97,6 +104,15 @@ spec:
             type: DirectoryOrCreate
 EOF
 
-kubectl -n "${NAMESPACE}" wait --for=condition=complete --timeout=600s "job/${JOB_NAME}"
-kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}" | tail -30
+if ! kubectl -n "${NAMESPACE}" wait --for=condition=complete --timeout="${WAIT_TIMEOUT}" "job/${JOB_NAME}"; then
+  echo "Job 未在 ${WAIT_TIMEOUT} 内 Complete，查看状态与 mc 容器日志："
+  kubectl -n "${NAMESPACE}" get job "${JOB_NAME}"
+  kubectl -n gitlab-runner get pods -l "job=${JOB_NAME}" -o wide 2>/dev/null \
+    || kubectl -n "${NAMESPACE}" get pods -l "job-name=${JOB_NAME}" -o wide
+  kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}" -c mc --tail=50 2>/dev/null \
+    || kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}" --tail=50
+  exit 1
+fi
+kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}" -c mc --tail=30 2>/dev/null \
+  || kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}" | tail -30
 echo "mirror 完成"

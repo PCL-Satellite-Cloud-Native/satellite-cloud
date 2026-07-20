@@ -154,4 +154,12 @@ CLUSTER_PROFILE=60node MIN_DS_READY=50 \
 - Grafana 导入 `k8s/phase4/grafana/satellite-workers.json`
 - 运维一页纸：Gateway API、Postgres、Redis XLEN、metrics Service
 
-下一阶段建议：**P2 D0 MinIO 产物**（根治前端 artifact 404），或先做 P1-2。
+### P2 D0（进行中）
+
+见 [D0_MINIO_ARTIFACT_UPLOAD_60.md](./D0_MINIO_ARTIFACT_UPLOAD_60.md)：
+
+- `storage.Backend.Put` + `SATELLITE_ARTIFACT_UPLOAD_MINIO`
+- rs-worker hostPath 写盘后上传 preview/detection_*
+- backend `SATELLITE_STORAGE_BACKEND=minio` 供前端下载
+
+验收：新任务 artifact `curl -sI .../artifacts/{id}` → **200**。

@@ -151,6 +151,7 @@ type RemoteSensingService struct {
 	queueCfg        config.QueueConfig
 	argoCfg         config.ArgoConfig
 	storage         storage.Backend
+	artifactUploader storage.Backend // D0：可选 MinIO Put；nil 表示不上传
 	metricsWorker   string
 	redisClient     *queue.Client
 	redisMu         sync.Mutex
@@ -175,16 +176,42 @@ func NewRemoteSensingService(db *gorm.DB, logger *zap.Logger, cfg config.RemoteS
 		logger.Warn("storage backend 初始化失败，回退 nfs", zap.Error(err))
 		store, _ = storage.New(config.StorageConfig{Backend: "nfs"})
 	}
+	var uploader storage.Backend
+	if storageCfg.ArtifactUploadMinIO {
+		if store.Mode() == "minio" {
+			uploader = store
+		} else {
+			u, uerr := storage.New(config.StorageConfig{
+				Backend:        "minio",
+				MinIOEndpoint:  storageCfg.MinIOEndpoint,
+				MinIOAccessKey: storageCfg.MinIOAccessKey,
+				MinIOSecretKey: storageCfg.MinIOSecretKey,
+				MinIOBucket:    storageCfg.MinIOBucket,
+				MinIOPrefix:    storageCfg.MinIOPrefix,
+				MinIOUseSSL:    storageCfg.MinIOUseSSL,
+			})
+			if uerr != nil {
+				logger.Warn("artifact MinIO uploader 初始化失败，跳过上传", zap.Error(uerr))
+			} else {
+				uploader = u
+				logger.Info("D0 artifact upload to MinIO enabled",
+					zap.String("endpoint", storageCfg.MinIOEndpoint),
+					zap.String("bucket", storageCfg.MinIOBucket),
+				)
+			}
+		}
+	}
 	s := &RemoteSensingService{
-		db:            db,
-		logger:        logger,
-		cfg:           cfg,
-		detectionCfg:  detectionCfg,
-		queueCfg:      opts.Queue,
-		storage:       store,
-		metricsWorker: opts.MetricsWorker,
-		subscribers:   make(map[uint][]chan RemoteSensingStageEvent),
-		queue:        make(chan pipelineJob, queueSize),
+		db:               db,
+		logger:           logger,
+		cfg:              cfg,
+		detectionCfg:     detectionCfg,
+		queueCfg:         opts.Queue,
+		storage:          store,
+		artifactUploader: uploader,
+		metricsWorker:    opts.MetricsWorker,
+		subscribers:      make(map[uint][]chan RemoteSensingStageEvent),
+		queue:            make(chan pipelineJob, queueSize),
 	}
 	s.initDetectionRunner()
 	s.initArgoFromConfig(argoCfg, logger)
@@ -748,7 +775,11 @@ func (s *RemoteSensingService) publishStageEvent(taskID uint, event RemoteSensin
 }
 
 func (s *RemoteSensingService) createArtifact(ctx context.Context, artifact model.RemoteSensingTaskArtifact) error {
-	return s.db.WithContext(ctx).Create(&artifact).Error
+	if err := s.db.WithContext(ctx).Create(&artifact).Error; err != nil {
+		return err
+	}
+	s.maybeUploadArtifactAsync(artifact)
+	return nil
 }
 
 func (s *RemoteSensingService) runPython(ctx context.Context, taskID uint, stageName, script string, args []string) (string, error) {

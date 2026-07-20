@@ -47,6 +47,27 @@ func (b *minioBackend) Open(ctx context.Context, rootAbs, relPath string) (io.Re
 	return obj, nil
 }
 
+func (b *minioBackend) Put(ctx context.Context, rootAbs, relPath string, r io.Reader, size int64) error {
+	key := objectKey(b.prefix, rootKeyForObject(rootAbs, relPath), relPath)
+	contentType := "application/octet-stream"
+	lower := strings.ToLower(relPath)
+	switch {
+	case strings.HasSuffix(lower, ".png"):
+		contentType = "image/png"
+	case strings.HasSuffix(lower, ".jpg"), strings.HasSuffix(lower, ".jpeg"):
+		contentType = "image/jpeg"
+	case strings.HasSuffix(lower, ".txt"):
+		contentType = "text/plain; charset=utf-8"
+	}
+	_, err := b.client.PutObject(ctx, b.bucket, key, r, size, minio.PutObjectOptions{
+		ContentType: contentType,
+	})
+	if err != nil {
+		return fmt.Errorf("minio put %q: %w", key, err)
+	}
+	return nil
+}
+
 func rootKeyFromAbs(rootAbs string) string {
 	clean := filepath.ToSlash(filepath.Clean(rootAbs))
 	if strings.Contains(clean, "object_detection") {

@@ -4,15 +4,35 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
 
-// Backend 产物存储抽象（Phase 6：NFS 默认，MinIO 可选）。
+// Backend 产物存储抽象（Phase 6：NFS 默认，MinIO 可选；D0 增加 Put）。
 type Backend interface {
 	Mode() string
 	ResolveLocalPath(rootAbs, relPath string) (string, error)
 	Open(ctx context.Context, rootAbs, relPath string) (io.ReadCloser, error)
+	// Put 写入产物；size<0 时由实现自行探测（MinIO 可用 -1）。
+	Put(ctx context.Context, rootAbs, relPath string, r io.Reader, size int64) error
+}
+
+// PutFile 将本地文件上传/写入 Backend（D0：worker hostPath → MinIO）。
+func PutFile(ctx context.Context, b Backend, rootAbs, relPath, localAbs string) error {
+	if b == nil {
+		return fmt.Errorf("storage backend 为空")
+	}
+	f, err := os.Open(localAbs)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	return b.Put(ctx, rootAbs, relPath, f, st.Size())
 }
 
 func SafeJoinRoot(rootAbs, relPath string) (string, error) {

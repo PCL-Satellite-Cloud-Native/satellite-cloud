@@ -111,13 +111,14 @@ type ObjectDetectionConfig struct {
 
 // StorageConfig Phase 6 产物存储（默认 nfs；minio 为试点/压测路径）
 type StorageConfig struct {
-	Backend        string // nfs | minio
-	MinIOEndpoint  string
-	MinIOAccessKey string
-	MinIOSecretKey string
-	MinIOBucket    string
-	MinIOPrefix    string
-	MinIOUseSSL    bool
+	Backend             string // nfs | minio
+	MinIOEndpoint       string
+	MinIOAccessKey      string
+	MinIOSecretKey      string
+	MinIOBucket         string
+	MinIOPrefix         string
+	MinIOUseSSL         bool
+	ArtifactUploadMinIO bool // D0：worker 本地写盘后额外 Put 到 MinIO（backend Open 用 minio）
 }
 
 // UseCPU 当 device 不为 gpu 时使用 CPU 推理（本地默认 cpu；服务器 GPU 就绪后设 SATELLITE_OBJECT_DETECTION_DEVICE=gpu）
@@ -470,13 +471,14 @@ func storageConfigFromEnvOrViper() StorageConfig {
 		return defaultVal
 	}
 	return StorageConfig{
-		Backend:        get("SATELLITE_STORAGE_BACKEND", "storage.backend", "nfs"),
-		MinIOEndpoint:  get("SATELLITE_MINIO_ENDPOINT", "storage.minio_endpoint", ""),
-		MinIOAccessKey: get("SATELLITE_MINIO_ACCESS_KEY", "storage.minio_access_key", ""),
-		MinIOSecretKey: get("SATELLITE_MINIO_SECRET_KEY", "storage.minio_secret_key", ""),
-		MinIOBucket:    get("SATELLITE_MINIO_BUCKET", "storage.minio_bucket", "satellite-artifacts"),
-		MinIOPrefix:    get("SATELLITE_MINIO_PREFIX", "storage.minio_prefix", ""),
-		MinIOUseSSL:    getBool("SATELLITE_MINIO_USE_SSL", "storage.minio_use_ssl", false),
+		Backend:             get("SATELLITE_STORAGE_BACKEND", "storage.backend", "nfs"),
+		MinIOEndpoint:       get("SATELLITE_MINIO_ENDPOINT", "storage.minio_endpoint", ""),
+		MinIOAccessKey:      get("SATELLITE_MINIO_ACCESS_KEY", "storage.minio_access_key", ""),
+		MinIOSecretKey:      get("SATELLITE_MINIO_SECRET_KEY", "storage.minio_secret_key", ""),
+		MinIOBucket:         get("SATELLITE_MINIO_BUCKET", "storage.minio_bucket", "satellite-artifacts"),
+		MinIOPrefix:         get("SATELLITE_MINIO_PREFIX", "storage.minio_prefix", ""),
+		MinIOUseSSL:         getBool("SATELLITE_MINIO_USE_SSL", "storage.minio_use_ssl", false),
+		ArtifactUploadMinIO: getBool("SATELLITE_ARTIFACT_UPLOAD_MINIO", "storage.artifact_upload_minio", false),
 	}
 }
 

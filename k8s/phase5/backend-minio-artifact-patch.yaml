@@ -1,0 +1,40 @@
+# D0：backend 从 MinIO 读产物（Open）；rs-worker 仍写 hostPath 并 Put 预览/检测图。
+# 用法（sat10-m1）：
+#   kubectl -n gitlab-runner apply -f k8s/phase5/backend-minio-artifact-patch.yaml
+#   # 或用 kubectl set env / patch deployment
+#   kubectl -n gitlab-runner set env ds/rs-worker \
+#     SATELLITE_ARTIFACT_UPLOAD_MINIO=true \
+#     SATELLITE_MINIO_ENDPOINT=minio:9000 \
+#     SATELLITE_MINIO_BUCKET=satellite-artifacts
+#   # AccessKey/Secret 建议挂 minio-credentials Secret（见 rs-worker-daemonset-60.yaml 注释段）
+#
+# 前置：MinIO bucket satellite-artifacts 已存在；minio-credentials Secret 存在。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: satellite-backend
+  namespace: gitlab-runner
+spec:
+  template:
+    spec:
+      containers:
+        - name: satellite-backend
+          env:
+            - name: SATELLITE_STORAGE_BACKEND
+              value: "minio"
+            - name: SATELLITE_MINIO_ENDPOINT
+              value: "minio:9000"
+            - name: SATELLITE_MINIO_BUCKET
+              value: "satellite-artifacts"
+            - name: SATELLITE_MINIO_USE_SSL
+              value: "false"
+            - name: SATELLITE_MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: SATELLITE_MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD

@@ -179,6 +179,27 @@ spec:
               value: "14400"
             - name: SATELLITE_OBJECT_DETECTION_OUTPUT_SUBDIR
               value: "output_detection"
+            # D0：预览/检测图上传 MinIO，供 backend（sat57）Open 给前端
+            - name: SATELLITE_STORAGE_BACKEND
+              value: "nfs"
+            - name: SATELLITE_ARTIFACT_UPLOAD_MINIO
+              value: "true"
+            - name: SATELLITE_MINIO_ENDPOINT
+              value: "minio:9000"
+            - name: SATELLITE_MINIO_BUCKET
+              value: "satellite-artifacts"
+            - name: SATELLITE_MINIO_USE_SSL
+              value: "false"
+            - name: SATELLITE_MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: SATELLITE_MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
           resources:
             requests:
               memory: "2Gi"

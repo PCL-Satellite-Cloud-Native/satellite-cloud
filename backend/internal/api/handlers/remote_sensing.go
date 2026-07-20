@@ -235,10 +235,13 @@ func (h *RemoteSensingHandler) DownloadArtifact(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "artifact not found"})
 		return
 	}
-	absPath, err := h.svc.ArtifactAbsolutePath(artifact)
-	if err == nil {
-		serveArtifactFile(c, h.logger, absPath, artifact.Path, artifact.Type)
-		return
+	// minio 模式优先走 Open，避免误用本地 Resolve（sat57 PVC 无锚点文件）。
+	if h.svc.StorageMode() != "minio" {
+		absPath, err := h.svc.ArtifactAbsolutePath(artifact)
+		if err == nil {
+			serveArtifactFile(c, h.logger, absPath, artifact.Path, artifact.Type)
+			return
+		}
 	}
 	rc, openErr := h.svc.OpenArtifact(c.Request.Context(), artifact)
 	if openErr != nil {

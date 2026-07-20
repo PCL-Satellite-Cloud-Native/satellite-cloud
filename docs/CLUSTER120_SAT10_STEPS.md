@@ -130,16 +130,55 @@ done
 
 ## 阶段 G — 验收
 
+**API 基址**：`http://192.168.12.67:30080`（Istio Gateway）。**勿**依赖 `port-forward svc/satellite-backend`（503）或 master 上 `kubectl proxy` 直连 Pod。
+
+### G1. Preflight
+
 ```bash
 cd ~/code/satellite-cloud
-kubectl -n gitlab-runner port-forward svc/satellite-backend 8080:8080 &
-
 CLUSTER_PROFILE=60node MIN_DS_READY=50 \
-  bash scripts/phase5_acceptance.sh --preflight-only
-
-CLUSTER_PROFILE=60node MIN_DS_READY=50 \
-  bash scripts/phase5_acceptance.sh --run-id p5-60-$(date +%m%d)
+  bash scripts/phase5_acceptance.sh --preflight-only \
+  --api-base http://192.168.12.67:30080
 ```
+
+### G2. 提交三锚点任务
+
+```bash
+CLUSTER_PROFILE=60node MIN_DS_READY=50 \
+  bash scripts/phase5_acceptance.sh \
+  --run-id p5-60-$(date +%Y%m%d-%H%M) \
+  --api-base http://192.168.12.67:30080 \
+  --timeout 10800
+```
+
+### G3. 60 节点必配（首通实测 2026-07-20）
+
+```bash
+kubectl -n gitlab-runner set env ds/rs-worker \
+  SATELLITE_USE_OD_WORKER=false \
+  SATELLITE_USE_ARGO_PAN_RPC=false
+kubectl -n gitlab-runner rollout restart ds/rs-worker
+kubectl -n gitlab-runner scale deployment/od-worker --replicas=0
+```
+
+原因：rs-worker DS 用 **每节点 hostPath**；sat57 上的 od-worker / backend PVC **读不到锚点产物**。
+
+### G4. 对已完成 task 做断言（不重跑 RS）
+
+见 `60node-platform-docs/runbooks/P5-preflight-decisions.md` §10.3；或对本 run 的 `summary.csv`：
+
+```bash
+CLUSTER_PROFILE=60node MIN_DS_READY=50 \
+  bash scripts/phase5_acceptance.sh \
+  --run-id <your-run-id> \
+  --api-base http://192.168.12.67:30080 \
+  --no-submit --skip-preflight
+```
+
+### G5. P5 准出后已知限制
+
+- **前端 artifact 404**：DB 有记录、锚点磁盘有文件，backend 在 sat57 PVC 上 Open 失败 — **不阻塞** completed / 落点验收。
+- **sat57 backend 镜像损坏**：`kubectl exec` 可能报 `libselinux.so.1: file too short`；Go API 仍可服务。
 
 ---
 

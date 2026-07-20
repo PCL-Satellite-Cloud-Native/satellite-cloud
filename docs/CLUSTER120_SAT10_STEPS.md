@@ -180,6 +180,8 @@ CLUSTER_PROFILE=60node MIN_DS_READY=50 \
 - **前端 artifact 404**：DB 有记录、锚点磁盘有文件，backend 在 sat57 PVC 上 Open 失败 — **不阻塞** completed / 落点验收。
 - **sat57 backend 镜像损坏**：`kubectl exec` 可能报 `libselinux.so.1: file too short`；Go API 仍可服务。
 
+**P5 已于 2026-07-20 正式断言通过**（run `p5-60-retry-20260720-0942`）。归档：[archives/2026-07-20_p5-60node-closure.md](../archives/2026-07-20_p5-60node-closure.md)。Post-P5：[post-p5-60node-roadmap.md](../post-p5-60node-roadmap.md)。
+
 ---
 
 ## 故障速查

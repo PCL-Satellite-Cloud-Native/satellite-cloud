@@ -127,4 +127,20 @@ GIT_SSL_NO_VERIFY=true git -c http.sslVerify=false push gitlab cluster-120
 | P0-2 sat57 | ✅ 方案 A（API 可用；exec 因节点损坏不可用） |
 | P0-3 GitLab 同步 | ✅ `5150961` |
 
-下一阶段：**P1** — P6 最小监控（rs.jobs XLEN、worker active）。
+### P1 操作（60 节点最小监控）
+
+```bash
+cd ~/code/satellite-cloud
+git pull origin cluster-120
+
+# 确保 metrics Service 存在（Pilot phase4 若已 apply 可跳过）
+kubectl apply -f k8s/phase4/metrics-services.yaml
+
+chmod +x scripts/phase5_verify_metrics_60.sh
+CLUSTER_PROFILE=60node MIN_DS_READY=50 \
+  bash scripts/phase5_verify_metrics_60.sh --min-ds-ready 50
+```
+
+通过标准：DS Ready≥50；`rs-worker-metrics` endpoints 足够；抽样 Pod 有 `satellite_queue_depth`；`XLEN rs.jobs` 非百万级。
+
+当前进行：**P1**。

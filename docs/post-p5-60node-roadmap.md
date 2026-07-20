@@ -143,4 +143,15 @@ CLUSTER_PROFILE=60node MIN_DS_READY=50 \
 
 通过标准：DS Ready≥50；`rs-worker-metrics` endpoints 足够；抽样 Pod 有 `satellite_queue_depth`；`XLEN rs.jobs` 非百万级。
 
-当前进行：**P1**。
+### P1-1 状态（2026-07-20）
+
+✅ `phase5_verify_metrics_60.sh` 通过：DS 54/54；endpoints=54；`satellite_queue_depth` OK；`XLEN=1`。  
+⚠️ 无 ServiceMonitor（集群未装 Prometheus Operator / 未 apply phase4 SM）— **不阻塞** P1-1；有 Prometheus 后再做 P1-2。
+
+### P1-2（可选）
+
+- apply `k8s/phase4` ServiceMonitor（若有 kube-prometheus）
+- Grafana 导入 `k8s/phase4/grafana/satellite-workers.json`
+- 运维一页纸：Gateway API、Postgres、Redis XLEN、metrics Service
+
+下一阶段建议：**P2 D0 MinIO 产物**（根治前端 artifact 404），或先做 P1-2。

@@ -26,6 +26,11 @@ spec:
         sidecar.istio.io/inject: "false"
     spec:
       serviceAccountName: rs-worker
+      # 显式 UID/GID，避免部分节点 containerd 解析镜像 USER appuser 时 mount callback "no users found"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -36,6 +41,9 @@ spec:
       initContainers:
         - name: init-remote-sensing-dirs
           image: 192.168.10.238/library/alpine:3.19-amd64-r1
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
           command:
             - /bin/sh
             - -c
@@ -99,10 +107,12 @@ spec:
               value: "true"
             - name: SATELLITE_USE_INPROCESS_PIPELINE
               value: "false"
+            # 60 节点：融合产物在锚点 hostPath；sat57 PVC 上的 od-worker 读不到 → 阶段 10 须在 rs-worker 本机跑
             - name: SATELLITE_USE_OD_WORKER
-              value: "true"
+              value: "false"
+            # PAN RPC 使用 hostPath 时需进程内 pan_rpc（Argo 模板仍绑 RWO PVC，无法在锚点调度）
             - name: SATELLITE_USE_ARGO_PAN_RPC
-              value: "true"
+              value: "false"
             - name: SATELLITE_ARGO_REQUIRED_NODE_AFFINITY
               value: "true"
             - name: SATELLITE_ARGO_NAMESPACE

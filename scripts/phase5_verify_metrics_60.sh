@@ -83,6 +83,9 @@ if [[ "${eps_count}" -ge "${MIN_METRICS_EPS}" ]]; then
   echo "  OK   rs-worker-metrics endpoints=${eps_count} (>=${MIN_METRICS_EPS})"
 else
   echo "  FAIL rs-worker-metrics endpoints=${eps_count} (<${MIN_METRICS_EPS})"
+  echo "  hint: Service targetPort 须为 9090（数字）；并确认 Pod 有 label app=rs-worker"
+  kubectl -n "${NAMESPACE}" get svc rs-worker-metrics -o jsonpath='{.spec.ports[0].targetPort}{"\n"}' 2>/dev/null || true
+  kubectl -n "${NAMESPACE}" get pod -l app=rs-worker -o jsonpath='{.items[0].spec.containers[0].ports}' 2>/dev/null; echo
   FAIL=1
 fi
 

@@ -56,7 +56,17 @@ Week 2+ P2-1 D0 设计与实现
 
 ✅ 已验证：`SkipRSJobForOtherConsumer` 在镜像内；单任务运行期间 `XLEN rs.jobs` 稳定为 1，无指数膨胀。
 
-### P0-2 操作（sat10-m1）
+### P0-2 状态（2026-07-20）
+
+| 结论 | 说明 |
+|------|------|
+| 根因 | 同 digest `sha256:5f84530c…` 在 sat1 正常、sat57 `lib*.so file too short` → **sat57 节点 overlay/磁盘损坏** |
+| 清镜像 | Job `purge-backend-image-sat57` 已成功删除本地 backend 层；重拉后仍损坏 |
+| 迁节点 | 失败：PVC `remote-sensing-data` 为 **RWO hostPath@sat57**，affinity 到 sat5 → Pending |
+| 决议 | **方案 A**：backend 留 sat57；API/入队正常；`kubectl exec` 不可用；artifact 仍靠 D0 |
+| 后续 | 平台修 sat57 盘/containerd；或方案 B 把 PV nodeAffinity 改到健康节点 |
+
+### P0-2 操作（历史，sat10-m1）
 
 ```bash
 cd ~/code/satellite-cloud && git pull origin cluster-120
@@ -80,12 +90,29 @@ kubectl -n gitlab-runner set image deployment/satellite-backend \
   satellite-backend=192.168.10.238/satellite/backend:cluster-120-latest
 kubectl -n gitlab-runner rollout restart deployment/satellite-backend
 kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
-
-# 4) 验收：exec 不再报 libselinux
-BPOD=$(kubectl -n gitlab-runner get pod -l app=satellite-backend -o jsonpath='{.items[0].metadata.name}')
-kubectl -n gitlab-runner exec "$BPOD" -- ls /bin/ls
-kubectl -n gitlab-runner exec "$BPOD" -- curl -fsS http://127.0.0.1:8080/health || true
-curl -sI http://192.168.12.67:30080/api/remote-sensing/tasks/4 | head -5
 ```
 
-当前进行：**P0-2**。
+### P0-3 操作（GitLab ↔ GitHub）
+
+目标：GitLab `192.168.10.238:8444` 上 `cluster-120` 至少包含 `cd7658f`（含 P0-1/P0-2 文档与 Job）。
+
+**在能推 GitLab 的机器上**（仓库机 238 或已配 PAT/SSH 的 sat10）：
+
+```bash
+# 若用 GitHub → GitLab mirror（仓库机常见）
+# git -C ~/Code/satellite-cloud.git fetch github cluster-120
+# git -C ~/Code/satellite-cloud.git push gitlab-internal cluster-120
+
+# 或 sat10 已能 SSH GitHub 时，另加 GitLab remote 后：
+cd ~/code/satellite-cloud
+git fetch origin cluster-120
+git log -1 --oneline origin/cluster-120   # 期望 ≥ cd7658f
+
+# 推送到 GitLab（按实际 remote 名/URL 改）
+git remote add gitlab https://192.168.10.238:8444/root/satellite-cloud.git 2>/dev/null || true
+GIT_SSL_NO_VERIFY=true git -c http.sslVerify=false push gitlab cluster-120
+```
+
+验收：GitLab Web → Branches → `cluster-120` 最新 commit 与 GitHub 一致；可选触发 `deploy-cluster-120` 确认不回退旧镜像。
+
+当前进行：**P0-3**。

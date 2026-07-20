@@ -36,7 +36,7 @@ func (s *RemoteSensingService) ShouldProcessRSJob(ctx context.Context, job queue
 	requiredSatID = s.satelliteSatID(ctx, satID)
 	process = JobMatchesLocalSatellite(true, job.SatelliteID, requiredSatID, localSatID)
 	if !process {
-		s.logger.Info("跳过非本星 RS job，交还 Redis stream",
+		s.logger.Info("跳过非本星 RS job，留 pending 待 XAUTOCLAIM",
 			zap.Uint("task_id", job.TaskID),
 			zap.Uint("job_satellite_id", job.SatelliteID),
 			zap.String("required_sat_id", requiredSatID),

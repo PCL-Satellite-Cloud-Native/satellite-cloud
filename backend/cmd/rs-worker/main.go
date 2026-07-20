@@ -82,13 +82,8 @@ func main() {
 
 	processJob := func(streamID string, job queue.RSJobPayload) {
 		if ok, _ := rsSvc.ShouldProcessRSJob(ctx, job, localPlacement.ExecutedSatID); !ok {
-			if err := qClient.ReleaseRSJobForOtherConsumer(ctx, streamID, job); err != nil {
-				zapLogger.Warn("交还非本星 RS job 失败",
-					zap.Uint("task_id", job.TaskID),
-					zap.String("stream_id", streamID),
-					zap.Error(err),
-				)
-			}
+			// 不 ACK、不 re-XADD：留 PEL 供 XAUTOCLAIM 转交本星 worker（避免 57 节点 stream 风暴）
+			_ = qClient.SkipRSJobForOtherConsumer(ctx, streamID, job)
 			return
 		}
 		sem <- struct{}{}
@@ -112,6 +107,10 @@ func main() {
 	}
 
 	go func() {
+		reclaimMinIdle := 2 * time.Minute
+		if cfg.Queue.SatelliteAwareQueue {
+			reclaimMinIdle = 30 * time.Second
+		}
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -119,7 +118,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				msgs, err := qClient.ReclaimStaleRSJobs(ctx, 2*time.Minute, 10)
+				msgs, err := qClient.ReclaimStaleRSJobs(ctx, reclaimMinIdle, 10)
 				if err != nil {
 					zapLogger.Warn("ReclaimStaleRSJobs failed", zap.Error(err))
 					continue

@@ -134,13 +134,19 @@ func (c *Client) AckRSJob(ctx context.Context, streamID string) error {
 	return c.rdb.XAck(ctx, c.streamRS, c.consumerGroup, streamID).Err()
 }
 
-// ReleaseRSJobForOtherConsumer ACK 后重新 XADD，供其他 rs-worker 节点消费（P5-06b）。
+// ReleaseRSJobForOtherConsumer 已废弃：ACK+re-XADD 在 57 worker 下导致 rs.jobs 风暴。
+// 请改用 SkipRSJobForOtherConsumer（不 ACK，依赖 XAUTOCLAIM 转交本星 worker）。
 func (c *Client) ReleaseRSJobForOtherConsumer(ctx context.Context, streamID string, job RSJobPayload) error {
-	if err := c.AckRSJob(ctx, streamID); err != nil {
-		return err
-	}
-	_, err := c.EnqueueRSJob(ctx, job)
-	return err
+	return c.SkipRSJobForOtherConsumer(ctx, streamID, job)
+}
+
+// SkipRSJobForOtherConsumer 非本星 rs-worker 跳过 job：不 XACK、不 XADD。
+// 消息留在当前 consumer 的 PEL，ReclaimStaleRSJobs (XAUTOCLAIM) 会在 minIdle 后转给其他 consumer。
+func (c *Client) SkipRSJobForOtherConsumer(ctx context.Context, streamID string, job RSJobPayload) error {
+	_ = ctx
+	_ = streamID
+	_ = job
+	return nil
 }
 
 // StreamGroupPending 消费者组待处理消息数（XPENDING count）

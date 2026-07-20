@@ -115,4 +115,16 @@ GIT_SSL_NO_VERIFY=true git -c http.sslVerify=false push gitlab cluster-120
 
 验收：GitLab Web → Branches → `cluster-120` 最新 commit 与 GitHub 一致；可选触发 `deploy-cluster-120` 确认不回退旧镜像。
 
-当前进行：**P0-3**。
+### P0-3 状态（2026-07-20）
+
+✅ GitHub / GitLab `cluster-120` 均为 **`5150961`**（`ls-remote` 一致）。sat10 本地若仍停在 `cd7658f`，执行：`git merge --ff-only origin/cluster-120`。
+
+### P0 整段收口
+
+| 项 | 结果 |
+|----|------|
+| P0-1 Redis 风暴 | ✅ XLEN 稳定 |
+| P0-2 sat57 | ✅ 方案 A（API 可用；exec 因节点损坏不可用） |
+| P0-3 GitLab 同步 | ✅ `5150961` |
+
+下一阶段：**P1** — P6 最小监控（rs.jobs XLEN、worker active）。

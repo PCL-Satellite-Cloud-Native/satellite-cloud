@@ -10,7 +10,7 @@
 | # | 项 | 问题 | 动作 | 验收 |
 |---|-----|------|------|------|
 | P0-1 | Redis 非本星 job | 57 worker ACK+re-XADD → stream 膨胀 | 非本星 **不 ACK、不 re-XADD**；留 PEL 由 XAUTOCLAIM 转交 | 提交 3 锚点任务后 `XLEN rs.jobs` 不指数增长 |
-| P0-2 | sat57 backend 镜像 | `libselinux.so.1: file too short` | privileged Job `crictl rmi` + rollout | `kubectl exec` backend 可 `ls` |
+| P0-2 | sat57 backend 镜像 | `libselinux.so.1: file too short` | Job `k8s/phase5/job-purge-backend-image-sat57.yaml` + rollout | `kubectl exec` backend 可 `ls` / `ldd` |
 | P0-3 | GitLab ↔ GitHub | CI 在 238，代码在 GitHub | mirror / push `cluster-120` 到 GitLab | `deploy-cluster-120` 用 `2b673f9+` |
 
 ---
@@ -52,4 +52,40 @@ Week 1  P1-1 P6 最小监控
 Week 2+ P2-1 D0 设计与实现
 ```
 
-当前进行：**P0-1**（见 `backend/internal/queue/redis.go`、`cmd/rs-worker/main.go`）。
+### P0-1 状态（2026-07-20）
+
+✅ 已验证：`SkipRSJobForOtherConsumer` 在镜像内；单任务运行期间 `XLEN rs.jobs` 稳定为 1，无指数膨胀。
+
+### P0-2 操作（sat10-m1）
+
+```bash
+cd ~/code/satellite-cloud && git pull origin cluster-120
+
+# 0) 确认 backend 在 sat57
+kubectl -n gitlab-runner get pod -l app=satellite-backend -o wide
+
+# 1) 缩容 / 删 Pod，释放镜像占用（API 短暂中断）
+kubectl -n gitlab-runner scale deployment/satellite-backend --replicas=0
+kubectl -n gitlab-runner wait --for=delete pod -l app=satellite-backend --timeout=120s || true
+
+# 2) 清坏镜像
+kubectl -n gitlab-runner delete job purge-backend-image-sat57 --ignore-not-found
+kubectl apply -f k8s/phase5/job-purge-backend-image-sat57.yaml
+kubectl -n gitlab-runner wait --for=condition=complete --timeout=300s job/purge-backend-image-sat57
+kubectl -n gitlab-runner logs job/purge-backend-image-sat57
+
+# 3) 重新拉镜像并启动（强制 Always）
+kubectl -n gitlab-runner scale deployment/satellite-backend --replicas=1
+kubectl -n gitlab-runner set image deployment/satellite-backend \
+  satellite-backend=192.168.10.238/satellite/backend:cluster-120-latest
+kubectl -n gitlab-runner rollout restart deployment/satellite-backend
+kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
+
+# 4) 验收：exec 不再报 libselinux
+BPOD=$(kubectl -n gitlab-runner get pod -l app=satellite-backend -o jsonpath='{.items[0].metadata.name}')
+kubectl -n gitlab-runner exec "$BPOD" -- ls /bin/ls
+kubectl -n gitlab-runner exec "$BPOD" -- curl -fsS http://127.0.0.1:8080/health || true
+curl -sI http://192.168.12.67:30080/api/remote-sensing/tasks/4 | head -5
+```
+
+当前进行：**P0-2**。

@@ -9,7 +9,7 @@
 
 | # | 项 | 问题 | 动作 | 验收 |
 |---|-----|------|------|------|
-| P0-1 | Redis 非本星 job | 57 worker ACK+re-XADD → stream 膨胀 | 非本星 **不 ACK、不 re-XADD**；留 PEL 由 XAUTOCLAIM 转交 | 提交 3 锚点任务后 `XLEN rs.jobs` 不指数增长 |
+| P0-1 | Redis 非本星 job | 57 worker ACK+re-XADD → stream 膨胀；全员 XAUTOCLAIM 会 idle 清零抽奖 | 非本星 **不 ACK**；本星用 **XPENDING+XCLAIM** 转交（勿全员 XAUTOCLAIM） | 锚点任务能被本星消费；`XLEN` 不指数增长 |
 | P0-2 | sat57 backend 镜像 | `libselinux.so.1: file too short` | Job `k8s/phase5/job-purge-backend-image-sat57.yaml` + rollout | `kubectl exec` backend 可 `ls` / `ldd` |
 | P0-3 | GitLab ↔ GitHub | CI 在 238，代码在 GitHub | mirror / push `cluster-120` 到 GitLab | `deploy-cluster-120` 用 `2b673f9+` |
 
@@ -52,9 +52,11 @@ Week 1  P1-1 P6 最小监控
 Week 2+ P2-1 D0 设计与实现
 ```
 
-### P0-1 状态（2026-07-20）
+### P0-1 状态（2026-07-21）
 
-✅ 已验证：`SkipRSJobForOtherConsumer` 在镜像内；单任务运行期间 `XLEN rs.jobs` 稳定为 1，无指数膨胀。
+✅ 不 ACK / 无 re-XADD：`XLEN` 不膨胀（已验）。  
+⚠️ D0 冒烟发现：全员 `XAUTOCLAIM` 导致 pending 被非本星反复领走、idle 永不到 30s（task 70 卡 pending）。  
+🔧 修复中：卫星感知模式下改为 **仅本星 `XPENDING`+`XCLAIM`**（代码已改，待 build/rollout `rs-worker`）。
 
 ### P0-2 状态（2026-07-20）
 
@@ -154,12 +156,18 @@ CLUSTER_PROFILE=60node MIN_DS_READY=50 \
 - Grafana 导入 `k8s/phase4/grafana/satellite-workers.json`
 - 运维一页纸：Gateway API、Postgres、Redis XLEN、metrics Service
 
-### P2 D0（进行中）
+### P2 D0（2026-07-21 冒烟通过）
 
-见 [D0_MINIO_ARTIFACT_UPLOAD_60.md](./D0_MINIO_ARTIFACT_UPLOAD_60.md)：
+见 [D0_MINIO_ARTIFACT_UPLOAD_60.md](./D0_MINIO_ARTIFACT_UPLOAD_60.md)。
 
-- `storage.Backend.Put` + `SATELLITE_ARTIFACT_UPLOAD_MINIO`
-- rs-worker hostPath 写盘后上传 preview/detection_*
-- backend `SATELLITE_STORAGE_BACKEND=minio` 供前端下载
+| 项 | 结果 |
+|----|------|
+| task 70 @ sat1 | ✅ `completed` |
+| backend `STORAGE_BACKEND=minio` | ✅ |
+| rs-worker MinIO 凭证 | ✅ 已补 `ACCESS_KEY/SECRET`（曾丢失导致未自动上传） |
+| GET preview `1165` / tile `1996` | ✅ **HTTP 200**（字节与上传一致） |
+| 自动 Put | ⚠️ task70 为手工 backfill；新任务应自动上传（凭证已齐） |
 
-验收：新任务 artifact `curl -sI .../artifacts/{id}` → **200**。
+验收命令用 **GET**（勿用 `curl -sI`：仅注册了 GET，HEAD→Gin 404）。
+
+**遗留：** P0-1 本星 `XPENDING+XCLAIM` 待 build/rollout（否则多 worker 下新任务仍可能卡 PEL）。

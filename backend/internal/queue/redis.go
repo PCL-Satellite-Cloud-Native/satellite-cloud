@@ -110,7 +110,8 @@ func (c *Client) ReadRSJob(ctx context.Context, block time.Duration) ([]redis.XS
 	}).Result()
 }
 
-// ReclaimStaleRSJobs 回收 idle 超过 minIdle 的 pending 消息（Pod 重启后 orphan job）
+// ReclaimStaleRSJobs 回收 idle 超过 minIdle 的 pending 消息（Pod 重启后 orphan job）。
+// 非卫星感知模式使用；卫星感知请用 ClaimPendingRSJobs（按 job 过滤，避免全员 XAUTOCLAIM 抽奖）。
 func (c *Client) ReclaimStaleRSJobs(ctx context.Context, minIdle time.Duration, count int64) ([]redis.XMessage, error) {
 	if count <= 0 {
 		count = 10
@@ -129,6 +130,56 @@ func (c *Client) ReclaimStaleRSJobs(ctx context.Context, minIdle time.Duration, 
 	return msgs, nil
 }
 
+// ListPendingRSJobs 列出消费者组 PEL（含 idle / consumer）
+func (c *Client) ListPendingRSJobs(ctx context.Context, count int64) ([]redis.XPendingExt, error) {
+	if count <= 0 {
+		count = 50
+	}
+	return c.rdb.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: c.streamRS,
+		Group:  c.consumerGroup,
+		Start:  "-",
+		End:    "+",
+		Count:  count,
+	}).Result()
+}
+
+// ReadRSJobMessages 按 ID 读取 stream 消息体（不改变 PEL）
+func (c *Client) ReadRSJobMessages(ctx context.Context, ids ...string) ([]redis.XMessage, error) {
+	out := make([]redis.XMessage, 0, len(ids))
+	for _, id := range ids {
+		msgs, err := c.rdb.XRange(ctx, c.streamRS, id, id).Result()
+		if err != nil {
+			return nil, fmt.Errorf("XRange %s: %w", id, err)
+		}
+		out = append(out, msgs...)
+	}
+	return out, nil
+}
+
+// ClaimRSJobs 将指定消息认领到本 consumer（minIdle=0 表示立即抢走）
+func (c *Client) ClaimRSJobs(ctx context.Context, minIdle time.Duration, ids ...string) ([]redis.XMessage, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	msgs, err := c.rdb.XClaim(ctx, &redis.XClaimArgs{
+		Stream:   c.streamRS,
+		Group:    c.consumerGroup,
+		Consumer: c.consumerName,
+		MinIdle:  minIdle,
+		Messages: ids,
+	}).Result()
+	if err != nil {
+		return nil, fmt.Errorf("XClaim: %w", err)
+	}
+	return msgs, nil
+}
+
+// ConsumerName 返回本客户端消费者名
+func (c *Client) ConsumerName() string {
+	return c.consumerName
+}
+
 // AckRSJob 确认消息
 func (c *Client) AckRSJob(ctx context.Context, streamID string) error {
 	return c.rdb.XAck(ctx, c.streamRS, c.consumerGroup, streamID).Err()
@@ -141,7 +192,7 @@ func (c *Client) ReleaseRSJobForOtherConsumer(ctx context.Context, streamID stri
 }
 
 // SkipRSJobForOtherConsumer 非本星 rs-worker 跳过 job：不 XACK、不 XADD。
-// 消息留在当前 consumer 的 PEL，ReclaimStaleRSJobs (XAUTOCLAIM) 会在 minIdle 后转给其他 consumer。
+// 消息留在当前 consumer 的 PEL；卫星感知模式下由本星 worker 按 XPENDING+XCLAIM 转交（勿全员 XAUTOCLAIM）。
 func (c *Client) SkipRSJobForOtherConsumer(ctx context.Context, streamID string, job RSJobPayload) error {
 	_ = ctx
 	_ = streamID

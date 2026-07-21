@@ -38,14 +38,23 @@ kubectl -n gitlab-runner set env ds/rs-worker \
   SATELLITE_USE_ARGO_PAN_RPC=false
 kubectl -n gitlab-runner rollout status ds/rs-worker --timeout=600s
 
-# 4) 新提交 1 个锚点任务，完成后：
-curl -sI "http://192.168.12.67:30080/api/remote-sensing/tasks/<id>/artifacts/<preview_id>"
-# 期望：HTTP 200（非 404）
+# 4) 新提交 1 个锚点任务，完成后用 GET（勿用 curl -sI / HEAD）：
+curl -s -o /dev/null -w "%{http_code}\n" \
+  "http://192.168.12.67:30080/api/remote-sensing/tasks/<id>/artifacts/<preview_id>"
+# 期望：200
 ```
+
+## 验收记录（2026-07-21）
+
+- task **70** `completed` @ sat1；backend MinIO Open OK。
+- 首次未自动上传：集群 DS 曾丢失 `SATELLITE_MINIO_ACCESS_KEY/SECRET`（已 apply DS 补回）。
+- 存量补传：sat1 rs-worker 内 Python SigV4 PUT（节点拉不了外网 `minio/mc`）。
+- 实测：preview `1165` → 200 / 27994173 B；tile `1996` → 200 / 170200 B。
+- task **74** 钉 sat1 跑通；融合预览 OK；检测图有瓦片但 UI「0 目标」——`GetDetectionStats` 在 sat57 本地读不到 `detections.txt`（已改 MinIO Open，待 backend 发版）。
 
 ## 存量 task 4/5/6
 
-自动上传仅对新产生的 artifact 生效。存量可用锚点 `mc cp` 按 Phase 6 键约定上传，或重跑验收任务。
+自动上传仅对新产生的 artifact 生效。存量可用锚点补传（上记 Python/mc）或重跑验收任务。
 
 ## 回滚
 

@@ -14,8 +14,8 @@ func TestJobMatchesLocalSatellite(t *testing.T) {
 	}{
 		{"disabled", false, 4, "sat-1-1", "sat-2-1", true},
 		{"no binding", true, 0, "", "sat-1-1", true},
-		{"missing required", true, 4, "", "sat-1-1", true},
-		{"missing local", true, 4, "sat-1-1", "", true},
+		{"missing required fail-closed", true, 4, "", "sat-1-1", false},
+		{"missing local fail-closed", true, 4, "sat-1-1", "", false},
 		{"match", true, 4, "sat-1-1", "sat-1-1", true},
 		{"mismatch", true, 26, "sat-2-1", "sat-1-1", false},
 	}

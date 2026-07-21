@@ -82,7 +82,7 @@ func main() {
 
 	processJob := func(streamID string, job queue.RSJobPayload) {
 		if ok, _ := rsSvc.ShouldProcessRSJob(ctx, job, localPlacement.ExecutedSatID); !ok {
-			// 不 ACK、不 re-XADD：留 PEL 供 XAUTOCLAIM 转交本星 worker（避免 57 节点 stream 风暴）
+			// 不 ACK、不 re-XADD：留 PEL，由本星 worker XPENDING+XCLAIM（避免 stream 风暴与 XAUTOCLAIM 抽奖）
 			_ = qClient.SkipRSJobForOtherConsumer(ctx, streamID, job)
 			return
 		}
@@ -111,13 +111,64 @@ func main() {
 		if cfg.Queue.SatelliteAwareQueue {
 			reclaimMinIdle = 30 * time.Second
 		}
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				if cfg.Queue.SatelliteAwareQueue {
+					// 仅本星 XCLAIM：避免 50+ worker 全员 XAUTOCLAIM 把 idle 永久清零
+					pending, err := qClient.ListPendingRSJobs(ctx, 50)
+					if err != nil {
+						zapLogger.Warn("ListPendingRSJobs failed", zap.Error(err))
+						continue
+					}
+					for _, p := range pending {
+						ownedBySelf := p.Consumer == qClient.ConsumerName()
+						if !ownedBySelf && p.Idle < reclaimMinIdle {
+							continue
+						}
+						raw, err := qClient.ReadRSJobMessages(ctx, p.ID)
+						if err != nil || len(raw) == 0 {
+							continue
+						}
+						job, parseErr := queue.ParseRSJobMessage(raw[0].Values)
+						if parseErr != nil {
+							zapLogger.Error("invalid pending rs.jobs payload",
+								zap.String("stream_id", p.ID),
+								zap.Error(parseErr),
+							)
+							_ = qClient.AckRSJob(ctx, p.ID)
+							continue
+						}
+						if ok, _ := rsSvc.MatchRSJob(ctx, job, localPlacement.ExecutedSatID); !ok {
+							continue
+						}
+						minIdle := reclaimMinIdle
+						if ownedBySelf {
+							minIdle = 0
+						}
+						claimed, err := qClient.ClaimRSJobs(ctx, minIdle, p.ID)
+						if err != nil {
+							zapLogger.Warn("ClaimRSJobs failed",
+								zap.String("stream_id", p.ID),
+								zap.Error(err),
+							)
+							continue
+						}
+						for _, msg := range claimed {
+							zapLogger.Info("本星认领 pending Redis job",
+								zap.Uint("task_id", job.TaskID),
+								zap.String("stream_id", msg.ID),
+								zap.String("from_consumer", p.Consumer),
+							)
+							processJob(msg.ID, job)
+						}
+					}
+					continue
+				}
 				msgs, err := qClient.ReclaimStaleRSJobs(ctx, reclaimMinIdle, 10)
 				if err != nil {
 					zapLogger.Warn("ReclaimStaleRSJobs failed", zap.Error(err))

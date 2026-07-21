@@ -3,6 +3,7 @@ package remotesensing
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -114,18 +115,15 @@ func (s *RemoteSensingService) countDetectionTilesByClass(ctx context.Context, t
 }
 
 // GetDetectionStats 汇总各类别瓦片张数（含目标瓦片图）与检出目标个数（来自 detections.txt）。
+// 瓦片数来自 DB artifact；目标数优先读本地 detections.txt，否则经 storage.Open（D0 MinIO）。
 func (s *RemoteSensingService) GetDetectionStats(ctx context.Context, taskID uint) (*DetectionSummaryStats, error) {
 	tileByClass := s.countDetectionTilesByClass(ctx, taskID)
 
 	detectByClass := make(map[string]int)
 	totalDetections := 0
 
-	if s.detectionCfg.RootPath != "" {
-		outDir := filepath.Join(s.detectionCfg.OutputSubdir, fmt.Sprintf("rs_task_%d", taskID))
-		summaryPath := filepath.Join(s.detectionCfg.RootPath, outDir, "detections.txt")
-		if data, err := os.ReadFile(summaryPath); err == nil {
-			totalDetections, detectByClass = parseDetectionsTxt(data)
-		}
+	if data, ok := s.readDetectionsTxt(ctx, taskID); ok {
+		totalDetections, detectByClass = parseDetectionsTxt(data)
 	}
 
 	classSet := make(map[string]struct{})
@@ -173,4 +171,39 @@ func (s *RemoteSensingService) GetDetectionStats(ctx context.Context, taskID uin
 		TotalDetections: totalDetections,
 		ByClass:         byClass,
 	}, nil
+}
+
+func (s *RemoteSensingService) readDetectionsTxt(ctx context.Context, taskID uint) ([]byte, bool) {
+	rel := filepath.ToSlash(filepath.Join(s.detectionCfg.OutputSubdir, fmt.Sprintf("rs_task_%d", taskID), "detections.txt"))
+	if s.detectionCfg.RootPath != "" {
+		summaryPath := filepath.Join(s.detectionCfg.RootPath, filepath.FromSlash(rel))
+		if data, err := os.ReadFile(summaryPath); err == nil {
+			return data, true
+		}
+	}
+	if s.storage != nil {
+		rc, err := s.storage.Open(ctx, s.artifactRootAbs("object_detection"), rel)
+		if err == nil {
+			defer rc.Close()
+			data, rerr := io.ReadAll(rc)
+			if rerr == nil && len(data) > 0 {
+				return data, true
+			}
+		}
+	}
+	var art model.RemoteSensingTaskArtifact
+	if err := s.db.WithContext(ctx).
+		Where("task_id = ? AND type = ?", taskID, "detection_summary").
+		Order("id ASC").
+		First(&art).Error; err == nil {
+		rc, openErr := s.OpenArtifact(ctx, &art)
+		if openErr == nil {
+			defer rc.Close()
+			data, rerr := io.ReadAll(rc)
+			if rerr == nil && len(data) > 0 {
+				return data, true
+			}
+		}
+	}
+	return nil, false
 }

@@ -18,25 +18,28 @@
         <form class="task-form card" @submit.prevent="submitTask">
           <h2>创建任务</h2>
 
-          <fieldset class="form-section form-section--optional">
-            <legend>指定调度（可选，一般留空由 K8s 自动分配节点）</legend>
+          <fieldset class="form-section">
+            <legend>指定执行卫星（必选）</legend>
             <label>
               仿真场景
-              <select v-model="form.scenarioId" @change="onScenarioChange">
-                <option :value="null">不绑定场景</option>
+              <select v-model="form.scenarioId" @change="onScenarioChange" required>
+                <option :value="null" disabled>请选择场景</option>
                 <option v-for="s in scenarios" :key="s.id" :value="s.id">{{ s.name }}</option>
               </select>
             </label>
             <label>
               执行卫星
-              <select v-model="form.satelliteId" :disabled="!form.scenarioId">
-                <option :value="null">不绑定卫星</option>
+              <select v-model="form.satelliteId" :disabled="!form.scenarioId" required>
+                <option :value="null" disabled>请选择卫星</option>
                 <option v-for="sat in scenarioSatellites" :key="sat.id" :value="sat.id">
                   {{ sat.sat_id }} · {{ sat.stk_name }}
                 </option>
               </select>
             </label>
-            <p class="form-hint">留空时任务由 rs-worker 调度到任意节点；拓扑页将高亮<strong>实际执行</strong>的那颗星。</p>
+            <p class="form-hint">
+              60 节点验收输入仅在锚点：<strong>sat1 / sat21 / sat41</strong>（对应 sat-1-1 / sat-2-1 / sat-3-1）。
+              不指定卫星会被任意节点抢到并因缺少 TIFF 失败。
+            </p>
           </fieldset>
 
           <fieldset class="form-section">
@@ -980,6 +983,10 @@ async function submitTask() {
     submitMessage.value = '请填写预处理必填字段'
     return
   }
+  if (!form.scenarioId || !form.satelliteId) {
+    submitMessage.value = '请选择仿真场景与执行卫星（60 节点输入仅在锚点 sat1/sat21/sat41）'
+    return
+  }
 
   let detectionClasses = ''
   if (form.enableDetection) {
@@ -1001,8 +1008,8 @@ async function submitTask() {
       enableDetection: form.enableDetection,
       detectionClasses,
       detectionDrawLabels: form.detectionDrawLabels,
-      ...(form.scenarioId ? { scenarioId: form.scenarioId } : {}),
-      ...(form.satelliteId ? { satelliteId: form.satelliteId } : {}),
+      scenarioId: form.scenarioId,
+      satelliteId: form.satelliteId,
     })
     submitMessage.value = '任务已提交（预处理 → 目标识别串行执行）'
     form.name = ''

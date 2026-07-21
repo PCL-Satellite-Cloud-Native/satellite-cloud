@@ -248,6 +248,10 @@ func (s *RemoteSensingService) CreateTask(ctx context.Context, req CreateTaskReq
 	if strings.TrimSpace(req.FilePrefix) == "" || strings.TrimSpace(req.InputDirectory) == "" {
 		return nil, fmt.Errorf("filePrefix 和 inputDirectory 为必填项")
 	}
+	// 60 节点：输入仅在锚点 hostPath；未绑卫星会被任意 worker 抢走并因缺数据失败
+	if s.queueCfg.SatelliteAwareQueue && (req.SatelliteID == nil || *req.SatelliteID == 0) {
+		return nil, fmt.Errorf("当前为卫星感知调度，必须指定 satelliteId（如锚点 sat1/sat21/sat41 对应 PK）")
+	}
 	if err := s.validateTaskTopology(ctx, req.ScenarioID, req.SatelliteID); err != nil {
 		return nil, err
 	}

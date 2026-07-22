@@ -177,7 +177,7 @@ CLUSTER_PROFILE=60node MIN_DS_READY=50 \
 | fail-closed + Redis 缺字段回落 DB | ✅ |
 | 非阻塞 sem（`6067490`） | ✅ 双任务 79/80：日志有「忙，job 留 PEL」，均 completed |
 | 现网 rs-worker digest（验收时） | `sha256:9d93de0b…` |
-| 强制 `satelliteId`（API+UI，`c2928d0`） | ✅ 代码已合入；确认 frontend 已发版 |
+| 强制 `satelliteId`（API+UI，`c2928d0`） | ✅ API 已拒无卫星创建；frontend 需发版（现网仍 `frontend:428350c3`） |
 
 **运维注意：** Harbor 勿使用不存在的 tag（如曾误设 `:c2928d0` → ImagePullBackOff）；用 CI 真实 tag 或 `@sha256:`。
 

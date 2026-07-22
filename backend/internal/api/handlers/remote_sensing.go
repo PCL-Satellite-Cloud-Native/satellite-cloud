@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -33,10 +34,22 @@ func (h *RemoteSensingHandler) CreateTask(c *gin.Context) {
 	task, err := h.svc.CreateTask(c.Request.Context(), body)
 	if err != nil {
 		h.logger.Error("创建遥感任务失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		status := http.StatusInternalServerError
+		if isRemoteSensingClientCreateError(err) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, task)
+}
+
+func isRemoteSensingClientCreateError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "satelliteId") ||
+		strings.Contains(msg, "必填") ||
+		strings.Contains(msg, "不存在") ||
+		strings.Contains(msg, "scenarioId")
 }
 
 func (h *RemoteSensingHandler) ListTasks(c *gin.Context) {

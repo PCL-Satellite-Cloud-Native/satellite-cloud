@@ -44,13 +44,15 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 # 期望：200
 ```
 
-## 验收记录（2026-07-21）
+## 验收记录（2026-07-21～22）
 
 - task **70** `completed` @ sat1；backend MinIO Open OK。
 - 首次未自动上传：集群 DS 曾丢失 `SATELLITE_MINIO_ACCESS_KEY/SECRET`（已 apply DS 补回）。
 - 存量补传：sat1 rs-worker 内 Python SigV4 PUT（节点拉不了外网 `minio/mc`）。
-- 实测：preview `1165` → 200 / 27994173 B；tile `1996` → 200 / 170200 B。
-- task **74** 钉 sat1 跑通；融合预览 OK；检测图有瓦片但 UI「0 目标」——`GetDetectionStats` 在 sat57 本地读不到 `detections.txt`（已改 MinIO Open，待 backend 发版）。
+- 实测：preview `1165` → 200；tile `1996` → 200。
+- task **74**：检测图可见但 UI「0 目标」→ `GetDetectionStats` 改为 MinIO Open 后修复。
+- task **78**：preview/summary **200**；**tiles=824，dets=1705**（自动上传，无需手工 backfill）。
+- 队列：`6067490` 非阻塞 sem；双任务 79/80 @ sat1 均 completed；镜像 digest `9d93de0b…`。
 
 ## 存量 task 4/5/6
 

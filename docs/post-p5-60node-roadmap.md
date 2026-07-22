@@ -52,11 +52,12 @@ Week 1  P1-1 P6 最小监控
 Week 2+ P2-1 D0 设计与实现
 ```
 
-### P0-1 状态（2026-07-21）
+### P0-1 状态（2026-07-22 收口）
 
-✅ 不 ACK / 无 re-XADD：`XLEN` 不膨胀（已验）。  
-⚠️ D0 冒烟发现：全员 `XAUTOCLAIM` 导致 pending 被非本星反复领走、idle 永不到 30s（task 70 卡 pending）。  
-🔧 修复中：卫星感知模式下改为 **仅本星 `XPENDING`+`XCLAIM`**（代码已改，待 build/rollout `rs-worker`）。
+✅ 不 ACK / 无 re-XADD：`XLEN` 不膨胀。  
+✅ 卫星感知：**仅本星 XPENDING+XCLAIM**；fail-closed；Redis 缺 `satellite_id` 回落 DB。  
+✅ 非阻塞 sem（`6067490`）：双任务排队不再堵死 reclaim。  
+✅ 现网验收镜像：`backend@sha256:9d93de0b…`；task 77/78/79/80 @ sat1。
 
 ### P0-2 状态（2026-07-20）
 
@@ -156,18 +157,28 @@ CLUSTER_PROFILE=60node MIN_DS_READY=50 \
 - Grafana 导入 `k8s/phase4/grafana/satellite-workers.json`
 - 运维一页纸：Gateway API、Postgres、Redis XLEN、metrics Service
 
-### P2 D0（2026-07-21 冒烟通过）
+### P2 D0（2026-07-22 收口）
 
 见 [D0_MINIO_ARTIFACT_UPLOAD_60.md](./D0_MINIO_ARTIFACT_UPLOAD_60.md)。
 
 | 项 | 结果 |
 |----|------|
-| task 70 @ sat1 | ✅ `completed` |
+| task 70 / 74 / 78 @ sat1 | ✅ `completed`；GET preview/summary **200** |
+| task 78 stats | ✅ tiles=824，dets=1705（MinIO `detections.txt`） |
 | backend `STORAGE_BACKEND=minio` | ✅ |
-| rs-worker MinIO 凭证 | ✅ 已补 `ACCESS_KEY/SECRET`（曾丢失导致未自动上传） |
-| GET preview `1165` / tile `1996` | ✅ **HTTP 200**（字节与上传一致） |
-| 自动 Put | ⚠️ task70 为手工 backfill；新任务应自动上传（凭证已齐） |
+| rs-worker MinIO 凭证 | ✅ `minio-credentials` |
+| 验收 | 用 **GET**（勿 `curl -sI`/HEAD） |
 
-验收命令用 **GET**（勿用 `curl -sI`：仅注册了 GET，HEAD→Gin 404）。
+### P0-1 本星队列（2026-07-22 收口）
 
-**遗留：** P0-1 本星 `XPENDING+XCLAIM` 待 build/rollout（否则多 worker 下新任务仍可能卡 PEL）。
+| 项 | 结果 |
+|----|------|
+| 仅本星 XPENDING+XCLAIM（勿全员 XAUTOCLAIM） | ✅ 镜像含 `本星认领` |
+| fail-closed + Redis 缺字段回落 DB | ✅ |
+| 非阻塞 sem（`6067490`） | ✅ 双任务 79/80：日志有「忙，job 留 PEL」，均 completed |
+| 现网 rs-worker digest（验收时） | `sha256:9d93de0b…` |
+| 强制 `satelliteId`（API+UI，`c2928d0`） | ✅ 代码已合入；确认 frontend 已发版 |
+
+**运维注意：** Harbor 勿使用不存在的 tag（如曾误设 `:c2928d0` → ImagePullBackOff）；用 CI 真实 tag 或 `@sha256:`。
+
+**可选加固：** 三锚点 822/826 再各跑一单；处理个别节点 ImagePullBackOff（如 sat33）。

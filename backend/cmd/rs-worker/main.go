@@ -86,7 +86,16 @@ func main() {
 			_ = qClient.SkipRSJobForOtherConsumer(ctx, streamID, job)
 			return
 		}
-		sem <- struct{}{}
+		// 非阻塞：避免 reclaim 循环卡在 sem 上，导致其它本星 pending 永远无法 XCLAIM
+		select {
+		case sem <- struct{}{}:
+		default:
+			zapLogger.Info("rs-worker 忙，job 留 PEL 稍后处理",
+				zap.Uint("task_id", job.TaskID),
+				zap.String("stream_id", streamID),
+			)
+			return
+		}
 		wg.Add(1)
 		go func() {
 			defer func() {

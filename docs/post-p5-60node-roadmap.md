@@ -182,3 +182,12 @@ CLUSTER_PROFILE=60node MIN_DS_READY=50 \
 **运维注意：** Harbor 勿使用不存在的 tag（如曾误设 `:c2928d0` → ImagePullBackOff）；用 CI 真实 tag 或 `@sha256:`。
 
 **可选加固：** 三锚点 822/826 再各跑一单；处理个别节点 ImagePullBackOff（如 sat33）。
+
+### 三锚点补验（2026-07-22）
+
+| task | satellite_id | host / executed | 结果 |
+|------|--------------|-----------------|------|
+| 78+ | 847 | sat1 / sat-1-1 | ✅（含检测 D0） |
+| 81 | 822 | sat21 / sat-2-1 | ✅ |
+| 82 | 826 | sat41 / sat-3-1 | ✅ |
+| sat33 | — | containerd 坏层 → 从 sat1 import 镜像后 Running | ✅ 已恢复 |

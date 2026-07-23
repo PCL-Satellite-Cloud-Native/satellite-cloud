@@ -177,13 +177,32 @@ CLUSTER_PROFILE=60node MIN_DS_READY=50 \
 | fail-closed + Redis 缺字段回落 DB | ✅ |
 | 非阻塞 sem（`6067490`） | ✅ 双任务 79/80：日志有「忙，job 留 PEL」，均 completed |
 | 现网 rs-worker digest（验收时） | `sha256:9d93de0b…` |
-| 强制 `satelliteId`（API+UI，`c2928d0`） | ✅ API 已拒无卫星创建；frontend 需发版（现网仍 `frontend:428350c3`） |
+| 强制 `satelliteId`（API+UI，`c2928d0`） | ✅ API 拒无卫星；UI 已发 `frontend@sha256:1cb1ee94…`；task83 页面验收通过 |
+| HTTP 无卫星错误码 | `45abc38` 改为 400（待 push/rollout backend；现网仍可能 500） |
+| reclaim in-flight 刷屏 | 跳过已在处理的 streamID（随下版 rs-worker） |
 
-**运维注意：** Harbor 勿使用不存在的 tag（如曾误设 `:c2928d0` → ImagePullBackOff）；用 CI 真实 tag 或 `@sha256:`。
+### Post-P5 主线正式收口（2026-07-23）
 
-**可选加固：** 三锚点 822/826 再各跑一单；处理个别节点 ImagePullBackOff（如 sat33）。
+| 能力 | 验收 |
+|------|------|
+| D0 MinIO 预览/统计 | ✅ task78/83 |
+| 本星调度 + 非阻塞排队 | ✅ 847/822/826；双任务 |
+| 强制选卫星 API+UI | ✅ |
+| sat33 镜像恢复 | ✅ |
 
-### 三锚点补验（2026-07-22）
+挂起：sat57 exec、od-worker、P3。
+
+### Post-P5 主线收口（2026-07-23）
+
+| 项 | 结果 |
+|----|------|
+| D0 MinIO 读预览/统计 | ✅ |
+| 本星 XCLAIM + 非阻塞 sem | ✅ |
+| 三锚点 847/822/826 | ✅ task 78/81/82 |
+| UI/API 强制选卫星 | ✅ frontend `1cb1ee94…`；API 拒创建（文案 OK；HTTP 码待 `45abc38`→400） |
+| sat33 containerd | ✅ import 恢复 |
+
+后续按需：P3、sat57 盘修复、od-worker。
 
 | task | satellite_id | host / executed | 结果 |
 |------|--------------|-----------------|------|

@@ -79,6 +79,7 @@ func main() {
 	}
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
+	var inFlight sync.Map // streamID -> struct{}，避免 reclaim 对正在跑的 job 反复「忙」刷屏
 
 	processJob := func(streamID string, job queue.RSJobPayload) {
 		if ok, _ := rsSvc.ShouldProcessRSJob(ctx, job, localPlacement.ExecutedSatID); !ok {
@@ -86,10 +87,14 @@ func main() {
 			_ = qClient.SkipRSJobForOtherConsumer(ctx, streamID, job)
 			return
 		}
+		if _, loaded := inFlight.LoadOrStore(streamID, struct{}{}); loaded {
+			return
+		}
 		// 非阻塞：避免 reclaim 循环卡在 sem 上，导致其它本星 pending 永远无法 XCLAIM
 		select {
 		case sem <- struct{}{}:
 		default:
+			inFlight.Delete(streamID)
 			zapLogger.Info("rs-worker 忙，job 留 PEL 稍后处理",
 				zap.Uint("task_id", job.TaskID),
 				zap.String("stream_id", streamID),
@@ -99,6 +104,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer func() {
+				inFlight.Delete(streamID)
 				<-sem
 				wg.Done()
 			}()

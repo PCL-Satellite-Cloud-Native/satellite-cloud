@@ -45,7 +45,7 @@
 | # | 项 | 状态 |
 |---|-----|------|
 | P2-1 | D0 MinIO | ✅ task78/83；GET 200；stats OK |
-| P2-2 | od-worker | 维持 `USE_OD_WORKER=false` |
+| P2-2 | od-worker | ✅ 冻结 in-process；见 [decisions/2026-07-24_od-worker-60node.md](./decisions/2026-07-24_od-worker-60node.md) |
 
 ---
 

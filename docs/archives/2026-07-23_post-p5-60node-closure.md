@@ -41,7 +41,7 @@ Post-P5 主线（D0 MinIO + 本星队列 + 强制选卫星）在 60 节点验收
 |------|-------------|
 | backend | `192.168.10.238/satellite/backend@sha256:3f0ec26d88b505bfdc1e22653942313fd2f98e11d1675633b541982a1b000966` |
 | frontend | `192.168.10.238/satellite/frontend@sha256:1cb1ee9456c50cabd34cfad9d49ea76b2779a2e106a3f7f0f6165f6c435f240b` |
-| rs-worker（队列验收） | 曾用 `@sha256:9d93de0b…`；建议对齐含 `87da08a` 的新 digest |
+| rs-worker | ✅ 2026-07-24 对齐 `@sha256:3f0ec26d…`（DS rollout 成功） |
 | `SATELLITE_RS_SATELLITE_AWARE_QUEUE` | `true`（backend + rs-worker） |
 | `SATELLITE_STORAGE_BACKEND` | backend=`minio`；worker 写盘 + `ARTIFACT_UPLOAD_MINIO=true` |
 | `USE_OD_WORKER` / `USE_ARGO_PAN_RPC` | `false` / `false` |

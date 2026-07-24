@@ -9,47 +9,51 @@
 
 | 优先级 | 项 | 目标 | 验收 |
 |--------|-----|------|------|
-| **N0** | rs-worker 对齐 backend 新 digest | 带上 `87da08a`（in-flight 不刷屏） | 跑任务时无对同一 stream 反复「忙」 |
+| **N0** | rs-worker 对齐 backend 新 digest | 带上 `87da08a`（in-flight 不刷屏） | ✅ 2026-07-24 sat10-m1：`rs-worker` DS rollout 57/57 |
 | **N1** | P1-2 运维一页纸 | Gateway / Redis / 锚点 / 镜像规范 | ✅ `60node-platform-docs/runbooks/ops-one-pager-60node.md` |
-| **N2** | P1 告警 | `rs.jobs` XLEN、rs-worker NotReady | 有 Prometheus 则接告警；否则文档化手工巡检 |
+| **N2** | P1 告警 / 巡检 | `rs.jobs` XLEN、rs-worker NotReady | ✅ `scripts/ops_patrol_60.sh`（无 Prometheus 时用手工巡检） |
 | **N3** | sat57 节点修复 | backend `kubectl exec` 可用 | `ldd`/`ls` 正常（平台修盘） |
 | **N4** | od-worker 策略 | 明确长期 in-process vs DS+hostPath | 决策写入 runbook |
 | **N5** | P3 按需 | Argo PAN hostPath、动态拓扑、CI dual | 有业务需求再开 |
 
 ---
 
-## N0 — 立刻可做（5～15 分钟）
+## N0 — 已完成（2026-07-24）
+
+sat10-m1：`daemon set "rs-worker" successfully rolled out`（对齐 `@sha256:3f0ec26d…`）。
+
+验收（建议再跑一次确认 imageID 单一）：
 
 ```bash
-NS=gitlab-runner
-# 与已验证的 backend 同 digest（含 45abc38 + 87da08a 的 build）
-IMG='192.168.10.238/satellite/backend@sha256:3f0ec26d88b505bfdc1e22653942313fd2f98e11d1675633b541982a1b000966'
-
-kubectl -n "$NS" set image ds/rs-worker rs-worker="$IMG"
-kubectl -n "$NS" set env ds/rs-worker \
-  SATELLITE_USE_OD_WORKER=false \
-  SATELLITE_USE_ARGO_PAN_RPC=false \
-  SATELLITE_RS_SATELLITE_AWARE_QUEUE=true
-kubectl -n "$NS" rollout status ds/rs-worker --timeout=1200s
-
-kubectl -n "$NS" get pod -l app=rs-worker \
-  -o jsonpath='{range .items[*]}{.status.containerStatuses[0].imageID}{"\n"}{end}' | sort | uniq -c
+bash scripts/ops_patrol_60.sh \
+  --expect-digest 3f0ec26d88b505bfdc1e22653942313fd2f98e11d1675633b541982a1b000966
 ```
 
 ---
 
-## N1 — 运维一页纸提纲
+## N2 — 巡检脚本（已落地）
 
-建议新建/补强：`60node-platform-docs/runbooks/ops-one-pager-60node.md`
+```bash
+# 日常
+bash scripts/ops_patrol_60.sh
 
-必含：
+# 与 metrics 脚本互补
+CLUSTER_PROFILE=60node MIN_DS_READY=50 bash scripts/phase5_verify_metrics_60.sh
+```
 
-1. API Gateway：`http://192.168.12.67:30080`  
-2. 三锚点 PK 与 hostPath 输入路径  
-3. 关键 env（AWARE / MinIO / OD/Argo false）  
-4. 镜像：`@sha256` 或 CI tag；禁止 digest 当 tag  
-5. Redis 巡检：`XLEN rs.jobs` / `XPENDING`  
-6. 常见故障：非锚点无 TIFF、ImagePullBackOff、sat57 exec  
+阈值约定：`WARN_XLEN=500`、`FAIL_XLEN=10000`。有 Prometheus Operator 时可再挂 ServiceMonitor（`k8s/phase4/`）。
+
+---
+
+## 下一步（N3+）
+
+| 项 | 说明 |
+|----|------|
+| N3 sat57 | 平台修 overlay 后验 `kubectl exec` |
+| N4 od-worker | 决策：长期 in-process vs DS+hostPath |
+| N5 P3 | 有业务需求再开 |
+
+可选冒烟：UI 再跑一单 847@sat1，确认无 reclaim「忙」刷屏。
 
 ---
 

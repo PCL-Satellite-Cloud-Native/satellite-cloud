@@ -1,212 +1,67 @@
 # Post-P5 60 节点路线图（cluster-120）
 
-> **起点**：P5 正式收口（2026-07-20，`p5-60-retry-20260720-0942`，task 4/5/6 completed）  
-> **归档**：[archives/2026-07-20_p5-60node-closure.md](./archives/2026-07-20_p5-60node-closure.md)
+> **起点**：P5 正式收口（2026-07-20，`p5-60-retry-20260720-0942`）  
+> **Post-P5 主线收口**：2026-07-23～24 — [archives/2026-07-23_post-p5-60node-closure.md](./archives/2026-07-23_post-p5-60node-closure.md)  
+> **下一步**：[post-p5-next-60node.md](./post-p5-next-60node.md)
 
 ---
 
-## P0 — 稳态运维（优先，1～2 天）
+## 状态总览（2026-07-24）
 
-| # | 项 | 问题 | 动作 | 验收 |
-|---|-----|------|------|------|
-| P0-1 | Redis 非本星 job | 57 worker ACK+re-XADD → stream 膨胀；全员 XAUTOCLAIM 会 idle 清零抽奖 | 非本星 **不 ACK**；本星用 **XPENDING+XCLAIM** 转交（勿全员 XAUTOCLAIM） | 锚点任务能被本星消费；`XLEN` 不指数增长 |
-| P0-2 | sat57 backend 镜像 | `libselinux.so.1: file too short` | Job `k8s/phase5/job-purge-backend-image-sat57.yaml` + rollout | `kubectl exec` backend 可 `ls` / `ldd` |
-| P0-3 | GitLab ↔ GitHub | CI 在 238，代码在 GitHub | mirror / push `cluster-120` 到 GitLab | `deploy-cluster-120` 用 `2b673f9+` |
+| 阶段 | 项 | 状态 |
+|------|-----|------|
+| P0-1 | 本星队列（XCLAIM / fail-closed / 非阻塞 sem） | ✅ |
+| P0-2 | sat57 backend exec | 挂起（方案 A） |
+| P0-3 | GitLab ↔ GitHub | ✅ 可同步发版 |
+| P1-1 | 60 节点 metrics | ✅ 脚本通过 |
+| P1-2 | 运维一页纸 | ✅ ops-one-pager-60node.md |
+| P2-1 | D0 MinIO | ✅ |
+| P2-2 | od-worker | 维持 scale 0 |
+| P3 | Argo / 拓扑 / CI dual | 按需 |
 
 ---
 
-## P1 — 可观测（~1 周，P0-1 后）
+## P0 — 稳态运维
 
-| # | 项 | 动作 | 验收 |
+| # | 项 | 状态 | 说明 |
 |---|-----|------|------|
-| P1-1 | P6 最小监控 | DS metrics Service、Grafana 面板、rs.jobs XLEN 告警 | `phase4_verify_metrics.sh` 60node 变体通过 |
-| P1-2 | 运维一页纸 | Gateway API、Postgres、Redis 清理、锚点数据 | runbook 链接可检索 |
+| P0-1 | Redis 非本星 job | ✅ | 本星 XPENDING+XCLAIM；`6067490` 非阻塞 sem；`87da08a` 跳过 in-flight |
+| P0-2 | sat57 backend 镜像 | 挂起 | 节点 overlay；API 可用；exec 不可用 |
+| P0-3 | GitLab ↔ GitHub | ✅ | `cluster-120` 发版路径可用 |
 
 ---
 
-## P2 — 存储 / 前端（2～4 周）
+## P1 — 可观测
 
-| # | 项 | 动作 | 验收 |
-|---|-----|------|------|
-| P2-1 | D0 MinIO Put | worker 产物 upload；backend Open from MinIO | artifact 下载 200；前端预览可见 |
-| P2-2 | od-worker 策略 | D0 前维持 `USE_OD_WORKER=false` | — |
+| # | 项 | 状态 |
+|---|-----|------|
+| P1-1 | P6 最小监控 | ✅ `phase5_verify_metrics_60.sh` |
+| P1-2 | 运维一页纸 | ✅ [ops-one-pager-60node.md](../../60node-platform-docs/runbooks/ops-one-pager-60node.md) |
+
+---
+
+## P2 — 存储 / 前端
+
+| # | 项 | 状态 |
+|---|-----|------|
+| P2-1 | D0 MinIO | ✅ task78/83；GET 200；stats OK |
+| P2-2 | od-worker | 维持 `USE_OD_WORKER=false` |
 
 ---
 
 ## P3 — 按需
 
-- `workflowtemplate-pan-rpc-60` hostPath（重开 Argo PAN RPC 时）
-- 1441 动态拓扑回放
-- CI dual-cluster（Pilot + 120）
-- od-worker DaemonSet + hostPath（若不走 MinIO）
+见 [post-p5-next-60node.md](./post-p5-next-60node.md) N5。
 
 ---
 
-## 实施顺序
+## 验收摘要
 
-```text
-Now     P0-1 代码 → build → rollout rs-worker
-        P0-2 sat57 backend（并行）
-        P0-3 GitLab sync（并行）
-Week 1  P1-1 P6 最小监控
-Week 2+ P2-1 D0 设计与实现
-```
-
-### P0-1 状态（2026-07-22 收口）
-
-✅ 不 ACK / 无 re-XADD：`XLEN` 不膨胀。  
-✅ 卫星感知：**仅本星 XPENDING+XCLAIM**；fail-closed；Redis 缺 `satellite_id` 回落 DB。  
-✅ 非阻塞 sem（`6067490`）：双任务排队不再堵死 reclaim。  
-✅ 现网验收镜像：`backend@sha256:9d93de0b…`；task 77/78/79/80 @ sat1。
-
-### P0-2 状态（2026-07-20）
-
-| 结论 | 说明 |
+| 能力 | 结果 |
 |------|------|
-| 根因 | 同 digest `sha256:5f84530c…` 在 sat1 正常、sat57 `lib*.so file too short` → **sat57 节点 overlay/磁盘损坏** |
-| 清镜像 | Job `purge-backend-image-sat57` 已成功删除本地 backend 层；重拉后仍损坏 |
-| 迁节点 | 失败：PVC `remote-sensing-data` 为 **RWO hostPath@sat57**，affinity 到 sat5 → Pending |
-| 决议 | **方案 A**：backend 留 sat57；API/入队正常；`kubectl exec` 不可用；artifact 仍靠 D0 |
-| 后续 | 平台修 sat57 盘/containerd；或方案 B 把 PV nodeAffinity 改到健康节点 |
+| D0 | preview/summary 200；dets>0 |
+| 三锚点 | 847→sat1，822→sat21，826→sat41 |
+| 强制卫星 | UI 必选；API **HTTP 400**（backend `3f0ec26d`） |
+| frontend | `@sha256:1cb1ee94…` |
 
-### P0-2 操作（历史，sat10-m1）
-
-```bash
-cd ~/code/satellite-cloud && git pull origin cluster-120
-
-# 0) 确认 backend 在 sat57
-kubectl -n gitlab-runner get pod -l app=satellite-backend -o wide
-
-# 1) 缩容 / 删 Pod，释放镜像占用（API 短暂中断）
-kubectl -n gitlab-runner scale deployment/satellite-backend --replicas=0
-kubectl -n gitlab-runner wait --for=delete pod -l app=satellite-backend --timeout=120s || true
-
-# 2) 清坏镜像
-kubectl -n gitlab-runner delete job purge-backend-image-sat57 --ignore-not-found
-kubectl apply -f k8s/phase5/job-purge-backend-image-sat57.yaml
-kubectl -n gitlab-runner wait --for=condition=complete --timeout=300s job/purge-backend-image-sat57
-kubectl -n gitlab-runner logs job/purge-backend-image-sat57
-
-# 3) 重新拉镜像并启动（强制 Always）
-kubectl -n gitlab-runner scale deployment/satellite-backend --replicas=1
-kubectl -n gitlab-runner set image deployment/satellite-backend \
-  satellite-backend=192.168.10.238/satellite/backend:cluster-120-latest
-kubectl -n gitlab-runner rollout restart deployment/satellite-backend
-kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
-```
-
-### P0-3 操作（GitLab ↔ GitHub）
-
-目标：GitLab `192.168.10.238:8444` 上 `cluster-120` 至少包含 `cd7658f`（含 P0-1/P0-2 文档与 Job）。
-
-**在能推 GitLab 的机器上**（仓库机 238 或已配 PAT/SSH 的 sat10）：
-
-```bash
-# 若用 GitHub → GitLab mirror（仓库机常见）
-# git -C ~/Code/satellite-cloud.git fetch github cluster-120
-# git -C ~/Code/satellite-cloud.git push gitlab-internal cluster-120
-
-# 或 sat10 已能 SSH GitHub 时，另加 GitLab remote 后：
-cd ~/code/satellite-cloud
-git fetch origin cluster-120
-git log -1 --oneline origin/cluster-120   # 期望 ≥ cd7658f
-
-# 推送到 GitLab（按实际 remote 名/URL 改）
-git remote add gitlab https://192.168.10.238:8444/root/satellite-cloud.git 2>/dev/null || true
-GIT_SSL_NO_VERIFY=true git -c http.sslVerify=false push gitlab cluster-120
-```
-
-验收：GitLab Web → Branches → `cluster-120` 最新 commit 与 GitHub 一致；可选触发 `deploy-cluster-120` 确认不回退旧镜像。
-
-### P0-3 状态（2026-07-20）
-
-✅ GitHub / GitLab `cluster-120` 均为 **`5150961`**（`ls-remote` 一致）。sat10 本地若仍停在 `cd7658f`，执行：`git merge --ff-only origin/cluster-120`。
-
-### P0 整段收口
-
-| 项 | 结果 |
-|----|------|
-| P0-1 Redis 风暴 | ✅ XLEN 稳定 |
-| P0-2 sat57 | ✅ 方案 A（API 可用；exec 因节点损坏不可用） |
-| P0-3 GitLab 同步 | ✅ `5150961` |
-
-### P1 操作（60 节点最小监控）
-
-```bash
-cd ~/code/satellite-cloud
-git pull origin cluster-120
-
-# 确保 metrics Service 存在（Pilot phase4 若已 apply 可跳过）
-kubectl apply -f k8s/phase4/metrics-services.yaml
-
-chmod +x scripts/phase5_verify_metrics_60.sh
-CLUSTER_PROFILE=60node MIN_DS_READY=50 \
-  bash scripts/phase5_verify_metrics_60.sh --min-ds-ready 50
-```
-
-通过标准：DS Ready≥50；`rs-worker-metrics` endpoints 足够；抽样 Pod 有 `satellite_queue_depth`；`XLEN rs.jobs` 非百万级。
-
-### P1-1 状态（2026-07-20）
-
-✅ `phase5_verify_metrics_60.sh` 通过：DS 54/54；endpoints=54；`satellite_queue_depth` OK；`XLEN=1`。  
-⚠️ 无 ServiceMonitor（集群未装 Prometheus Operator / 未 apply phase4 SM）— **不阻塞** P1-1；有 Prometheus 后再做 P1-2。
-
-### P1-2（可选）
-
-- apply `k8s/phase4` ServiceMonitor（若有 kube-prometheus）
-- Grafana 导入 `k8s/phase4/grafana/satellite-workers.json`
-- 运维一页纸：Gateway API、Postgres、Redis XLEN、metrics Service
-
-### P2 D0（2026-07-22 收口）
-
-见 [D0_MINIO_ARTIFACT_UPLOAD_60.md](./D0_MINIO_ARTIFACT_UPLOAD_60.md)。
-
-| 项 | 结果 |
-|----|------|
-| task 70 / 74 / 78 @ sat1 | ✅ `completed`；GET preview/summary **200** |
-| task 78 stats | ✅ tiles=824，dets=1705（MinIO `detections.txt`） |
-| backend `STORAGE_BACKEND=minio` | ✅ |
-| rs-worker MinIO 凭证 | ✅ `minio-credentials` |
-| 验收 | 用 **GET**（勿 `curl -sI`/HEAD） |
-
-### P0-1 本星队列（2026-07-22 收口）
-
-| 项 | 结果 |
-|----|------|
-| 仅本星 XPENDING+XCLAIM（勿全员 XAUTOCLAIM） | ✅ 镜像含 `本星认领` |
-| fail-closed + Redis 缺字段回落 DB | ✅ |
-| 非阻塞 sem（`6067490`） | ✅ 双任务 79/80：日志有「忙，job 留 PEL」，均 completed |
-| 现网 rs-worker digest（验收时） | `sha256:9d93de0b…` |
-| 强制 `satelliteId`（API+UI，`c2928d0`） | ✅ API 拒无卫星；UI 已发 `frontend@sha256:1cb1ee94…`；task83 页面验收通过 |
-| HTTP 无卫星错误码 | `45abc38` 改为 400（待 push/rollout backend；现网仍可能 500） |
-| reclaim in-flight 刷屏 | 跳过已在处理的 streamID（随下版 rs-worker） |
-
-### Post-P5 主线正式收口（2026-07-23）
-
-| 能力 | 验收 |
-|------|------|
-| D0 MinIO 预览/统计 | ✅ task78/83 |
-| 本星调度 + 非阻塞排队 | ✅ 847/822/826；双任务 |
-| 强制选卫星 API+UI | ✅ |
-| sat33 镜像恢复 | ✅ |
-
-挂起：sat57 exec、od-worker、P3。
-
-### Post-P5 主线收口（2026-07-23）
-
-| 项 | 结果 |
-|----|------|
-| D0 MinIO 读预览/统计 | ✅ |
-| 本星 XCLAIM + 非阻塞 sem | ✅ |
-| 三锚点 847/822/826 | ✅ task 78/81/82 |
-| UI/API 强制选卫星 | ✅ frontend `1cb1ee94…`；API 拒创建（文案 OK；HTTP 码待 `45abc38`→400） |
-| sat33 containerd | ✅ import 恢复 |
-
-后续按需：P3、sat57 盘修复、od-worker。
-
-| task | satellite_id | host / executed | 结果 |
-|------|--------------|-----------------|------|
-| 78+ | 847 | sat1 / sat-1-1 | ✅（含检测 D0） |
-| 81 | 822 | sat21 / sat-2-1 | ✅ |
-| 82 | 826 | sat41 / sat-3-1 | ✅ |
-| sat33 | — | containerd 坏层 → 从 sat1 import 镜像后 Running | ✅ 已恢复 |
+关键 commit：`48725d6`、`c2928d0`、`6067490`、`45abc38`、`87da08a`。

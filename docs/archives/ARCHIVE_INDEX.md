@@ -42,6 +42,8 @@
 | 2026-07-14 | [2026-07-14_phase6-closure.md](./2026-07-14_phase6-closure.md) | **Phase 6 Pilot 正式收口**；CI deploy-phase6-pilot；Console NodePort 30901 | [PHASE6_RUNBOOK.md](../PHASE6_RUNBOOK.md) |
 | 2026-07-14 | [2026-07-14_post-p6-pilot-60node-roadmap.md](./2026-07-14_post-p6-pilot-60node-roadmap.md) | **后续路线图**：60 节点新集群复制、MinIO 主存储三阶段、P6-05 延后 | [PHASE6_README.md](../PHASE6_README.md) |
 | 2026-07-20 | [2026-07-20_p5-60node-closure.md](./2026-07-20_p5-60node-closure.md) | **P5 60 节点正式收口**；p5-60-retry-20260720-0942 **3/3**；断言通过 | [CLUSTER120_SAT10_STEPS.md](../CLUSTER120_SAT10_STEPS.md) 阶段 G、[post-p5-60node-roadmap.md](../post-p5-60node-roadmap.md) |
+| 2026-07-23 | [2026-07-23_post-p5-60node-closure.md](./2026-07-23_post-p5-60node-closure.md) | **Post-P5 主线收口**；D0 MinIO + 本星队列 + 强制选卫星 | [post-p5-60node-roadmap.md](../post-p5-60node-roadmap.md)、[post-p5-next-60node.md](../post-p5-next-60node.md) |
+| 2026-07-24 | [../decisions/2026-07-24_od-worker-60node.md](../decisions/2026-07-24_od-worker-60node.md) | **N4 冻结**：OD in-process；od-worker=0 | [post-p5-next-60node.md](../post-p5-next-60node.md) |
 
 ---
 

@@ -2,7 +2,6 @@
 
 > **状态（2026-06-23）**：**已归档（只读运维）** — 定稿 task **146** / P3-04b；生产 Argo 已启用。详见 [archives/2026-06-23_phase3-performance-closure.md](./archives/2026-06-23_phase3-performance-closure.md)。
 > **前置**：[PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)（Phase 2 已闭合；task **143** 基线 174.6 s）。  
-> **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 3。  
 > **Argo 安装**：[k8s/phase3/argo/INSTALL_CHECKLIST.md](../k8s/phase3/argo/INSTALL_CHECKLIST.md)  
 > **下一阶段**：[PHASE4_RUNBOOK.md](./PHASE4_RUNBOOK.md)（规划；**无 GPU**）。
 
@@ -278,7 +277,6 @@ kubectl -n gitlab-runner get workflow "$WF" -o json | jq -r '
 | [k8s/phase3/argo/INSTALL_CHECKLIST.md](../k8s/phase3/argo/INSTALL_CHECKLIST.md) | Argo 安装清单 |
 | [k8s/phase3/argo/](../k8s/phase3/argo/) | Controller 清单（待增） |
 | [scripts/ops/mirror_argo_workflows_images.sh](../scripts/ops/mirror_argo_workflows_images.sh) | 镜像推 Harbor |
-| [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 3 | 方案 SSOT |
 
 ---
 

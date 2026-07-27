@@ -1,7 +1,7 @@
 # Argo Workflows 安装清单（Phase 3 Pilot）
 
 > **用途**：在 **15 Node / Harbor 192.168.10.238** 环境安装 Argo Workflows Controller，供 `gitlab-runner` 内 rs-worker 提交 PAN RPC 并行 Workflow。  
-> **关联**：[PHASE3_RUNBOOK.md](../../docs/PHASE3_RUNBOOK.md) §3、[MICROSERVICES_IMPLEMENTATION_PLAN.md](../../docs/MICROSERVICES_IMPLEMENTATION_PLAN.md) §4。
+> **关联**：[PHASE3_RUNBOOK.md](../../../docs/PHASE3_RUNBOOK.md) §3。
 
 ---
 
@@ -233,7 +233,7 @@ kubectl -n argo port-forward svc/argo-server 2746:2746
 | §5 RBAC | | | ☐ |
 | §6 存储对齐 | | | ☐ |
 
-**下一步**：按 [PHASE3_RUNBOOK.md](../../docs/PHASE3_RUNBOOK.md) 步骤 2 合入 `WorkflowTemplate` + rs-worker 集成。
+**下一步**：按 [PHASE3_RUNBOOK.md](../../../docs/PHASE3_RUNBOOK.md) 步骤 2 合入 `WorkflowTemplate` + rs-worker 集成。
 
 ---
 

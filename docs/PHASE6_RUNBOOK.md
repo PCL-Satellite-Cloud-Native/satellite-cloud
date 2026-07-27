@@ -2,7 +2,6 @@
 
 > **分支**：`feat/phase6-minio`（不在 `main` 直接开发）  
 > **状态**：✅ **Pilot 签收** — P6-01～04 ✅（2026-07-14）；P6-05 待做  
-> **SSOT 方案**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §阶段 6  
 > **前置**：[PHASE5_PLUS_RUNBOOK.md](./PHASE5_PLUS_RUNBOOK.md)（Phase 5+ 已闭合）
 
 ---
@@ -329,13 +328,12 @@ kubectl -n gitlab-runner delete -k k8s/phase6/ --ignore-not-found
 
 | 文档 | 说明 |
 |------|------|
-| [PHASE6_README.md](./PHASE6_README.md) | 立项与分支策略 |
+| [PHASE6_README.md](./PHASE6_README.md) | Phase 6 入口 |
 | [archives/2026-07-09_phase5-plus-closure.md](./archives/2026-07-09_phase5-plus-closure.md) | Phase 5+ 收尾 |
 | [archives/2026-07-13_phase6-minio-pilot-deploy.md](./archives/2026-07-13_phase6-minio-pilot-deploy.md) | P6-01 MinIO Pilot 部署踩坑与 hostPath 定稿 |
 | [archives/2026-07-14_phase6-storage-sync-api-closure.md](./archives/2026-07-14_phase6-storage-sync-api-closure.md) | P6-03/04 同步 + API 下载签收 |
 | [archives/2026-07-14_phase6-closure.md](./archives/2026-07-14_phase6-closure.md) | **Phase 6 Pilot 正式收口**（CI、preflight、Console 30901） |
-| [archives/2026-07-14_post-p6-pilot-60node-roadmap.md](./archives/2026-07-14_post-p6-pilot-60node-roadmap.md) | **后续路线图**（60 节点新集群、MinIO 主存储） |
 
 ---
 
-*P6-01～04 已闭合（2026-07-14）。后续计划见 [archives/2026-07-14_post-p6-pilot-60node-roadmap.md](./archives/2026-07-14_post-p6-pilot-60node-roadmap.md)。Phase 6 总归档待 P6-05 与 60 节点完成。*
+*P6-01～04 已闭合（2026-07-14）。Pilot 运维见 PHASE6_README / PHASE6_RUNBOOK 与 SYSTEM_OVERVIEW。*

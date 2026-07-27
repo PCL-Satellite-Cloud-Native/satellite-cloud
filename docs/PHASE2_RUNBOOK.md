@@ -3,7 +3,6 @@
 > **状态（2026-06-22）**：**Phase 2 已闭合** — 首次收口 [2026-06-18_phase2-closure.md](./archives/2026-06-18_phase2-closure.md)（task 141）；生产复验 [2026-06-22_phase2-production-validation.md](./archives/2026-06-22_phase2-production-validation.md)（task **143**）。  
 > **下一阶段**：[PHASE4_RUNBOOK.md](./PHASE4_RUNBOOK.md)（规划；集群**暂无 GPU**）。
 > **前置**：[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)（Phase 1 已闭合）。  
-> **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 2。
 
 ---
 

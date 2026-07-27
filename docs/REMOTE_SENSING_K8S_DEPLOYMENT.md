@@ -1,7 +1,6 @@
 # Satellite-Cloud 遥感模块 K8s 部署手册（GitLab CI）
 
 > **Baseline 全链路（含目标识别第 10 阶段）**：优先阅读 [K8S_BASELINE_RUNBOOK.md](./K8S_BASELINE_RUNBOOK.md)（含 2026-06 实际部署归档附录 A）。  
-> 若你是从“未集成遥感应用”的历史版本迁移，请优先阅读：`docs/REMOTE_SENSING_BASELINE_MIGRATION_RUNBOOK.md`
 
 本文档只描述 **satellite-cloud 项目侧** 的部署与发布配置，目标是在其他集群上可复现。
 
@@ -564,6 +563,5 @@ kubectl -n gitlab-runner rollout status deploy/satellite-backend
 - `backend/Dockerfile`
 - `k8s/backend/deployment.yaml`
 - `k8s/backend/remote-sensing-pv-pvc.yaml`
-- **`docs/MICROSERVICES_IMPLEMENTATION_PLAN.md`** — 微服务化 / 多星协同 / 第三方测试总方案（SSOT）
 - `Object-Detection/K8S_RUNTIME_PREP.md`（Object-Detection 仓库）
 - `Object-Detection/Dockerfile`（Object-Detection 仓库，可选独立构建）

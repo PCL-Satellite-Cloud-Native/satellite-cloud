@@ -3,7 +3,7 @@
 > **归档日期**：2026-06-17  
 > **阶段**：Phase 0 — 单 Pod baseline  
 > **状态**：**已闭合**  
-> **SSOT 后继**：[K8S_BASELINE_RUNBOOK.md](../K8S_BASELINE_RUNBOOK.md) §11、附录 A.4；微服务方案 Phase 0 见 [MICROSERVICES_IMPLEMENTATION_PLAN.md](../MICROSERVICES_IMPLEMENTATION_PLAN.md) §5
+> **SSOT 后继**：[K8S_BASELINE_RUNBOOK.md](../K8S_BASELINE_RUNBOOK.md) §11、附录 A.4
 
 ---
 

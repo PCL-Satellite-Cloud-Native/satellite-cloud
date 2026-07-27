@@ -1,5 +1,5 @@
 # P0-2：在指定节点清除损坏的 satellite/backend 镜像层
-# 用法见 docs/post-p5-60node-roadmap.md §P0-2 或下方注释。
+# 用法见下方注释（sat57 镜像清理 Job）。
 #
 # sat10-m1 示例（sat57）：
 #   kubectl -n gitlab-runner delete job purge-backend-image-sat57 --ignore-not-found

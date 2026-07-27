@@ -5,7 +5,7 @@
 > **分支**：`cluster-120` @ **`2b673f9`**  
 > **运维节点**：sat10-m1  
 > **场景**：`Scenario60_3x20`（scenario_id=3）  
-> **会话全量归档**：[60node-platform-docs/runbooks/P5-60node-session-archive-20260720.md](../../../60node-platform-docs/runbooks/P5-60node-session-archive-20260720.md)
+> **会话全量归档**：外部运维笔记 `60node-platform-docs/runbooks/P5-60node-session-archive-20260720.md`（不在本仓库；本仓以本文与 Post-P5 收口为准）
 
 ---
 
@@ -102,12 +102,12 @@ Manifest：`k8s/phase5/rs-worker-daemonset-60.yaml`
 
 ## Post-P5 路线图
 
-见 [post-p5-60node-roadmap.md](../post-p5-60node-roadmap.md)（P0 → P3 优先级）。
+后续运维见 Post-P5 收口与 CLUSTER120 文档。
 
 ---
 
 ## 相关文档
 
-- [P5-preflight-decisions.md](../../../60node-platform-docs/runbooks/P5-preflight-decisions.md) §10–§11
-- [P5-60node-session-archive-20260720.md](../../../60node-platform-docs/runbooks/P5-60node-session-archive-20260720.md)
+- 外部运维笔记（若不在本机）：`60node-platform-docs/runbooks/P5-preflight-decisions.md`、`P5-60node-session-archive-20260720.md`
 - [CLUSTER120_SAT10_STEPS.md](../CLUSTER120_SAT10_STEPS.md) 阶段 G
+- [2026-07-23_post-p5-60node-closure.md](./2026-07-23_post-p5-60node-closure.md)

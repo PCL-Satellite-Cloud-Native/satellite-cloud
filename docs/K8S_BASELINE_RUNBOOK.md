@@ -7,7 +7,7 @@
 > **活跃运维**：[PHASE2_RUNBOOK.md](./PHASE2_RUNBOOK.md)（Phase 2）、[PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)（Phase 1）  
 > **文档索引**：[DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md)（三仓归类与阅读路线）。  
 > **目标**：单 Pod `satellite-backend` 跑通 RS + 目标识别，**暂不拆微服务、不上 Redis/Argo**。  
-> **关联**：[REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md)、[REMOTE_SENSING_REPO_MIRROR.md](./REMOTE_SENSING_REPO_MIRROR.md)、[OBJECT_DETECTION_REPO_MIRROR.md](./OBJECT_DETECTION_REPO_MIRROR.md)、[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 0；**Phase 0 收口**见 **§11**。
+> **关联**：[REMOTE_SENSING_K8S_DEPLOYMENT.md](./REMOTE_SENSING_K8S_DEPLOYMENT.md)、[REMOTE_SENSING_REPO_MIRROR.md](./REMOTE_SENSING_REPO_MIRROR.md)、[OBJECT_DETECTION_REPO_MIRROR.md](./OBJECT_DETECTION_REPO_MIRROR.md)；**Phase 0 收口**见 **§11**。
 
 ---
 
@@ -414,7 +414,7 @@ kubectl -n gitlab-runner exec "$POD" -- ls /opt/object-detection/output_detectio
 
 ## 11. Phase 0 收口 Checklist
 
-> **用途**：首次全链路跑通（附录 A）之后，用本清单把 baseline **可复现、可交接、可对照** 地「封口」，再评审是否进入 [MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) Phase 1。  
+> **用途**：首次全链路跑通（附录 A）之后，用本清单把 baseline **可复现、可对照** 地「封口」。  
 > **状态（2026-06-17）**：**已闭合** — 完整数据见 [archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md)。  
 > **后继**：Phase 1 已闭合 — 运维 [PHASE1_RUNBOOK.md](./PHASE1_RUNBOOK.md)；归档 [archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md)。
 
@@ -657,7 +657,7 @@ curl -s "<API_HOST>/api/remote-sensing/tasks/<TASK_ID>/detection-stats"
 
 1. Phase 0 验收项（3× benchmark、波动率、产物、前端）均已满足。
 2. 当前瓶颈在 **单 Pod 串行 + CPU 检测**；Phase 1 解决 **API 与 RS 计算分离、多 task 并行**，不依赖 GPU。
-3. 检测耗时优化留 **Phase 2（od-worker + GPU）** 或并行路线图 [REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md](./REMOTE_SENSING_MINUTE_LEVEL_ROADMAP.md)，不必阻塞 Phase 1。
+3. 检测耗时优化留 **Phase 2（od-worker + GPU）**，不必阻塞 Phase 1。
 
 **Phase 1 启动前建议（1～2 天，可与开发并行）** — **均已完成（2026-06-18）**：
 

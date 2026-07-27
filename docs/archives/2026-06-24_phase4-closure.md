@@ -105,7 +105,7 @@ CI：手动 job `deploy-phase4-pilot`。
 | 同 prefix 多 task **并行** RS | 按 `task_id` 隔离 persist/scratch 路径 |
 | 队列深度 HPA | 需 Prometheus Adapter + 自定义指标 |
 | GPU od-worker | 集群暂无 GPU 节点 |
-| MinIO / 120 星拓扑 | 见 MICROSERVICES_IMPLEMENTATION_PLAN §5–6 |
+| MinIO / 120 星拓扑 | 见 Phase 6 / CLUSTER120 相关文档 |
 
 ---
 

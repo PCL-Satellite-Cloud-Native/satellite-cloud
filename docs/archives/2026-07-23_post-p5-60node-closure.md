@@ -60,7 +60,7 @@ Post-P5 主线（D0 MinIO + 本星队列 + 强制选卫星）在 60 节点验收
 | `45abc38` | 无卫星创建 HTTP 400 |
 | `87da08a` | reclaim 跳过 in-flight；收口文档 |
 
-详情见 [post-p5-60node-roadmap.md](../post-p5-60node-roadmap.md)、[D0_MINIO_ARTIFACT_UPLOAD_60.md](../D0_MINIO_ARTIFACT_UPLOAD_60.md)。
+详情见 [D0_MINIO_ARTIFACT_UPLOAD_60.md](../D0_MINIO_ARTIFACT_UPLOAD_60.md)。
 
 ---
 

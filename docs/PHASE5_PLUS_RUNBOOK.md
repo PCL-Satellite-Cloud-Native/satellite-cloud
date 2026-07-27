@@ -4,7 +4,6 @@
 > **前置**：[PHASE5_RUNBOOK.md](./PHASE5_RUNBOOK.md)（Phase 5 已闭合）  
 > **P5-05 归档**：[archives/2026-07-03_phase5-05-closure.md](./archives/2026-07-03_phase5-05-closure.md)  
 > **P5-06b 归档**：[archives/2026-07-08_phase5-06b-closure.md](./archives/2026-07-08_phase5-06b-closure.md)  
-> **方案 SSOT**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md)
 
 ---
 

@@ -3,7 +3,7 @@
 > **归档日期**：2026-06-11  
 > **主题**：Pilot 15 星 `sat-{p}-{s}` 与 legacy STK 星历 `Sat_6_6…Sat_8_10` 的偏移映射  
 > **状态**：**临时桥接，待 STK 更新后回滚**  
-> **SSOT 后继**：[PHASE5_RUNBOOK.md](../PHASE5_RUNBOOK.md)、[MICROSERVICES_IMPLEMENTATION_PLAN.md](../MICROSERVICES_IMPLEMENTATION_PLAN.md) §5
+> **SSOT 后继**：[PHASE5_RUNBOOK.md](../PHASE5_RUNBOOK.md)
 
 ---
 

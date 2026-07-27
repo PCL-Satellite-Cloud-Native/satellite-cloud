@@ -2,7 +2,6 @@
 
 > **状态（2026-06-18）**：**Phase 1 已闭合** — 历史见 [archives/2026-06-18_phase1-closure.md](./archives/2026-06-18_phase1-closure.md)。  
 > **前置**：Phase 0 — [archives/2026-06-17_phase0-closure.md](./archives/2026-06-17_phase0-closure.md)。  
-> **架构**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 1。
 
 ---
 

@@ -112,7 +112,7 @@ Console 登录：`minio-credentials` Secret（`MINIO_ROOT_USER` / `MINIO_ROOT_PA
 
 | 编号 | 内容 | 优先级 |
 |------|------|--------|
-| **路线图** | [2026-07-14_post-p6-pilot-60node-roadmap.md](./2026-07-14_post-p6-pilot-60node-roadmap.md) — 60 节点**新集群复制**、MinIO 主存储、P6-05 延后 | **SSOT** |
+| **现网** | 60 星 Post-P5 收口与 CLUSTER120 文档 | 运维 |
 | 运维 | 新产物增量 mirror（Pilot 按需） | ongoing |
 | P6-05 | 120 Node / pilot-map | 阶段 3（延后） |
 

@@ -2,7 +2,6 @@
 
 > **状态（2026-06-26）**：**Phase 5 已闭合** — 详见 [archives/2026-06-26_phase5-closure.md](./archives/2026-06-26_phase5-closure.md)  
 > **前置**：[Phase 4 归档](./archives/2026-06-24_phase4-closure.md)  
-> **方案 SSOT**：[MICROSERVICES_IMPLEMENTATION_PLAN.md](./MICROSERVICES_IMPLEMENTATION_PLAN.md) §5 阶段 5
 
 ---
 

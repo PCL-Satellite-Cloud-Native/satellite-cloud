@@ -1,0 +1,202 @@
+# P5-06b：每节点 rs-worker（DaemonSet），卫星感知 Redis 消费 + required Argo affinity。
+# 部署前须 scale Deployment/rs-worker 至 0，并确认 HPA 不作用于 DaemonSet。
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: rs-worker
+  labels:
+    app: rs-worker
+    satellite.io/phase: phase5-pilot
+spec:
+  selector:
+    matchLabels:
+      app: rs-worker
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 3
+  template:
+    metadata:
+      labels:
+        app: rs-worker
+        satellite.io/metrics: "true"
+        satellite.io/phase: phase5-pilot
+    spec:
+      serviceAccountName: rs-worker
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: satellite.io/id
+                    operator: Exists
+      initContainers:
+        - name: init-remote-sensing-dirs
+          image: 192.168.10.238/library/alpine:3.19-amd64-r1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mkdir -p /mnt/input /mnt/output_preprocessing /mnt/dem /scratch/output_preprocessing
+              chmod -R 0777 /mnt/input /mnt/output_preprocessing /mnt/dem /scratch/output_preprocessing
+          volumeMounts:
+            - name: remote-sensing-data
+              mountPath: /mnt
+            - name: remote-sensing-scratch-output
+              mountPath: /scratch/output_preprocessing
+      containers:
+        - name: rs-worker
+          image: 192.168.10.238/satellite/backend:latest
+          imagePullPolicy: Always
+          command: ["./rs-worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: SATELLITE_METRICS_PORT
+              value: "9090"
+            - name: SATELLITE_LOG_LEVEL
+              value: "info"
+            - name: SATELLITE_DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: host
+            - name: SATELLITE_DATABASE_PORT
+              value: "5432"
+            - name: SATELLITE_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: user
+            - name: SATELLITE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: password
+            - name: SATELLITE_DATABASE_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: dbname
+            - name: SATELLITE_REDIS_ADDR
+              value: "redis:6379"
+            - name: SATELLITE_REDIS_STREAM_RS
+              value: "rs.jobs"
+            - name: SATELLITE_REDIS_CONSUMER_GROUP
+              value: "rs-workers"
+            - name: SATELLITE_RS_WORKER_CONCURRENCY
+              value: "1"
+            - name: SATELLITE_RS_SATELLITE_AWARE_QUEUE
+              value: "true"
+            - name: SATELLITE_USE_INPROCESS_PIPELINE
+              value: "false"
+            - name: SATELLITE_USE_OD_WORKER
+              value: "true"
+            - name: SATELLITE_USE_ARGO_PAN_RPC
+              value: "true"
+            - name: SATELLITE_ARGO_REQUIRED_NODE_AFFINITY
+              value: "true"
+            - name: SATELLITE_ARGO_NAMESPACE
+              value: "gitlab-runner"
+            - name: SATELLITE_ARGO_PAN_RPC_TEMPLATE
+              value: "rs-pan-rpc-parallel"
+            - name: SATELLITE_RS_WORKFLOW_IMAGE
+              value: "192.168.10.238/satellite/backend:latest"
+            - name: SATELLITE_REMOTE_SENSING_ROOT
+              value: "/opt/remote-sensing"
+            - name: SATELLITE_REMOTE_SENSING_PYTHON
+              value: "/opt/remote-sensing/.venv/bin/python"
+            - name: SATELLITE_REMOTE_SENSING_DEM_FILE
+              value: "/opt/remote-sensing-data/dem/GMTED2010.jp2"
+            - name: SATELLITE_REMOTE_SENSING_DEVICE
+              value: "cpu"
+            - name: SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR
+              value: "persist_output_preprocessing"
+            - name: SATELLITE_RS_TASK_PATH_ISOLATION
+              value: "true"
+            - name: SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS
+              value: "1800"
+            - name: SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS
+              value: "1500"
+            - name: SATELLITE_REMOTE_SENSING_FUSION_BLOCK_SIZE
+              value: "1024"
+            - name: SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_FUSION_DIRECT_ENABLED
+              value: "true"
+            - name: SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS
+              value: "60"
+            - name: SATELLITE_REMOTE_SENSING_WORKER_CONCURRENCY
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM
+              value: "4"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB
+              value: "512"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB
+              value: "2048"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG
+              value: "near"
+            - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM
+              value: "3"
+            - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE
+              value: "parallel"
+            - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_COREGISTER_MODE
+              value: "serial4"
+            - name: SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS
+              value: "2"
+            - name: SATELLITE_OBJECT_DETECTION_ROOT
+              value: "/opt/object-detection"
+            - name: SATELLITE_OBJECT_DETECTION_RUNNER
+              value: "/opt/object-detection/yolov8s"
+            - name: SATELLITE_OBJECT_DETECTION_DEVICE
+              value: "cpu"
+            - name: SATELLITE_OBJECT_DETECTION_STAGE_TIMEOUT_SECONDS
+              value: "14400"
+            - name: SATELLITE_OBJECT_DETECTION_OUTPUT_SUBDIR
+              value: "output_detection"
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+              ephemeral-storage: "10Gi"
+            limits:
+              memory: "8Gi"
+              cpu: "4000m"
+              ephemeral-storage: "48Gi"
+          volumeMounts:
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing/input
+              subPath: input
+            - name: remote-sensing-scratch-output
+              mountPath: /opt/remote-sensing/output_preprocessing
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing/persist_output_preprocessing
+              subPath: output_preprocessing
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing-data/dem
+              subPath: dem
+            - name: remote-sensing-data
+              mountPath: /opt/object-detection/output_detection
+              subPath: object_detection_output
+            - name: remote-sensing-data
+              mountPath: /opt/object-detection/yolov8m-obb.onnx
+              subPath: models/yolov8m-obb.onnx
+      volumes:
+        - name: remote-sensing-data
+          persistentVolumeClaim:
+            claimName: remote-sensing-data
+        - name: remote-sensing-scratch-output
+          emptyDir:
+            sizeLimit: "40Gi"

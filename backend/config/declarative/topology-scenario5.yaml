@@ -1,0 +1,40 @@
+# ====================================================================================
+# NetworkTopology 网络拓扑配置
+# 清单示例：Scenario5 的星间时延矩阵 + T0 星历 + 路由拓扑数据源。
+#
+# 背景：拓扑数据原为"CSV + 手动 import_topology 工具"或"附属在星座清单 spec.topology"，
+#       现提升为独立 kind，可按场景独立声明、独立同步，解耦拓扑变更与星座变更。
+#
+# 未来 CRD: apiVersion: cloud.satellite.io/v1, kind: NetworkTopology
+# 阶段 1：由 apply-config 读取并幂等同步到 PostgreSQL（复用 topology.Import*，
+#         内部 delete+insert，多次执行结果一致）。
+#
+# 依赖：spec.scenarioName 对应的场景必须已存在（由 SatelliteConstellation 清单创建）。
+# 同步命令（在 backend 目录执行）：
+#   go run ./cmd/apply-config -config-dir config/declarative        # 正式同步
+#   go run ./cmd/apply-config -config-dir config/declarative -dry-run  # 只预览不落库
+# ====================================================================================
+
+apiVersion: cloud.satellite.io/v1
+# --- 资源类型：声明这份清单描述的是一个"网络拓扑数据源集合" ---
+kind: NetworkTopology
+metadata:
+  # 清单唯一标识（对应未来 CR 的 metadata.name，仅用于区分清单，不写入数据库）
+  name: scenario5-topology
+  # K8s 风格标签：标记资源归属项目与组件类型
+  labels:
+    app.kubernetes.io/part-of: satellite-cloud     # 所属项目
+    app.kubernetes.io/component: topology          # 资源组件类型
+spec:
+  # 所属场景名（scenarios.name），必填。同步前场景必须已存在。
+  scenarioName: Scenario5_full_36x22
+  # ------------------------------------------------------------------
+  # 拓扑数据源（至少声明一种；路径相对 backend 目录，与 import_topology 工具一致）
+  # ------------------------------------------------------------------
+  dataSources:
+    # 星间时延矩阵 CSV 文件路径
+    delayMatrixCsv: ../frontend/public/data/delay_15x15.csv
+    # T0 时刻星历目录（Sat_*_ephem_ext.csv 文件）
+    t0CsvDir: ../frontend/public/data/ephem_15
+    # 路由拓扑目录（r??????_net_qos.csv 文件）
+    routerCsvDir: ../frontend/public/data/router

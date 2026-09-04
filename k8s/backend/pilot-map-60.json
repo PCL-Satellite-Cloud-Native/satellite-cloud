@@ -1,0 +1,556 @@
+{
+  "version": 3,
+  "description": "60 nodes 3x20 draft: sequential sat1..sat60 incl CP; rs-worker excludes control-plane",
+  "naming": {
+    "sat_id": "sat-{plane}-{slot}",
+    "sat_name": "Sat_{plane}_{slot}",
+    "node": "K8s hostname"
+  },
+  "policy": {
+    "label_all_nodes": true,
+    "rs_worker_on_control_plane": false,
+    "note": "CP labeled for topology; DaemonSet must exclude node-role.kubernetes.io/control-plane"
+  },
+  "nodes": [
+    {
+      "node": "sat1",
+      "sat_id": "sat-1-1",
+      "sat_name": "Sat_1_1",
+      "orbit": 1,
+      "slot": 1,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat2",
+      "sat_id": "sat-1-2",
+      "sat_name": "Sat_1_2",
+      "orbit": 1,
+      "slot": 2,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat3",
+      "sat_id": "sat-1-3",
+      "sat_name": "Sat_1_3",
+      "orbit": 1,
+      "slot": 3,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat4",
+      "sat_id": "sat-1-4",
+      "sat_name": "Sat_1_4",
+      "orbit": 1,
+      "slot": 4,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat5",
+      "sat_id": "sat-1-5",
+      "sat_name": "Sat_1_5",
+      "orbit": 1,
+      "slot": 5,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat6",
+      "sat_id": "sat-1-6",
+      "sat_name": "Sat_1_6",
+      "orbit": 1,
+      "slot": 6,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat7",
+      "sat_id": "sat-1-7",
+      "sat_name": "Sat_1_7",
+      "orbit": 1,
+      "slot": 7,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat8",
+      "sat_id": "sat-1-8",
+      "sat_name": "Sat_1_8",
+      "orbit": 1,
+      "slot": 8,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat9",
+      "sat_id": "sat-1-9",
+      "sat_name": "Sat_1_9",
+      "orbit": 1,
+      "slot": 9,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat10-m1",
+      "sat_id": "sat-1-10",
+      "sat_name": "Sat_1_10",
+      "orbit": 1,
+      "slot": 10,
+      "is_control_plane": true,
+      "rs_worker": false
+    },
+    {
+      "node": "sat11",
+      "sat_id": "sat-1-11",
+      "sat_name": "Sat_1_11",
+      "orbit": 1,
+      "slot": 11,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat12",
+      "sat_id": "sat-1-12",
+      "sat_name": "Sat_1_12",
+      "orbit": 1,
+      "slot": 12,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat13",
+      "sat_id": "sat-1-13",
+      "sat_name": "Sat_1_13",
+      "orbit": 1,
+      "slot": 13,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat14",
+      "sat_id": "sat-1-14",
+      "sat_name": "Sat_1_14",
+      "orbit": 1,
+      "slot": 14,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat15",
+      "sat_id": "sat-1-15",
+      "sat_name": "Sat_1_15",
+      "orbit": 1,
+      "slot": 15,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat16",
+      "sat_id": "sat-1-16",
+      "sat_name": "Sat_1_16",
+      "orbit": 1,
+      "slot": 16,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat17",
+      "sat_id": "sat-1-17",
+      "sat_name": "Sat_1_17",
+      "orbit": 1,
+      "slot": 17,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat18",
+      "sat_id": "sat-1-18",
+      "sat_name": "Sat_1_18",
+      "orbit": 1,
+      "slot": 18,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat19",
+      "sat_id": "sat-1-19",
+      "sat_name": "Sat_1_19",
+      "orbit": 1,
+      "slot": 19,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat20",
+      "sat_id": "sat-1-20",
+      "sat_name": "Sat_1_20",
+      "orbit": 1,
+      "slot": 20,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat21",
+      "sat_id": "sat-2-1",
+      "sat_name": "Sat_2_1",
+      "orbit": 2,
+      "slot": 1,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat22",
+      "sat_id": "sat-2-2",
+      "sat_name": "Sat_2_2",
+      "orbit": 2,
+      "slot": 2,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat23",
+      "sat_id": "sat-2-3",
+      "sat_name": "Sat_2_3",
+      "orbit": 2,
+      "slot": 3,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat24",
+      "sat_id": "sat-2-4",
+      "sat_name": "Sat_2_4",
+      "orbit": 2,
+      "slot": 4,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat25",
+      "sat_id": "sat-2-5",
+      "sat_name": "Sat_2_5",
+      "orbit": 2,
+      "slot": 5,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat26",
+      "sat_id": "sat-2-6",
+      "sat_name": "Sat_2_6",
+      "orbit": 2,
+      "slot": 6,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat27",
+      "sat_id": "sat-2-7",
+      "sat_name": "Sat_2_7",
+      "orbit": 2,
+      "slot": 7,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat28",
+      "sat_id": "sat-2-8",
+      "sat_name": "Sat_2_8",
+      "orbit": 2,
+      "slot": 8,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat29",
+      "sat_id": "sat-2-9",
+      "sat_name": "Sat_2_9",
+      "orbit": 2,
+      "slot": 9,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat30-m2",
+      "sat_id": "sat-2-10",
+      "sat_name": "Sat_2_10",
+      "orbit": 2,
+      "slot": 10,
+      "is_control_plane": true,
+      "rs_worker": false
+    },
+    {
+      "node": "sat31",
+      "sat_id": "sat-2-11",
+      "sat_name": "Sat_2_11",
+      "orbit": 2,
+      "slot": 11,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat32",
+      "sat_id": "sat-2-12",
+      "sat_name": "Sat_2_12",
+      "orbit": 2,
+      "slot": 12,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat33",
+      "sat_id": "sat-2-13",
+      "sat_name": "Sat_2_13",
+      "orbit": 2,
+      "slot": 13,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat34",
+      "sat_id": "sat-2-14",
+      "sat_name": "Sat_2_14",
+      "orbit": 2,
+      "slot": 14,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat35",
+      "sat_id": "sat-2-15",
+      "sat_name": "Sat_2_15",
+      "orbit": 2,
+      "slot": 15,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat36",
+      "sat_id": "sat-2-16",
+      "sat_name": "Sat_2_16",
+      "orbit": 2,
+      "slot": 16,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat37",
+      "sat_id": "sat-2-17",
+      "sat_name": "Sat_2_17",
+      "orbit": 2,
+      "slot": 17,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat38",
+      "sat_id": "sat-2-18",
+      "sat_name": "Sat_2_18",
+      "orbit": 2,
+      "slot": 18,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat39",
+      "sat_id": "sat-2-19",
+      "sat_name": "Sat_2_19",
+      "orbit": 2,
+      "slot": 19,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat40",
+      "sat_id": "sat-2-20",
+      "sat_name": "Sat_2_20",
+      "orbit": 2,
+      "slot": 20,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat41",
+      "sat_id": "sat-3-1",
+      "sat_name": "Sat_3_1",
+      "orbit": 3,
+      "slot": 1,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat42",
+      "sat_id": "sat-3-2",
+      "sat_name": "Sat_3_2",
+      "orbit": 3,
+      "slot": 2,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat43",
+      "sat_id": "sat-3-3",
+      "sat_name": "Sat_3_3",
+      "orbit": 3,
+      "slot": 3,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat44",
+      "sat_id": "sat-3-4",
+      "sat_name": "Sat_3_4",
+      "orbit": 3,
+      "slot": 4,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat45",
+      "sat_id": "sat-3-5",
+      "sat_name": "Sat_3_5",
+      "orbit": 3,
+      "slot": 5,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat46",
+      "sat_id": "sat-3-6",
+      "sat_name": "Sat_3_6",
+      "orbit": 3,
+      "slot": 6,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat47",
+      "sat_id": "sat-3-7",
+      "sat_name": "Sat_3_7",
+      "orbit": 3,
+      "slot": 7,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat48",
+      "sat_id": "sat-3-8",
+      "sat_name": "Sat_3_8",
+      "orbit": 3,
+      "slot": 8,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat49",
+      "sat_id": "sat-3-9",
+      "sat_name": "Sat_3_9",
+      "orbit": 3,
+      "slot": 9,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat50-m3",
+      "sat_id": "sat-3-10",
+      "sat_name": "Sat_3_10",
+      "orbit": 3,
+      "slot": 10,
+      "is_control_plane": true,
+      "rs_worker": false
+    },
+    {
+      "node": "sat51",
+      "sat_id": "sat-3-11",
+      "sat_name": "Sat_3_11",
+      "orbit": 3,
+      "slot": 11,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat52",
+      "sat_id": "sat-3-12",
+      "sat_name": "Sat_3_12",
+      "orbit": 3,
+      "slot": 12,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat53",
+      "sat_id": "sat-3-13",
+      "sat_name": "Sat_3_13",
+      "orbit": 3,
+      "slot": 13,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat54",
+      "sat_id": "sat-3-14",
+      "sat_name": "Sat_3_14",
+      "orbit": 3,
+      "slot": 14,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat55",
+      "sat_id": "sat-3-15",
+      "sat_name": "Sat_3_15",
+      "orbit": 3,
+      "slot": 15,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat56",
+      "sat_id": "sat-3-16",
+      "sat_name": "Sat_3_16",
+      "orbit": 3,
+      "slot": 16,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat57",
+      "sat_id": "sat-3-17",
+      "sat_name": "Sat_3_17",
+      "orbit": 3,
+      "slot": 17,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat58",
+      "sat_id": "sat-3-18",
+      "sat_name": "Sat_3_18",
+      "orbit": 3,
+      "slot": 18,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat59",
+      "sat_id": "sat-3-19",
+      "sat_name": "Sat_3_19",
+      "orbit": 3,
+      "slot": 19,
+      "is_control_plane": false,
+      "rs_worker": true
+    },
+    {
+      "node": "sat60",
+      "sat_id": "sat-3-20",
+      "sat_name": "Sat_3_20",
+      "orbit": 3,
+      "slot": 20,
+      "is_control_plane": false,
+      "rs_worker": true
+    }
+  ]
+}

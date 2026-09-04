@@ -1,0 +1,524 @@
+stages:
+  - build
+  - deploy
+  - topology-sync
+
+variables:
+  HARBOR_URL: "192.168.10.238"
+  HARBOR_PROJECT: "satellite"
+  HARBOR_PUBLIC_PROJECT: "library"
+  BACKEND_IMAGE: "$HARBOR_URL/$HARBOR_PROJECT/backend:$CI_COMMIT_SHORT_SHA"
+  FRONTEND_IMAGE: "$HARBOR_URL/$HARBOR_PROJECT/frontend:$CI_COMMIT_SHORT_SHA"
+  DOCKER_DRIVER: overlay2
+  # CI 运行镜像统一走内网 Harbor，避免外网镜像拉取失败
+  CI_DOCKER_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/docker:25.0-amd64-r1"
+  CI_BUILD_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/ci-build:docker25-git-amd64-r3"
+  CI_KUBECTL_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/bitnami-kubectl:latest-amd64-r1"
+  CI_ALPINE_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/alpine:3.19-amd64-r1"
+  BASE_IMAGE_REGISTRY: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT"
+  # 内网 GitLab 私有仓库地址（HTTPS），示例：
+  # https://gitlab.example.local/your-group/Satellite-Remote-Sensing.git
+  REMOTE_SENSING_REPO_URL: ""
+  REMOTE_SENSING_REPO_REF: "main"
+  # 内网 GitLab Object-Detection 仓库（与遥感类似，HTTPS）
+  OBJECT_DETECTION_REPO_URL: ""
+  OBJECT_DETECTION_REPO_REF: "main"
+
+# 构建并推送后端镜像
+build-backend:
+  stage: build
+  image: "$CI_BUILD_IMAGE"
+  variables:
+    # Runner 已挂载宿主机 docker.sock，避免再启 dind
+    DOCKER_HOST: "unix:///var/run/docker.sock"
+  script:
+    - docker version
+    - |
+      if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASSWORD" ]; then
+        echo "HARBOR_USER 或 HARBOR_PASSWORD 未配置（建议在 GitLab CI/CD Variables 中配置同名变量）"
+        exit 1
+      fi
+    - |
+      if [ -z "$REMOTE_SENSING_REPO_URL" ]; then
+        echo "REMOTE_SENSING_REPO_URL 未配置，请先在内网 GitLab 建仓并配置该变量"
+        exit 1
+      fi
+    - |
+      case "$REMOTE_SENSING_REPO_URL" in
+        https://*)
+          AUTH_REMOTE_SENSING_REPO_URL="$(echo "$REMOTE_SENSING_REPO_URL" | sed "s#^https://#https://gitlab-ci-token:${CI_JOB_TOKEN}@#")"
+          ;;
+        http://*)
+          AUTH_REMOTE_SENSING_REPO_URL="$(echo "$REMOTE_SENSING_REPO_URL" | sed "s#^http://#http://gitlab-ci-token:${CI_JOB_TOKEN}@#")"
+          ;;
+        *)
+          echo "REMOTE_SENSING_REPO_URL 必须是 HTTP(S) 地址"
+          exit 1
+          ;;
+      esac
+    - git ls-remote "$AUTH_REMOTE_SENSING_REPO_URL" > /dev/null
+    - rm -rf backend/remote-sensing-src
+    - git clone --depth 1 --branch "$REMOTE_SENSING_REPO_REF" "$AUTH_REMOTE_SENSING_REPO_URL" backend/remote-sensing-src
+    - |
+      if [ -z "$OBJECT_DETECTION_REPO_URL" ]; then
+        echo "OBJECT_DETECTION_REPO_URL 未配置，请先在内网 GitLab 建仓并配置该变量"
+        exit 1
+      fi
+    - |
+      case "$OBJECT_DETECTION_REPO_URL" in
+        https://*)
+          AUTH_OBJECT_DETECTION_REPO_URL="$(echo "$OBJECT_DETECTION_REPO_URL" | sed "s#^https://#https://gitlab-ci-token:${CI_JOB_TOKEN}@#")"
+          ;;
+        http://*)
+          AUTH_OBJECT_DETECTION_REPO_URL="$(echo "$OBJECT_DETECTION_REPO_URL" | sed "s#^http://#http://gitlab-ci-token:${CI_JOB_TOKEN}@#")"
+          ;;
+        *)
+          echo "OBJECT_DETECTION_REPO_URL 必须是 HTTP(S) 地址"
+          exit 1
+          ;;
+      esac
+    - git ls-remote "$AUTH_OBJECT_DETECTION_REPO_URL" > /dev/null
+    - rm -rf backend/object-detection-src
+    - git clone --depth 1 --branch "$OBJECT_DETECTION_REPO_REF" "$AUTH_OBJECT_DETECTION_REPO_URL" backend/object-detection-src
+    - docker login "$HARBOR_URL" -u "$HARBOR_USER" -p "$HARBOR_PASSWORD"
+    - cd backend
+    - |
+      BUILD_ARGS="--build-arg BASE_IMAGE_REGISTRY=$BASE_IMAGE_REGISTRY"
+      if [ -n "${ORT_DOWNLOAD_URL:-}" ]; then
+        BUILD_ARGS="$BUILD_ARGS --build-arg ORT_DOWNLOAD_URL=$ORT_DOWNLOAD_URL"
+      fi
+      if [ -n "${FONT_DOWNLOAD_URL:-}" ]; then
+        BUILD_ARGS="$BUILD_ARGS --build-arg FONT_DOWNLOAD_URL=$FONT_DOWNLOAD_URL"
+      fi
+      if [ "${CURL_INSECURE:-}" = "true" ]; then
+        BUILD_ARGS="$BUILD_ARGS --build-arg CURL_INSECURE=true"
+      fi
+      docker build $BUILD_ARGS -t "$BACKEND_IMAGE" .
+    - docker push "$BACKEND_IMAGE"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "cluster-120" ]; then
+        docker tag "$BACKEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/backend:cluster-120-latest"
+        docker push "$HARBOR_URL/$HARBOR_PROJECT/backend:cluster-120-latest"
+      else
+        docker tag "$BACKEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
+        docker push "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
+      fi
+  tags:
+    - k8s-cluster-runner
+  only:
+    - main
+    - feat/phase6-minio
+    - cluster-120
+
+# 构建并推送前端镜像
+build-frontend:
+  stage: build
+  image: "$CI_BUILD_IMAGE"
+  variables:
+    # Runner 已挂载宿主机 docker.sock，避免再启 dind
+    DOCKER_HOST: "unix:///var/run/docker.sock"
+  script:
+    - docker version
+    - |
+      if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASSWORD" ]; then
+        echo "HARBOR_USER 或 HARBOR_PASSWORD 未配置（建议在 GitLab CI/CD Variables 中配置同名变量）"
+        exit 1
+      fi
+    - docker login "$HARBOR_URL" -u "$HARBOR_USER" -p "$HARBOR_PASSWORD"
+    - cd frontend
+    # 可选：在 GitLab CI/CD Variables 中配置 VITE_GRAFANA_URL，主页「性能监控中台」将直跳 Grafana
+    - |
+      BUILD_ARGS=""
+      if [ -n "${VITE_GRAFANA_URL:-}" ]; then
+        BUILD_ARGS="--build-arg VITE_GRAFANA_URL=$VITE_GRAFANA_URL"
+      fi
+      docker build --build-arg BASE_IMAGE_REGISTRY="$BASE_IMAGE_REGISTRY" $BUILD_ARGS -t "$FRONTEND_IMAGE" .
+    - docker push "$FRONTEND_IMAGE"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "cluster-120" ]; then
+        docker tag "$FRONTEND_IMAGE" "$HARBOR_URL/$HARBOR_PROJECT/frontend:cluster-120-latest"
+        docker push "$HARBOR_URL/$HARBOR_PROJECT/frontend:cluster-120-latest"
+      fi
+  tags:
+    - k8s-cluster-runner
+  only:
+    - main
+    - cluster-120
+
+deploy:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  script:
+    - echo "部署到 namespace=gitlab-runner"
+    - sh scripts/remote_sensing_preflight.sh --namespace gitlab-runner --deployment satellite-backend --pvc remote-sensing-data
+    # - kubectl -n gitlab-runner apply -f k8s/backend/remote-sensing-pv-pvc.yaml
+    - kubectl -n gitlab-runner get pvc remote-sensing-data
+    # 应用/更新后端 Deployment + Service
+    - kubectl -n gitlab-runner apply -f k8s/backend/deployment.yaml
+    - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/satellite-backend
+    # 应用/更新前端 Deployment + Service
+    - kubectl -n gitlab-runner apply -f k8s/frontend/deployment.yaml
+    - kubectl -n gitlab-runner set image deployment/satellite-frontend satellite-frontend="$FRONTEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/satellite-frontend
+    # Istio Gateway + VirtualService（需预先执行一次：kubectl apply -f k8s/istio-rbac-gitlab-runner.yaml）
+    # 以授权 gitlab-runner 在 istio-system 中创建 Gateway/VirtualService
+    - kubectl apply -f k8s/istio-gateway.yaml
+    - kubectl apply -f k8s/istio-virtualservice.yaml
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - build-backend
+    - build-frontend
+  only:
+    - main
+
+# Phase 1 阶段 2：Redis + rs-worker Pilot（不修改 satellite-backend 流水线模式）
+# 默认不自动执行：在 GitLab Pipeline 页面手动点击 deploy-phase1-pilot
+deploy-phase1-pilot:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  script:
+    - echo "Phase 1 Pilot：部署 Redis + rs-worker 到 namespace=gitlab-runner"
+    - kubectl apply -f k8s/phase1/namespaces.yaml || true
+    # rs-worker ServiceAccount 须集群管理员一次性创建（见 k8s/gitlab-runner-ci-rbac-phase3.yaml 注释）
+    - kubectl apply -k k8s/phase1/
+    - kubectl -n gitlab-runner rollout status deployment/redis --timeout=180s
+    - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
+    - |
+      RPOD=$(kubectl -n gitlab-runner get pod -l app=redis -o jsonpath='{.items[0].metadata.name}')
+      kubectl -n gitlab-runner exec "$RPOD" -- redis-cli ping
+    - kubectl -n gitlab-runner get deploy redis rs-worker
+    - kubectl -n gitlab-runner logs deployment/rs-worker --tail=20
+    - echo "backend Redis 入队 env 已固化于 k8s/backend/deployment.yaml，由 deploy job apply"
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - deploy
+  only:
+    - main
+
+# Phase 2：od-worker Pilot — 与 deploy-phase1-pilot 相同模式，push main 后自动执行（后续可改 when: manual）
+deploy-phase2-pilot:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  script:
+    - echo "Phase 2 Pilot：部署 od-worker + 更新 rs-worker（OD 分离）"
+    - kubectl apply -k k8s/phase2/
+    - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
+    - kubectl apply -k k8s/phase1/
+    - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
+    - kubectl -n gitlab-runner get deploy od-worker rs-worker
+    - kubectl -n gitlab-runner logs deployment/od-worker --tail=20
+    - echo "验收：提交 GF2+检测 task，rs-worker 无 yolov8s 日志，od-worker 有"
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - deploy
+  only:
+    - main
+
+# Phase 3：Argo WorkflowTemplate + rs-worker Argo 集成（manifest 默认 USE_ARGO_PAN_RPC=true）
+# 默认不自动执行：在 GitLab Pipeline 页面手动点击 deploy-phase3-pilot
+deploy-phase3-pilot:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  script:
+    - echo "Phase 3 Pilot：Argo controller + WorkflowTemplate + rs-worker RBAC"
+    - kubectl apply -f k8s/phase1/rs-worker/serviceaccount.yaml
+    - kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-submitter.yaml
+    - kubectl apply -f k8s/phase3/argo/rbac/gitlab-runner-workflow-executor.yaml
+    - kubectl apply -k k8s/phase3/argo/
+    - kubectl -n argo rollout status deployment/workflow-controller --timeout=180s
+    - kubectl apply -k k8s/phase3/
+    - kubectl apply -k k8s/phase1/
+    - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
+    - kubectl -n gitlab-runner get workflowtemplate rs-pan-rpc-parallel
+    - echo "启用 Argo：kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_USE_ARGO_PAN_RPC=true"
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - deploy-phase2-pilot
+  only:
+    - main
+
+# Phase 4：Prometheus 指标 + ServiceMonitor + HPA（手动 Pilot）
+deploy-phase4-pilot:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  script:
+    - echo "Phase 4 Pilot：metrics Services + ServiceMonitor + HPA"
+    - echo "若 Forbidden HPA/ServiceMonitor：集群管理员一次性 kubectl apply -f k8s/gitlab-runner-ci-rbac-phase4.yaml"
+    - kubectl apply -k k8s/phase1/
+    - kubectl apply -k k8s/phase2/
+    - kubectl -n gitlab-runner set image deployment/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner apply -f k8s/backend/deployment.yaml
+    - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_USE_ARGO_PAN_RPC=true
+    - kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/rs-worker --timeout=300s
+    - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
+    - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
+    - kubectl apply -k k8s/phase4/
+    - kubectl -n gitlab-runner get svc rs-worker-metrics od-worker-metrics
+    - kubectl -n gitlab-runner get servicemonitor satellite-workers satellite-backend
+    - kubectl -n gitlab-runner get hpa rs-worker od-worker
+    - sleep 10
+    - sh scripts/phase4_verify_metrics.sh
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - deploy-phase2-pilot
+  only:
+    - main
+
+# Phase 5+：P5-05 WorkflowTemplate + P5-06b rs-worker DaemonSet（手动 Pilot）
+# master 无需代码仓库：push main → Pipeline 点本 job 即可
+deploy-phase5-plus-pilot:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  script:
+    - echo "Phase 5+ Pilot：P5-05 路径隔离 + P5-06b 按星 rs-worker DaemonSet"
+    - echo "BACKEND_IMAGE=$BACKEND_IMAGE"
+    - echo "── 前置（cluster-admin 在 master 一次性，CI 无 nodes 权限时不自动打标）"
+    - echo "  bash scripts/phase5_label_nodes.sh --apply"
+    - echo "  kubectl apply -f k8s/phase5/worker-node-reader.yaml"
+    - echo "  kubectl apply -f k8s/gitlab-runner-ci-rbac-phase5.yaml"
+    - echo "── 1) WorkflowTemplate（P5-05 task_path_prefix；需 gitlab-runner-ci-rbac-phase5 含 workflowtemplates）"
+    - kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml || echo "WARN WorkflowTemplate apply 失败，请在 master 手动 apply 或更新 RBAC 后重试"
+    - echo "── 2) 删除 rs-worker Deployment HPA（Resource 指标无法 minReplicas=0，否则会拉回 1 副本）"
+    - kubectl -n gitlab-runner delete hpa rs-worker --ignore-not-found
+    - echo "── 3) 更新 backend / od-worker 镜像"
+    - kubectl apply -k k8s/phase2/
+    - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner apply -f k8s/backend/deployment.yaml
+    - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
+    - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
+    - echo "── 4) 部署 rs-worker DaemonSet（P5-06b）"
+    - kubectl apply -k k8s/phase5/
+    - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0 || true
+    - kubectl -n gitlab-runner patch deployment/rs-worker --type=merge -p '{"spec":{"replicas":0}}' || true
+    - kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE"
+    - EXPECTED_IMAGE="$BACKEND_IMAGE" sh scripts/phase5_wait_ds_rollout.sh --namespace gitlab-runner --timeout 900 --min-ready 12
+    - kubectl -n gitlab-runner get deploy rs-worker -o jsonpath='rs-worker Deployment replicas={.spec.replicas} ready={.status.readyReplicas}{"\n"}'
+    - kubectl -n gitlab-runner get ds rs-worker -o jsonpath='rs-worker DaemonSet image={.spec.template.spec.containers[0].image}{"\n"}'
+    - kubectl -n gitlab-runner get pods -l app=rs-worker -o wide
+    - |
+      POD=$(kubectl -n gitlab-runner get pod -l app=rs-worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+      if [ -n "$POD" ]; then
+        kubectl -n gitlab-runner logs "$POD" --tail=20 | grep -E "rs-worker starting|local placement|executed_sat_id|satellite_aware" || true
+      fi
+    - echo "完成。验收：在 master 执行 port-forward + submit_multi_satellite_tasks.sh --run-id p5-6b-..."
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - build-backend
+  only:
+    - main
+
+# ── cluster-120 专用（60→120 节点；tag k8s-120-runner；main 不触发）──
+
+sync-inputs-to-minio:
+  stage: topology-sync
+  image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1
+  when: manual
+  allow_failure: true
+  tags:
+    - k8s-120-runner
+  needs:
+    - build-backend
+  only:
+    - cluster-120
+  script:
+    - echo "frontend/public/data 拓扑 → MinIO satellite-inputs（需 CI 变量 MINIO_ROOT_USER/PASSWORD）"
+    - sh scripts/sync_inputs_to_minio.sh
+
+import-topology-60:
+  stage: topology-sync
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  tags:
+    - k8s-120-runner
+  needs: []
+  only:
+    - cluster-120
+  script:
+    - echo "MinIO → emptyDir → import_topology（避开 sat57 hostPath / Istio Job 问题）"
+    - kubectl -n gitlab-runner delete job import-topology-60 --ignore-not-found
+    - kubectl apply -f k8s/backend/import-topology-job-60-minio.yaml
+    - kubectl -n gitlab-runner wait --for=condition=complete --timeout=600s job/import-topology-60
+    - kubectl -n gitlab-runner logs job/import-topology-60 -c import --tail=100
+
+deploy-cluster-120:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  tags:
+    - k8s-120-runner
+  needs:
+    - build-backend
+    - build-frontend
+  only:
+    - cluster-120
+  script:
+    - echo "cluster-120 部署（120 集群；Pilot main 不受影响）"
+    - echo "BACKEND_IMAGE=$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner get pvc remote-sensing-data
+    - kubectl apply -f k8s/backend/satellite-backend-env-60.example.yaml
+    - kubectl -n gitlab-runner set env deployment/satellite-backend SATELLITE_TOPOLOGY_SCENARIO- SATELLITE_TOPOLOGY_AUTO_IMPORT- SATELLITE_DELAY_CSV- SATELLITE_PILOT_CLUSTER- SATELLITE_PILOT_MAP_FILE- SATELLITE_RS_SATELLITE_AWARE_QUEUE- 2>/dev/null || true
+    - kubectl apply -f k8s/backend/deployment.yaml
+    - |
+      kubectl -n gitlab-runner patch deployment satellite-backend --type=strategic -p '{
+        "spec": {
+          "template": {
+            "spec": {
+              "volumes": [{"name": "pilot-map-60", "configMap": {"name": "pilot-map-60"}}],
+              "containers": [{
+                "name": "satellite-backend",
+                "volumeMounts": [{
+                  "name": "pilot-map-60",
+                  "mountPath": "/etc/satellite/pilot-map-60.json",
+                  "subPath": "pilot-map-60.json",
+                  "readOnly": true
+                }]
+              }]
+            }
+          }
+        }
+      }' || echo "WARN pilot-map volume patch（先跑 p5_60node_bootstrap.sh）"
+    - kubectl -n gitlab-runner set image deployment/satellite-backend satellite-backend="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/satellite-backend --timeout=300s
+    - kubectl apply -f k8s/frontend/deployment.yaml
+    - kubectl -n gitlab-runner set image deployment/satellite-frontend satellite-frontend="$FRONTEND_IMAGE"
+    - kubectl apply -k k8s/phase2/
+    - kubectl -n gitlab-runner set image deployment/od-worker od-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner rollout status deployment/od-worker --timeout=300s
+    - kubectl apply -f k8s/phase3/workflows/workflowtemplate-pan-rpc.yaml || true
+    - kubectl -n gitlab-runner delete hpa rs-worker --ignore-not-found
+    - kubectl apply -f k8s/phase5/worker-node-reader.yaml
+    - kubectl apply -f k8s/phase5/rs-worker-daemonset-60.yaml
+    - kubectl -n gitlab-runner scale deployment/rs-worker --replicas=0 || true
+    - kubectl -n gitlab-runner set image daemonset/rs-worker rs-worker="$BACKEND_IMAGE"
+    - kubectl -n gitlab-runner set env daemonset/rs-worker SATELLITE_RS_WORKFLOW_IMAGE="$BACKEND_IMAGE" SATELLITE_RS_SATELLITE_AWARE_QUEUE=true
+    - EXPECTED_IMAGE="$BACKEND_IMAGE" sh scripts/phase5_wait_ds_rollout.sh --namespace gitlab-runner --timeout 1800 --min-ready "${P5_60_MIN_DS_READY:-50}"
+    - kubectl -n gitlab-runner get ds rs-worker -o wide
+    - echo "完成。验收：CLUSTER_PROFILE=60node bash scripts/phase5_acceptance.sh"
+
+deploy-phase6-pilot:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  script:
+    - echo "Phase 6 Pilot：MinIO 对象存储试点（不影响 Phase 5+ NFS/DaemonSet）"
+    - echo "── 1) 部署 MinIO + init bucket Job（命名空间资源；PV 须已存在）"
+    - |
+      # gitlab-runner SA 无 cluster get pv；用 namespace PVC 验证（PV 须已由 admin apply）
+      PVC_PHASE=$(kubectl -n gitlab-runner get pvc minio-data -o jsonpath='{.status.phase}' 2>/dev/null || true)
+      if [ "$PVC_PHASE" = "Bound" ]; then
+        VOL=$(kubectl -n gitlab-runner get pvc minio-data -o jsonpath='{.spec.volumeName}' 2>/dev/null || true)
+        if [ "$VOL" != "minio-data-pv" ]; then
+          echo "ERROR minio-data PVC 绑定到意外 volume: $VOL（期望 minio-data-pv）"
+          exit 1
+        fi
+        echo "OK minio-data PVC Bound → $VOL"
+      elif [ -n "$PVC_PHASE" ]; then
+        echo "ERROR minio-data PVC status=$PVC_PHASE"
+        echo "cluster-admin 确认 PV 已 apply：kubectl apply -f k8s/phase6/minio-pv.yaml"
+        exit 1
+      else
+        echo "INFO minio-data PVC 尚不存在，apply 后须绑定 minio-data-pv（PV 须已由 admin 创建）"
+      fi
+    - kubectl apply -k k8s/phase6/
+    - kubectl -n gitlab-runner rollout status deployment/minio --timeout=300s
+    - kubectl -n gitlab-runner wait --for=condition=complete job/minio-init-bucket --timeout=180s || echo "WARN init job 超时，请在 master 检查"
+    - kubectl -n gitlab-runner get deploy minio -o wide
+    - kubectl -n gitlab-runner get svc minio
+    - echo "── 2) 验证（master）bash scripts/phase6_preflight.sh"
+    - echo "完成。API 仍默认 nfs；见 docs/PHASE6_RUNBOOK.md §3 启用 minio 下载"
+  tags:
+    - k8s-cluster-runner
+  needs: []
+  only:
+    - main
+    - feat/phase6-minio
+
+sync-artifacts-to-minio:
+  stage: deploy
+  image: "$CI_KUBECTL_IMAGE"
+  when: manual
+  allow_failure: true
+  script:
+    - echo "P6-04：NFS 产物 mirror → MinIO（Worker 仍写 NFS）"
+    - echo "在 k8s-master 执行：bash scripts/sync_artifacts_nfs_to_minio.sh"
+    - echo "或 GitLab Runner 需挂载仓库且含 bash；推荐 master 手工跑"
+  tags:
+    - k8s-cluster-runner
+  needs: []
+  only:
+    - main
+    - feat/phase6-minio
+
+sync-topology-csv-to-nfs:
+  stage: topology-sync
+  image: "$CI_ALPINE_IMAGE"
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - deploy
+  script:
+    - apk add --no-cache openssh-client rsync
+    # 准备 SSH key
+    - mkdir -p ~/.ssh
+    - echo "$NFS_SSH_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -p "${NFS_SSH_PORT:-22}" "$NFS_SSH_HOST" >> ~/.ssh/known_hosts
+    # 同步 CSV 到 NFS 目录（覆盖更新）
+    - |
+      RSYNC_BASE="$NFS_SSH_USER@$NFS_SSH_HOST:/export/topology-data"
+      echo "同步 delay_15x15.csv 到 $RSYNC_BASE"
+      rsync -av --delete frontend/public/data/delay_15x15.csv "$RSYNC_BASE/"
+      echo "同步 ephem_15/ 到 $RSYNC_BASE/ephem_15/"
+      rsync -av --delete frontend/public/data/ephem_15/ "$RSYNC_BASE/ephem_15/"
+      echo "同步 router/ 到 $RSYNC_BASE/router/"
+      rsync -av --delete frontend/public/data/router/ "$RSYNC_BASE/router/"
+  only:
+    - main
+
+import-topology:
+  stage: topology-sync
+  image: "$CI_KUBECTL_IMAGE"
+  tags:
+    - k8s-cluster-runner
+  needs:
+    - sync-topology-csv-to-nfs
+  script:
+    - echo "删除旧的导入 Job（若存在）"
+    - kubectl -n gitlab-runner delete job import-topology || true
+    - echo "应用新的导入 Job 清单"
+    - kubectl -n gitlab-runner apply -f k8s/backend/import-topology-job.yaml
+    - echo "等待导入 Job 完成..."
+    - kubectl -n gitlab-runner wait --for=condition=complete --timeout=600s job/import-topology
+    - echo "导入 Job 日志："
+    - kubectl -n gitlab-runner logs job/import-topology --tail=100
+  only:
+    - main

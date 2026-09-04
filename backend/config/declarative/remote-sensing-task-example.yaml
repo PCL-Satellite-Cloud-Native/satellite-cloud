@@ -1,0 +1,41 @@
+# 遥感任务声明式清单示例（kind: RemoteSensingTask，遥感业务 CRD 化）。
+#
+# 语义：声明"期望在指定场景下存在这样一次遥感流水线任务"。
+#   - 同步幂等：同场景 + 同名任务已存在时，pending 状态按 spec 收敛，
+#     running/completed/failed 状态不改动运行时数据（仅跳过）。
+#   - 执行：任务创建为 pending 后，由 rs-worker / od-worker 沿用既有
+#     bootstrap 机制接管执行（本同步只声明期望，不直接入队）。
+#   - 删除：在 metadata.annotations 标注 cloud.satellite.io/delete: "true"
+#     后重新 apply-config；running 状态的任务拒绝删除。
+#
+# 使用（在 satellite-cloud/backend 目录下执行）：
+#   export SATELLITE_DATABASE_URL="postgres://user:pass@localhost:5432/satellite_db?sslmode=disable"
+#   go run ./cmd/apply-config -config-dir config/declarative          # 创建
+#   go run ./cmd/apply-config -config-dir config/declarative -dry-run # 预览
+#   # 删除：取消下面 annotations 的注释后再次 apply-config
+apiVersion: cloud.satellite.io/v1
+kind: RemoteSensingTask
+metadata:
+  name: rs-task-demo
+  labels:
+    app.kubernetes.io/part-of: satellite-cloud
+    app.kubernetes.io/component: remote-sensing
+  # annotations:
+  #   cloud.satellite.io/delete: "true"
+spec:
+  # 必填：所属场景名（scenarios.name），须先通过 SatelliteConstellation 创建
+  scenarioName: Scenario5_full_36x22
+  # 可选：目标卫星（sat_id 或 stk_name，须属于该场景）；缺省不限定卫星
+  satelliteId: sat-1-1
+  # 必填：原始影像文件前缀
+  filePrefix: "20251215_083000"
+  # 必填：原始影像输入目录
+  inputDirectory: /nfs/data/raw/20251215_083000
+  # 可选：传感器类型（MSS / PAN / MSS_PAN）
+  sensor: MSS
+  # 可选：是否启用 YOLOv8 目标识别（缺省 true）
+  enableDetection: true
+  # 可选：目标识别类别，逗号分隔
+  detectionClasses: airplane,ship
+  # 可选：是否绘制检测标注框（缺省 false）
+  detectionDrawLabels: false

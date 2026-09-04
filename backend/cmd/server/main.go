@@ -1,0 +1,275 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"go.uber.org/zap"
+
+	"satellite-cloud/backend/internal/api/handlers"
+	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/declarative"
+	"satellite-cloud/backend/internal/metrics"
+	"satellite-cloud/backend/internal/objectdetection"
+	"satellite-cloud/backend/internal/remotesensing"
+	"satellite-cloud/backend/internal/topology"
+	"satellite-cloud/backend/migrations"
+	"satellite-cloud/backend/pkg/database"
+	"satellite-cloud/backend/pkg/logger"
+)
+
+func main() {
+	// 初始化配置
+	cfg := config.Load()
+
+	// 初始化日志
+	zapLogger := logger.New(cfg.Log.Level, cfg.Log.Output)
+
+	// 初始化数据库
+	db, err := database.NewPostgres(cfg.Database)
+	if err != nil {
+		zapLogger.Fatal("Failed to connect to database", zap.Error(err))
+	}
+	zapLogger.Info("Remote sensing runtime configured",
+		zap.String("root_path", cfg.RemoteSensing.RootPath),
+		zap.String("python_bin", cfg.RemoteSensing.PythonBin),
+		zap.String("dem_file", cfg.RemoteSensing.DemFile),
+		zap.String("device", cfg.RemoteSensing.Device),
+		zap.String("persist_output_dir", cfg.RemoteSensing.PersistOutputDir),
+		zap.Int("stage_timeout_seconds", cfg.RemoteSensing.StageTimeoutSec),
+		zap.Int("fusion_stage_timeout_seconds", cfg.RemoteSensing.FusionStageTimeoutSec),
+		zap.Int("fusion_block_size", cfg.RemoteSensing.FusionBlockSize),
+		zap.String("fusion_gdal_threads", cfg.RemoteSensing.FusionGDALThreads),
+		zap.Int("stage_max_retries", cfg.RemoteSensing.StageMaxRetries),
+		zap.Int("command_heartbeat_seconds", cfg.RemoteSensing.CommandHeartbeatSec),
+		zap.Int("worker_concurrency", cfg.RemoteSensing.WorkerConcurrency),
+		zap.Int("worker_queue_size", cfg.RemoteSensing.WorkerQueueSize),
+		zap.Int("pan_rpc_parallelism", cfg.RemoteSensing.PanRPCParallel),
+		zap.Int("pan_rpc_cpu_threads", cfg.RemoteSensing.PanRPCCPUThreads),
+		zap.Int("pan_rpc_warp_mem_mb", cfg.RemoteSensing.PanRPCWarpMemMB),
+		zap.Int("pan_rpc_max_total_warp_mem_mb", cfg.RemoteSensing.PanRPCMaxTotalWarpMB),
+		zap.String("pan_rpc_resample_alg", cfg.RemoteSensing.PanRPCResampleAlg),
+		zap.Int("pansharpen_parallelism", cfg.RemoteSensing.PansharpenPar),
+		zap.String("pansharpen_mode", cfg.RemoteSensing.PansharpenMode),
+		zap.String("pansharpen_gdal_threads", cfg.RemoteSensing.PansharpenGDALThread),
+		zap.String("coregister_mode", cfg.RemoteSensing.CoregisterMode),
+		zap.String("coregister_gdal_threads", cfg.RemoteSensing.CoregisterGDALThreads),
+		zap.Bool("fusion_direct_enabled", cfg.RemoteSensing.FusionDirectEnabled),
+	)
+	zapLogger.Info("Object detection runtime configured",
+		zap.String("root_path", cfg.ObjectDetection.RootPath),
+		zap.String("runner", cfg.ObjectDetection.RunnerPath),
+		zap.String("device", cfg.ObjectDetection.Device),
+		zap.Bool("use_cpu", cfg.ObjectDetection.UseCPU()),
+		zap.String("output_subdir", cfg.ObjectDetection.OutputSubdir),
+		zap.Int("stage_timeout_seconds", cfg.ObjectDetection.StageTimeoutSec),
+	)
+	zapLogger.Info("Pipeline queue configured",
+		zap.Bool("use_inprocess_pipeline", cfg.Queue.UseInProcessPipeline),
+		zap.String("redis_addr", cfg.Queue.RedisAddr),
+		zap.String("stream_rs", cfg.Queue.StreamRS),
+	)
+
+	// 独立检测 API 保留供后续 K8s 微服务拆分；主流程已并入遥感串行流水线
+	objectDetectionService := objectdetection.NewObjectDetectionService(db, zapLogger, cfg.ObjectDetection, cfg.Storage)
+	if cfg.RemoteSensing.Device != "cpu" {
+		zapLogger.Warn(
+			"Remote sensing device is not cpu; current production workflow is validated on cpu path. "+
+				"Use gpu/auto only when GPU branch is fully validated with matching stage orchestration.",
+			zap.String("device", cfg.RemoteSensing.Device),
+		)
+	}
+
+	// 启动时自动执行未应用的迁移（与 K8s/本地环境保持一致）
+	sourceDriver, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		zapLogger.Fatal("Failed to create migration source", zap.Error(err))
+	}
+	m, err := migrate.NewWithSourceInstance("iofs", sourceDriver, cfg.Database.MigrateURL())
+	if err != nil {
+		zapLogger.Fatal("Failed to create migrator", zap.Error(err))
+	}
+	defer m.Close()
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		zapLogger.Fatal("Failed to run migrations", zap.Error(err))
+	}
+	if err == nil {
+		zapLogger.Info("Migrations applied or already up to date")
+	}
+
+	bootstrapScenario := os.Getenv("SATELLITE_TOPOLOGY_SCENARIO")
+	if bootstrapScenario == "" {
+		bootstrapScenario = "Scenario5_full_36x22"
+	}
+	if imported, err := topology.EnsureRouterImported(db, bootstrapScenario, topology.DefaultRouterCSVDir()); err != nil {
+		zapLogger.Warn("Router topology bootstrap failed", zap.Error(err))
+	} else if imported {
+		zapLogger.Info("Router topology bootstrapped from CSV into DB",
+			zap.String("scenario", bootstrapScenario),
+			zap.String("dir", topology.DefaultRouterCSVDir()),
+		)
+	}
+
+	// 可选：启动时自动从 CSV 导入拓扑相关数据（delay / T0 / router 可单独配置）
+	if os.Getenv("SATELLITE_TOPOLOGY_AUTO_IMPORT") == "true" {
+		scenarioName := os.Getenv("SATELLITE_TOPOLOGY_SCENARIO")
+		if scenarioName == "" {
+			scenarioName = "Scenario5_full_36x22"
+		}
+
+		if delayCSV := os.Getenv("SATELLITE_DELAY_CSV"); delayCSV != "" {
+			zapLogger.Info("Auto-importing delay edges from CSV",
+				zap.String("scenario", scenarioName),
+				zap.String("file", delayCSV),
+			)
+			if err := topology.ImportDelayFromCSV(db, scenarioName, delayCSV); err != nil {
+				zapLogger.Error("Failed to auto-import delay edges from CSV", zap.Error(err))
+			} else {
+				zapLogger.Info("Auto-import delay edges succeeded")
+			}
+		}
+		if t0Dir := os.Getenv("SATELLITE_T0_CSV_DIR"); t0Dir != "" {
+			zapLogger.Info("Auto-importing T0 satellite states from CSV dir",
+				zap.String("scenario", scenarioName),
+				zap.String("dir", t0Dir),
+			)
+			if err := topology.ImportSatStatesFromCSV(db, scenarioName, t0Dir); err != nil {
+				zapLogger.Error("Failed to auto-import T0 states from CSV", zap.Error(err))
+			} else {
+				zapLogger.Info("Auto-import T0 states succeeded")
+			}
+		}
+		routerDir := os.Getenv("SATELLITE_ROUTER_CSV_DIR")
+		if routerDir == "" {
+			routerDir = topology.DefaultRouterCSVDir()
+		}
+		if _, statErr := os.Stat(routerDir); statErr == nil {
+			zapLogger.Info("Auto-importing router topology from CSV dir",
+				zap.String("scenario", scenarioName),
+				zap.String("dir", routerDir),
+			)
+			if err := topology.ImportRouterFromCSV(db, scenarioName, routerDir); err != nil {
+				zapLogger.Error("Failed to auto-import router from CSV", zap.Error(err))
+			} else {
+				zapLogger.Info("Auto-import router topology succeeded")
+			}
+		}
+	}
+
+	// 设置 Gin 模式
+	if cfg.Server.Mode == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	// 创建 Gin 路由
+	router := gin.New()
+
+	// 中间件
+	router.Use(gin.Recovery())
+	router.Use(logger.Middleware(zapLogger))
+
+	// CORS 配置（开发环境：放开所有来源，方便前后端联调）
+	router.Use(cors.New(cors.Config{
+		AllowAllOrigins:  true,
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
+	// 健康检查
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	router.GET("/ready", func(c *gin.Context) {
+		sqlDB, err := db.DB()
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready"})
+			return
+		}
+		if err := sqlDB.Ping(); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ready"})
+	})
+
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	go metrics.RunQueueCollector(context.Background(), cfg.Queue, zapLogger)
+
+	remoteSensingService := remotesensing.NewRemoteSensingService(
+		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection, cfg.Argo, cfg.Storage,
+		remotesensing.DefaultOptions(cfg.Queue),
+	)
+
+	// CRD 声明式清单目录（SATELLITE_CRD_CONFIG_DIR），供 POST /api/crd/sync 使用
+	crdConfigDir := os.Getenv("SATELLITE_CRD_CONFIG_DIR")
+	if crdConfigDir == "" {
+		crdConfigDir = "config/declarative"
+	}
+	// 可选：服务启动时同步一次声明式清单（幂等，适合整体测试/演示环境）
+	if os.Getenv("SATELLITE_CRD_SYNC_ON_START") == "true" {
+		if results, syncErr := declarative.ApplyAll(db, crdConfigDir); syncErr != nil {
+			zapLogger.Warn("CRD sync-on-start failed",
+				zap.String("dir", crdConfigDir), zap.Error(syncErr))
+		} else {
+			zapLogger.Info("CRD sync-on-start completed",
+				zap.String("dir", crdConfigDir), zap.Int("manifests", len(results)))
+		}
+	}
+
+	// API 路由
+	api := router.Group("/api")
+	{
+		handlers.RegisterRoutes(api, db, zapLogger, remoteSensingService, objectDetectionService, crdConfigDir)
+	}
+
+	// 创建 HTTP 服务器
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// 启动服务器（goroutine）
+	go func() {
+		zapLogger.Info("Starting server", zap.Int("port", cfg.Server.Port))
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			zapLogger.Fatal("Failed to start server", zap.Error(err))
+		}
+	}()
+
+	// 优雅关闭
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	zapLogger.Info("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		zapLogger.Error("Graceful shutdown timeout, forcing close", zap.Error(err))
+		if closeErr := srv.Close(); closeErr != nil {
+			zapLogger.Error("Force close failed", zap.Error(closeErr))
+		}
+	}
+
+	zapLogger.Info("Server exited")
+}

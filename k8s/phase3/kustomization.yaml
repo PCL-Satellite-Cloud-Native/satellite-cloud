@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: gitlab-runner
+
+resources:
+  - workflows/workflowtemplate-pan-rpc.yaml
+
+labels:
+  - includeSelectors: true
+    pairs:
+      satellite.io/phase: phase3-pilot

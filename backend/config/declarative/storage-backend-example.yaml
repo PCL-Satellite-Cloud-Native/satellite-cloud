@@ -1,0 +1,48 @@
+# 产物存储声明式清单示例（kind: StorageBackend，存储基础设施 CRD 化）。
+# 作用：把"产物存储的期望状态"（后端类型 nfs/minio、产物根目录、
+#       MinIO 连接、产物上传开关）收敛为声明式资源，由 apply-config
+#       幂等同步到 storage_backends 表；当 backend=minio 且连接信息完整时，
+#       同步过程会幂等确保 MinIO Bucket 存在（BucketExists / MakeBucket）。
+#
+# 与既有环境变量的关系：
+#   - 迁移 000012_storage_backends.up.sql 已种入默认声明 default=nfs
+#     （产物根目录 /data/satellite/remote-sensing 与
+#     /data/satellite/object-detection，不上传 MinIO），与本示例 spec 一致，
+#     无需重复提交；如需改用 MinIO 或调整产物根目录，按本示例覆盖同步即可。
+#   - 后端服务启动时仍按 SATELLITE_STORAGE_BACKEND / SATELLITE_MINIO_*
+#     / SATELLITE_ARTIFACT_UPLOAD_MINIO 环境变量构造 storage.Backend，
+#     本声明登记"期望状态"到 storage_backends 表，作为未来 controller /
+#     启动引导读取声明的单一事实来源（声明优先于环境变量）。
+#
+# 删除方式：在 metadata.annotations 中加入 cloud.satellite.io/delete: "true"，
+#   apply-config 会删除 storage_backends 记录。
+#   ⚠ 仅删除声明登记：不会删除已落盘产物，也不会删除 MinIO Bucket。
+#
+# 注意：apply-config 按"一文件一资源"解析（不支持 --- 多文档）。
+#       同一存储后端逻辑名（spec.name）重复声明会互相覆盖（幂等收敛）。
+
+apiVersion: cloud.satellite.io/v1
+kind: StorageBackend
+metadata:
+  name: default
+  labels:
+    app.kubernetes.io/part-of: satellite-cloud
+spec:
+  # 存储后端逻辑名（唯一，如 default）。缺省取 metadata.name。
+  name: default
+  # 存储后端类型：nfs | minio（缺省 nfs）。
+  backend: nfs
+  # 遥感融合产物根目录（nfs 模式）。缺省 /data/satellite/remote-sensing。
+  rsArtifactRoot: /data/satellite/remote-sensing
+  # 目标检测产物根目录（nfs 模式）。缺省 /data/satellite/object-detection。
+  odArtifactRoot: /data/satellite/object-detection
+  # 任务完成后是否将产物上传 MinIO（D0 试点）。缺省 false。
+  artifactUploadMinio: false
+  # --- MinIO 连接（backend=minio 时必填，字段如下）---
+  # minio:
+  #   endpoint: minio:9000
+  #   accessKey: minioadmin
+  #   secretKey: minioadmin
+  #   bucket: satellite-artifacts   # 缺省 satellite-artifacts
+  #   prefix: ""                    # 对象键统一前缀，可选
+  #   useSSL: false                 # 是否 TLS，缺省 false

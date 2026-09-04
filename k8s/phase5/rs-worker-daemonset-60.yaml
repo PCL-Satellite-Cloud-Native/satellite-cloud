@@ -1,0 +1,237 @@
+# P5 60 节点：每 worker 节点 hostPath RS 数据（非共享 RWO PVC）。
+# remote-sensing-data PVC 仅 sat57/backend 使用；DS 须各节点 /export/remote-sensing-data。
+# 锚点验收前 mirror dem/models/input 到 sat1/sat21/sat41（见 CLUSTER120_SAT10_STEPS.md）。
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: rs-worker
+  labels:
+    app: rs-worker
+    satellite.io/phase: phase5-60node
+spec:
+  selector:
+    matchLabels:
+      app: rs-worker
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 10
+  template:
+    metadata:
+      labels:
+        app: rs-worker
+        satellite.io/metrics: "true"
+        satellite.io/phase: phase5-60node
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      serviceAccountName: rs-worker
+      # 显式 UID/GID，避免部分节点 containerd 解析镜像 USER appuser 时 mount callback "no users found"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: satellite.io/id
+                    operator: Exists
+      initContainers:
+        - name: init-remote-sensing-dirs
+          image: 192.168.10.238/library/alpine:3.19-amd64-r1
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mkdir -p /mnt/input /mnt/output_preprocessing /mnt/dem /scratch/output_preprocessing
+              chmod -R 0777 /mnt/input /mnt/output_preprocessing /mnt/dem /scratch/output_preprocessing
+          volumeMounts:
+            - name: remote-sensing-data
+              mountPath: /mnt
+            - name: remote-sensing-scratch-output
+              mountPath: /scratch/output_preprocessing
+      containers:
+        - name: rs-worker
+          image: 192.168.10.238/satellite/backend:cluster-120-latest
+          imagePullPolicy: Always
+          command: ["./rs-worker"]
+          ports:
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: SATELLITE_METRICS_PORT
+              value: "9090"
+            - name: SATELLITE_LOG_LEVEL
+              value: "info"
+            - name: SATELLITE_DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: host
+            - name: SATELLITE_DATABASE_PORT
+              value: "5432"
+            - name: SATELLITE_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: user
+            - name: SATELLITE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: password
+            - name: SATELLITE_DATABASE_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: dbname
+            - name: SATELLITE_REDIS_ADDR
+              value: "redis:6379"
+            - name: SATELLITE_REDIS_STREAM_RS
+              value: "rs.jobs"
+            - name: SATELLITE_REDIS_CONSUMER_GROUP
+              value: "rs-workers"
+            - name: SATELLITE_RS_WORKER_CONCURRENCY
+              value: "1"
+            - name: SATELLITE_RS_SATELLITE_AWARE_QUEUE
+              value: "true"
+            - name: SATELLITE_USE_INPROCESS_PIPELINE
+              value: "false"
+            # 60 节点：融合产物在锚点 hostPath；sat57 PVC 上的 od-worker 读不到 → 阶段 10 须在 rs-worker 本机跑
+            - name: SATELLITE_USE_OD_WORKER
+              value: "false"
+            # PAN RPC 使用 hostPath 时需进程内 pan_rpc（Argo 模板仍绑 RWO PVC，无法在锚点调度）
+            - name: SATELLITE_USE_ARGO_PAN_RPC
+              value: "false"
+            - name: SATELLITE_ARGO_REQUIRED_NODE_AFFINITY
+              value: "true"
+            - name: SATELLITE_ARGO_NAMESPACE
+              value: "gitlab-runner"
+            - name: SATELLITE_ARGO_PAN_RPC_TEMPLATE
+              value: "rs-pan-rpc-parallel"
+            - name: SATELLITE_RS_WORKFLOW_IMAGE
+              value: "192.168.10.238/satellite/backend:cluster-120-latest"
+            - name: SATELLITE_REMOTE_SENSING_ROOT
+              value: "/opt/remote-sensing"
+            - name: SATELLITE_REMOTE_SENSING_PYTHON
+              value: "/opt/remote-sensing/.venv/bin/python"
+            - name: SATELLITE_REMOTE_SENSING_DEM_FILE
+              value: "/opt/remote-sensing-data/dem/GMTED2010.jp2"
+            - name: SATELLITE_REMOTE_SENSING_DEVICE
+              value: "cpu"
+            - name: SATELLITE_REMOTE_SENSING_PERSIST_OUTPUT_DIR
+              value: "persist_output_preprocessing"
+            - name: SATELLITE_RS_TASK_PATH_ISOLATION
+              value: "true"
+            - name: SATELLITE_REMOTE_SENSING_STAGE_TIMEOUT_SECONDS
+              value: "1800"
+            - name: SATELLITE_REMOTE_SENSING_FUSION_STAGE_TIMEOUT_SECONDS
+              value: "1500"
+            - name: SATELLITE_REMOTE_SENSING_FUSION_BLOCK_SIZE
+              value: "1024"
+            - name: SATELLITE_REMOTE_SENSING_FUSION_GDAL_THREADS
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_FUSION_DIRECT_ENABLED
+              value: "true"
+            - name: SATELLITE_REMOTE_SENSING_STAGE_MAX_RETRIES
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_COMMAND_HEARTBEAT_SECONDS
+              value: "60"
+            - name: SATELLITE_REMOTE_SENSING_WORKER_CONCURRENCY
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_PARALLELISM
+              value: "4"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_CPU_THREADS
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_WARP_MEM_MB
+              value: "512"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_MAX_TOTAL_WARP_MEM_MB
+              value: "2048"
+            - name: SATELLITE_REMOTE_SENSING_PAN_RPC_RESAMPLE_ALG
+              value: "near"
+            - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_PARALLELISM
+              value: "3"
+            - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_MODE
+              value: "parallel"
+            - name: SATELLITE_REMOTE_SENSING_PANSHARPEN_GDAL_THREADS
+              value: "1"
+            - name: SATELLITE_REMOTE_SENSING_COREGISTER_MODE
+              value: "serial4"
+            - name: SATELLITE_REMOTE_SENSING_COREGISTER_GDAL_THREADS
+              value: "2"
+            - name: SATELLITE_OBJECT_DETECTION_ROOT
+              value: "/opt/object-detection"
+            - name: SATELLITE_OBJECT_DETECTION_RUNNER
+              value: "/opt/object-detection/yolov8s"
+            - name: SATELLITE_OBJECT_DETECTION_DEVICE
+              value: "cpu"
+            - name: SATELLITE_OBJECT_DETECTION_STAGE_TIMEOUT_SECONDS
+              value: "14400"
+            - name: SATELLITE_OBJECT_DETECTION_OUTPUT_SUBDIR
+              value: "output_detection"
+            # D0：预览/检测图上传 MinIO，供 backend（sat57）Open 给前端
+            - name: SATELLITE_STORAGE_BACKEND
+              value: "nfs"
+            - name: SATELLITE_ARTIFACT_UPLOAD_MINIO
+              value: "true"
+            - name: SATELLITE_MINIO_ENDPOINT
+              value: "minio:9000"
+            - name: SATELLITE_MINIO_BUCKET
+              value: "satellite-artifacts"
+            - name: SATELLITE_MINIO_USE_SSL
+              value: "false"
+            - name: SATELLITE_MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: SATELLITE_MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+              ephemeral-storage: "10Gi"
+            limits:
+              memory: "8Gi"
+              cpu: "4000m"
+              ephemeral-storage: "48Gi"
+          volumeMounts:
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing/input
+              subPath: input
+            - name: remote-sensing-scratch-output
+              mountPath: /opt/remote-sensing/output_preprocessing
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing/persist_output_preprocessing
+              subPath: output_preprocessing
+            - name: remote-sensing-data
+              mountPath: /opt/remote-sensing-data/dem
+              subPath: dem
+            - name: remote-sensing-data
+              mountPath: /opt/object-detection/output_detection
+              subPath: object_detection_output
+            - name: remote-sensing-data
+              mountPath: /opt/object-detection/yolov8m-obb.onnx
+              subPath: models/yolov8m-obb.onnx
+      volumes:
+        - name: remote-sensing-data
+          hostPath:
+            path: /export/remote-sensing-data
+            type: DirectoryOrCreate
+        - name: remote-sensing-scratch-output
+          emptyDir:
+            sizeLimit: "40Gi"

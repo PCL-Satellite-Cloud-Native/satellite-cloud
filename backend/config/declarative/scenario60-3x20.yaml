@@ -1,0 +1,67 @@
+# ====================================================================================
+# SatelliteConstellation 星座场景配置
+# 清单示例：Scenario60（3 面 × 20 颗 = 60 颗）
+# 对应 migration seed 000010_scenario60_3x20_seed 的声明式等价物。
+#
+# 未来 CRD: apiVersion: cloud.satellite.io/v1, kind: SatelliteConstellation
+# 阶段 1：由 apply-config 读取并幂等同步到 PostgreSQL。
+# 同步命令（在 backend 目录执行）：
+#   go run ./cmd/apply-config -config-dir config/declarative        # 正式同步
+#   go run ./cmd/apply-config -config-dir config/declarative -dry-run  # 只预览不落库
+# ====================================================================================
+
+# --- 组/版本：对应未来 CRD 的 apiVersion（声明式清单的 schema 版本号） ---
+apiVersion: cloud.satellite.io/v1
+# --- 资源类型：声明这份清单描述的是一个"卫星星座" ---
+kind: SatelliteConstellation
+metadata:
+  # 清单唯一标识（对应未来 CR 的 metadata.name，仅用于区分清单，不写入数据库）
+  name: scenario60-3x20
+  # K8s 风格标签：标记资源归属项目与组件类型
+  labels:
+    app.kubernetes.io/part-of: satellite-cloud     # 所属项目
+    app.kubernetes.io/component: constellation     # 资源组件类型
+spec:
+  # ------------------------------------------------------------------
+  # 场景元信息（对应 scenarios 表一行；同步时按 name 幂等 upsert）
+  # ------------------------------------------------------------------
+  scenario:
+    # 场景名称 = scenarios.name，是同步的"唯一匹配键"：
+    # 数据库中存在同名场景则更新字段，不存在则新建一行
+    name: Scenario60_3x20
+    # 历元（场景的时间基准，RFC3339 格式）
+    epoch: "2025-01-01T00:00:00Z"
+    # 仿真时间窗开始时间（RFC3339 格式）
+    startTime: "2025-01-01T00:00:00Z"
+    # 仿真时间窗结束时间（RFC3339 格式）
+    endTime: "2025-01-31T00:00:00Z"
+    # 轨道高度（km）：卫星轨道半长轴 = 地球赤道半径 6378.137 + 高度
+    altKm: 550
+    # 轨道倾角（度）
+    incDeg: 53
+    # 星座面数：3 面，RAAN = (面序号-1) × 360/3 = 每面递增 120°
+    nPlanes: 3
+    # 每面卫星数：20 颗，真近点角 = (槽位-1) × 360/20 = 每槽递增 18°
+    nSatsPerPlane: 20
+    # 传感器/载荷配置（JSON 对象，写入 scenarios.sensor_config jsonb 列）
+    sensorConfig:
+      type: panchromatic      # 载荷类型：全色
+      resolutionM: 1          # 地面分辨率（米）
+  # ------------------------------------------------------------------
+  # 卫星声明方式（satellites 段）
+  #   mode=generated：由构型参数确定性生成 Walker 星座（与 seed 000010 规律一致）
+  #   mode=inline：在 list 中逐颗显式列出（适合少量卫星）
+  # ------------------------------------------------------------------
+  satellites:
+    mode: generated           # 卫星生成模式：按场景构型参数自动推导
+  # ------------------------------------------------------------------
+  # 可选：拓扑数据源声明（路径相对 backend 目录，同步时幂等 delete+insert）
+  # 不需要同步拓扑时可整段删除
+  # ------------------------------------------------------------------
+  topology:
+    # 星间时延矩阵 CSV 文件路径
+    delayMatrixCsv: ../frontend/public/data/delay_60x60.csv
+    # T0 时刻星历目录（Sat_*_ephem_ext.csv 文件）
+    t0CsvDir: ../frontend/public/data/ephem_60
+    # 路由拓扑目录（r??????_net_qos.csv 文件）
+    routerCsvDir: ../frontend/public/data/router

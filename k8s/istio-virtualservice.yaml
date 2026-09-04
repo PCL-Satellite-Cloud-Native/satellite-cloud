@@ -1,0 +1,40 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: satellite-virtualservice
+  namespace: istio-system
+spec:
+  hosts:
+    # 通过 192.168.*.*:30080 访问时，Host 通常为 IP 或空，这里用通配符适配所有情况
+    - "*"
+  gateways:
+    - satellite-gateway
+  http:
+    # 遥感任务 SSE 长连接，显式关闭超时
+    - match:
+        - uri:
+            prefix: "/api/remote-sensing/tasks/"
+      timeout: 24h
+      route:
+        - destination:
+            host: satellite-backend.gitlab-runner.svc.cluster.local
+            port:
+              number: 8080
+    # 后端 API 路由：/api 前缀
+    - match:
+        - uri:
+            prefix: "/api"
+      route:
+        - destination:
+            host: satellite-backend.gitlab-runner.svc.cluster.local
+            port:
+              number: 8080
+    # 前端路由：其余路径都走前端静态站点
+    - match:
+        - uri:
+            prefix: "/"
+      route:
+        - destination:
+            host: satellite-frontend.gitlab-runner.svc.cluster.local
+            port:
+              number: 80

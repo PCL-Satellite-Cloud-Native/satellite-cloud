@@ -1,0 +1,28 @@
+# 集群级 PV — 须 cluster-admin **一次性** apply（勿放入 kustomization / CI）
+#   kubectl apply -f k8s/phase6/minio-pv.yaml
+#
+# worker22 上先建目录（vdb 2T 盘内）：
+#   sudo mkdir -p /export/remote-sensing-data/minio-data
+#   sudo chmod 0777 /export/remote-sensing-data/minio-data
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: minio-data-pv
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /export/remote-sensing-data/minio-data
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - k8s-worker22

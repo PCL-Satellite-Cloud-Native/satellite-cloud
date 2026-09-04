@@ -1,0 +1,53 @@
+# workflow-controller 需在 gitlab-runner 创建 step Pod，需 ClusterRole（Pilot 集群级安装）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argo-workflow-controller
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec", "pods/log"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "watch", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["create", "delete", "get"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - workflows
+      - workflows/finalizers
+      - workflowtasksets
+      - workflowtasksets/finalizers
+      - workflowartifactgctasks
+    verbs: ["get", "list", "watch", "update", "patch", "delete", "create"]
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - workflowtemplates
+      - workflowtemplates/finalizers
+      - workflowtaskresults
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - workflowtasksets/status
+      - workflowartifactgctasks/status
+    verbs: ["patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argo-workflow-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argo-workflow-controller
+subjects:
+  - kind: ServiceAccount
+    name: argo
+    namespace: argo

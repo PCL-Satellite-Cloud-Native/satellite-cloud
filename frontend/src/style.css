@@ -1,0 +1,59 @@
+/* 1. 全局重置 */
+:root {
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  
+  /* 设置默认文字颜色为深灰，背景为浅灰（而不是黑色） */
+  color: #2c3e50;
+  background-color: #f0f2f5; 
+
+  /* 优化字体渲染 */
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 2. 核心修正：移除 Flex 居中，确保占满全屏 */
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  min-height: 100vh;
+  display: block; /* ⚠️ 重点：原先是 flex，这里改为 block */
+  overflow-x: hidden; /* 防止横向滚动条 */
+}
+
+/* 3. 核心修正：移除 App 容器的宽度限制 */
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  max-width: none; /* ⚠️ 重点：移除 max-width: 1280px */
+  text-align: left; /* ⚠️ 重点：恢复默认左对齐 */
+}
+
+/* 4. 基础标签样式重置 */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: 600;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+ul, li {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* 5. 盒模型修正：让 padding 不会撑大元素 */
+*, *::before, *::after {
+  box-sizing: border-box;
+}

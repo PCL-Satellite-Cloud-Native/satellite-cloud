@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: satellite-control
+  labels:
+    satellite.io/domain: control
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: satellite-compute-rs
+  labels:
+    satellite.io/domain: compute-rs
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: satellite-compute-od
+  labels:
+    satellite.io/domain: compute-od

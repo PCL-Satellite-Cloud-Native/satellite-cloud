@@ -1,0 +1,46 @@
+# 任务队列声明式清单示例 1/2：遥感流水线队列（kind: JobQueue，队列基础设施 CRD 化）。
+# 作用：把 Redis Stream 任务队列的"期望状态"（stream / 消费者组 / 并发 / 模式 / Redis 地址）
+#       收敛为声明式资源，由 apply-config 幂等同步到 job_queues 表；
+#       当 spec.redisAddr 非空且 Redis 可达时，同步过程会幂等确保
+#       Redis 中 Stream + 消费者组存在（XGroupCreateMkStream，BUSYGROUP 视为已存在）。
+#
+# 与默认队列的关系：
+#   - 迁移 000011_job_queues.up.sql 已种入 rs / od 两条默认声明
+#     （rs.jobs/rs-workers、od.jobs/od-workers），与本示例 spec 一致，无需重复提交；
+#     如需调整并发/模式/Redis 地址，按本示例覆盖同步即可。
+#   - 若 spec.redisAddr 留空：仅登记声明到 job_queues 表，
+#     队列仍由 rs-worker 启动时按环境变量幂等创建（兼容既有部署）。
+#
+# 删除方式：在 metadata.annotations 中加入 cloud.satellite.io/delete: "true"，
+#   apply-config 会删除 job_queues 记录，并在 redisAddr 可达时删除 Redis Stream。
+#   ⚠ 删除前请确认该队列没有待消费任务（最好先停掉对应 worker）。
+#
+# 注意：apply-config 按"一文件一资源"解析（不支持 --- 多文档），
+#       目标检测队列请用 job-queue-example-od.yaml。
+
+apiVersion: cloud.satellite.io/v1
+kind: JobQueue
+metadata:
+  name: rs
+  labels:
+    app.kubernetes.io/part-of: satellite-cloud
+spec:
+  # 队列逻辑名（唯一）。缺省取 metadata.name。
+  name: rs
+  # Redis Stream 名（必填）。默认 rs.jobs。
+  stream: rs.jobs
+  # 消费者组名（必填）。默认 rs-workers。
+  consumerGroup: rs-workers
+  # worker 消费者名前缀。缺省 {name}-worker（即 rs-worker）。
+  consumerPrefix: rs-worker
+  # 并发消费数（>=1）。缺省 1。
+  concurrency: 2
+  # 队列模式：external（独立 worker）/ inprocess（内进程）。缺省 external。
+  mode: external
+  # Redis 地址。非空时 apply-config 幂等确保 Stream + 消费者组存在；为空仅登记声明。
+  # 本地整体测试环境无 Redis，此处留空仅登记声明；生产环境填写实际地址。
+  redisAddr: ""
+  # Stream 最大长度（0 不限），仅对 redisAddr 非空的队列生效。
+  maxLen: 100000
+  # 启用开关。缺省 true。
+  enabled: true

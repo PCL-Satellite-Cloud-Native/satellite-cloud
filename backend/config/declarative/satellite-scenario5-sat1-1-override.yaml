@@ -1,0 +1,29 @@
+# ====================================================================================
+# Satellite CR 示例：覆盖单颗卫星的轨道参数（星座管理 CRD 化）
+#
+# 场景：把 Scenario5_full_36x22 中 sat-1-1 的轨道高度改为 600km。
+# 语义：只声明要修改的字段；未声明的字段（raan/ta/inc/ecc...）更新时保留现值。
+# 适用场景：参数微调、故障星替换、单星特化。
+# ====================================================================================
+
+# --- 组/版本：对应未来 CRD 的 apiVersion ---
+apiVersion: cloud.satellite.io/v1
+# --- 资源类型：单颗卫星 ---
+kind: Satellite
+metadata:
+  # 清单唯一标识（对应未来 CR 的 metadata.name）
+  name: scenario5-sat1-1-alt-override
+  # K8s 风格标签
+  labels:
+    app.kubernetes.io/part-of: satellite-cloud     # 所属项目
+    app.kubernetes.io/component: satellite         # 资源组件类型：卫星
+spec:
+  # 所属场景名（必须已存在：由 SatelliteConstellation 清单创建场景）
+  scenarioName: Scenario5_full_36x22
+  # 目标卫星标识：sat-{plane}-{slot}
+  satId: sat-1-1
+  # 显式声明轨道高度 600km；sma 自动换算为 6378.137 + 600 = 6978.137
+  # （altKm 与 smaKm 只声明一个时，另一个自动按地球赤道半径换算）
+  altKm: 600
+  # 其余轨道根数（stkName/ecc/incDeg/raanDeg/argpDeg/taDeg）未声明：
+  # 卫星已存在 → 保留数据库现值（sat-1-1 原值 raan=0/ta=0/inc=53）

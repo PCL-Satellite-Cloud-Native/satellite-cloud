@@ -1,0 +1,127 @@
+# PAN RPC 4×1 并行（P3-04b 生产版）— 无 init-dirs；persist workers + merge；4 CPU step
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: rs-pan-rpc-parallel
+  namespace: gitlab-runner
+  labels:
+    satellite.io/phase: phase3-pilot
+spec:
+  serviceAccountName: argo-workflow
+  entrypoint: pan-rpc-parallel
+  arguments:
+    parameters:
+      - name: task_id
+      - name: file_prefix
+      - name: rs_image
+        value: 192.168.10.238/satellite/backend:latest
+      - name: cpu_threads
+        value: "1"
+      - name: warp_mem_mb
+        value: "512"
+      - name: resample_alg
+        value: near
+      - name: task_path_prefix
+        value: ""
+  templates:
+    - name: pan-rpc-step
+      inputs:
+        parameters:
+          - name: area_indexes
+          - name: group_id
+          - name: file_prefix
+          - name: rs_image
+          - name: cpu_threads
+          - name: warp_mem_mb
+          - name: resample_alg
+      container:
+        image: "{{inputs.parameters.rs_image}}"
+        imagePullPolicy: IfNotPresent
+        workingDir: /opt/remote-sensing
+        command: [/opt/remote-sensing/.venv/bin/python]
+        args:
+          - pan_rpc_warp_quarters.py
+          - --file_prefix
+          - "{{inputs.parameters.file_prefix}}"
+          - --input_dir
+          - "persist_output_preprocessing/{{workflow.parameters.task_path_prefix}}pan_rad_toa"
+          - --output_dir
+          - "persist_output_preprocessing/{{workflow.parameters.task_path_prefix}}pan_warp_quarters/workers/group{{inputs.parameters.group_id}}"
+          - --area_indexes
+          - "{{inputs.parameters.area_indexes}}"
+          - --dem_file
+          - /opt/remote-sensing-data/dem/GMTED2010.jp2
+          - --cpu_threads
+          - "{{inputs.parameters.cpu_threads}}"
+          - --warp_mem_mb
+          - "{{inputs.parameters.warp_mem_mb}}"
+          - --resample_alg
+          - "{{inputs.parameters.resample_alg}}"
+        resources:
+          requests:
+            memory: 2Gi
+            cpu: "1000m"
+          limits:
+            memory: 4Gi
+            cpu: "4000m"
+        volumeMounts: &rs_volume_mounts
+          - name: remote-sensing-data
+            mountPath: /opt/remote-sensing/input
+            subPath: input
+          - name: remote-sensing-data
+            mountPath: /opt/remote-sensing/persist_output_preprocessing
+            subPath: output_preprocessing
+          - name: remote-sensing-data
+            mountPath: /opt/remote-sensing-data/dem
+            subPath: dem
+      volumes: &rs_volumes
+        - name: remote-sensing-data
+          persistentVolumeClaim:
+            claimName: remote-sensing-data
+
+    - name: pan-rpc-parallel
+      steps:
+        - - name: area1
+            template: pan-rpc-step
+            arguments:
+              parameters:
+                - { name: area_indexes, value: "1" }
+                - { name: group_id, value: "1" }
+                - { name: file_prefix, value: "{{workflow.parameters.file_prefix}}" }
+                - { name: rs_image, value: "{{workflow.parameters.rs_image}}" }
+                - { name: cpu_threads, value: "{{workflow.parameters.cpu_threads}}" }
+                - { name: warp_mem_mb, value: "{{workflow.parameters.warp_mem_mb}}" }
+                - { name: resample_alg, value: "{{workflow.parameters.resample_alg}}" }
+          - name: area2
+            template: pan-rpc-step
+            arguments:
+              parameters:
+                - { name: area_indexes, value: "2" }
+                - { name: group_id, value: "2" }
+                - { name: file_prefix, value: "{{workflow.parameters.file_prefix}}" }
+                - { name: rs_image, value: "{{workflow.parameters.rs_image}}" }
+                - { name: cpu_threads, value: "{{workflow.parameters.cpu_threads}}" }
+                - { name: warp_mem_mb, value: "{{workflow.parameters.warp_mem_mb}}" }
+                - { name: resample_alg, value: "{{workflow.parameters.resample_alg}}" }
+          - name: area3
+            template: pan-rpc-step
+            arguments:
+              parameters:
+                - { name: area_indexes, value: "3" }
+                - { name: group_id, value: "3" }
+                - { name: file_prefix, value: "{{workflow.parameters.file_prefix}}" }
+                - { name: rs_image, value: "{{workflow.parameters.rs_image}}" }
+                - { name: cpu_threads, value: "{{workflow.parameters.cpu_threads}}" }
+                - { name: warp_mem_mb, value: "{{workflow.parameters.warp_mem_mb}}" }
+                - { name: resample_alg, value: "{{workflow.parameters.resample_alg}}" }
+          - name: area4
+            template: pan-rpc-step
+            arguments:
+              parameters:
+                - { name: area_indexes, value: "4" }
+                - { name: group_id, value: "4" }
+                - { name: file_prefix, value: "{{workflow.parameters.file_prefix}}" }
+                - { name: rs_image, value: "{{workflow.parameters.rs_image}}" }
+                - { name: cpu_threads, value: "{{workflow.parameters.cpu_threads}}" }
+                - { name: warp_mem_mb, value: "{{workflow.parameters.warp_mem_mb}}" }
+                - { name: resample_alg, value: "{{workflow.parameters.resample_alg}}" }

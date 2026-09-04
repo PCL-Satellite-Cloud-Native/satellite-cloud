@@ -1,0 +1,98 @@
+# 60 节点拓扑导入（MinIO → emptyDir → import_topology；不依赖 sat57 hostPath）。
+# 用于 sat57 出现 container exec I/O error 或 hostPath 不可达时。
+#
+#   kubectl -n gitlab-runner delete job import-topology-60 --ignore-not-found
+#   kubectl apply -f k8s/backend/import-topology-job-60-minio.yaml
+#   kubectl -n gitlab-runner logs -f job/import-topology-60 -c import
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: import-topology-60
+  namespace: gitlab-runner
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values:
+                      - sat57
+      initContainers:
+        - name: fetch-topology
+          image: 192.168.10.238/library/mc:RELEASE.2024-01-16T16-06-34Z-cpuv1
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: minio-credentials
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -ex
+              for i in $(seq 1 30); do
+                mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && break
+                echo "wait minio... $i/30"; sleep 5
+              done
+              mc mirror --overwrite local/satellite-inputs/topology/ephem_60/ /work/ephem_60/
+              mc cp local/satellite-inputs/topology/delay_60x60.csv /work/delay_60x60.csv
+              test "$(ls /work/ephem_60 | wc -l)" -eq 60
+          volumeMounts:
+            - name: topology-work
+              mountPath: /work
+      containers:
+        - name: import
+          image: 192.168.10.238/satellite/backend:cluster-120-latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -ex
+              SCENARIO="${SATELLITE_TOPOLOGY_SCENARIO:-Scenario60_3x20}"
+              echo "import delay for ${SCENARIO}"
+              ./import_topology -scenario "$SCENARIO" -mode=delay -file /data/topology/delay_60x60.csv
+              echo "import t0 ephem for ${SCENARIO}"
+              ./import_topology -scenario "$SCENARIO" -mode=t0 -dir /data/topology/ephem_60
+              echo "done (no router import for 60-node)"
+          env:
+            - name: SATELLITE_DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: host
+            - name: SATELLITE_DATABASE_PORT
+              value: "5432"
+            - name: SATELLITE_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: user
+            - name: SATELLITE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: password
+            - name: SATELLITE_DATABASE_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: satellite-db-secret
+                  key: dbname
+            - name: SATELLITE_TOPOLOGY_SCENARIO
+              value: Scenario60_3x20
+          volumeMounts:
+            - name: topology-work
+              mountPath: /data/topology
+      volumes:
+        - name: topology-work
+          emptyDir: {}

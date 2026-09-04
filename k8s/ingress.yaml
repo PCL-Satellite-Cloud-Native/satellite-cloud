@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: satellite-ingress
+  namespace: gitlab-runner
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # SSE 场景需要禁用代理缓冲，否则前端会感知为“非实时”
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  rules:
+  - host: satellite.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: satellite-api
+            port:
+              number: 8080
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: satellite-frontend
+            port:
+              number: 80
+  # TLS 配置（可选）
+  # tls:
+  # - hosts:
+  #   - satellite.example.com
+  #   secretName: satellite-tls

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-controller-configmap
+  namespace: argo
+# v3.5+：ConfigMap 勿用 containerRuntimeExecutor / workflowNamespaces（已移除）
+# executor 镜像由 Deployment --executor-image 指定；Pilot 工作流 namespace 用 --managed-namespace
+data: {}

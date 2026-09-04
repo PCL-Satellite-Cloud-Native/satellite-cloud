@@ -1,0 +1,32 @@
+# YOLOv8 目标检测任务声明式清单示例（kind: ObjectDetectionTask，遥感业务 CRD 化）。
+#
+# 语义：声明"期望存在这样一次目标检测任务"（输入为遥感流水线的融合产物）。
+#   - 同步幂等：同名任务已存在时，pending 状态按 spec 收敛，
+#     running/completed/failed 状态不改动运行时数据（仅跳过）。
+#   - 执行：任务创建为 pending 后，由后端 ObjectDetectionService 启动时的
+#     bootstrap 机制接管执行（本同步只声明期望，不直接入队；
+#     与 REST 入口 POST /api/object-detection/tasks 的"创建即执行"互补）。
+#   - 删除：在 metadata.annotations 标注 cloud.satellite.io/delete: "true"
+#     后重新 apply-config；running 状态的任务拒绝删除。
+#
+# 使用（在 satellite-cloud/backend 目录下执行）：
+#   export SATELLITE_DATABASE_URL="postgres://user:pass@localhost:5432/satellite_db?sslmode=disable"
+#   go run ./cmd/apply-config -config-dir config/declarative          # 创建
+#   go run ./cmd/apply-config -config-dir config/declarative -dry-run # 预览
+#   # 删除：取消下面 annotations 的注释后再次 apply-config
+apiVersion: cloud.satellite.io/v1
+kind: ObjectDetectionTask
+metadata:
+  name: od-task-demo
+  labels:
+    app.kubernetes.io/part-of: satellite-cloud
+    app.kubernetes.io/component: object-detection
+  # annotations:
+  #   cloud.satellite.io/delete: "true"
+spec:
+  # 必填：待检测影像（遥感流水线融合产物 .dat）的绝对路径
+  inputPath: /nfs/data/fusion/20251215_083000-MSS1-fusion.dat
+  # 可选：目标类别，逗号分隔（缺省按后端 SATELLITE_OBJECT_DETECTION_DEFAULT_CLASSES）
+  classes: airplane,ship
+  # 可选：是否绘制检测标注框（缺省 false）
+  drawLabels: false

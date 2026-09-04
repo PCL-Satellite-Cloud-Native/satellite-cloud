@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: satellite-system
+  labels:
+    name: satellite-system
+    app: satellite

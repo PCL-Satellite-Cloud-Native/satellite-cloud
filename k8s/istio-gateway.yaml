@@ -1,0 +1,18 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: satellite-gateway
+  namespace: istio-system
+spec:
+  # 复用现有 istio-ingressgateway（istio-system 命名空间）的网关实例
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      # 目前无域名，直接使用 192.168 网段 IP + NodePort 访问，hosts 先用通配符
+      hosts:
+        - "*"
+

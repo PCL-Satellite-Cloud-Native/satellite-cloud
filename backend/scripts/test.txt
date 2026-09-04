@@ -1,0 +1,73 @@
+﻿================================================================================
+setup-local.ps1 —— 本地环境一键管理脚本
+================================================================================
+
+一、功能作用
+--------------------------------------------------------------------------------
+用于管理 PCL-Satellite-Cloud 本地后端开发环境，提供"一键还原测试前状态"
+能力。脚本统一负责 PostgreSQL 与后端 server 的启停、数据库清理/重建、
+快照导出与还原，并自动进行健康检查。
+
+二、环境构成说明（哪些会被还原、哪些不用还原）
+--------------------------------------------------------------------------------
+本地环境由两部分组成：
+
+1. 工具链（无需还原，天然存在）
+   - Go 1.25.7：%USERPROFILE%\go-toolchain
+   - PostgreSQL 16.4：%USERPROFILE%\pg-16
+   - 编译产物：backend\bin\server.exe 等
+
+2. 数据库 satellite_db（satellite_user@localhost:5432）
+   - 基线数据（可确定性自动重生）：
+       scenarios 3 条、satellites 855 条、
+       router_nodes 15 条、router_links 59 条
+     由 server 启动时自动生成（DB migration seed + CSV 自动导入），
+     因此删库重建后基线也会 100% 重生。
+   - 测试脏数据（一键还原的目标）：
+       remote_sensing_tasks 及级联的 remote_sensing_task_stages / logs / artifacts
+     删除任务行即可，子表外键为 ON DELETE CASCADE，自动级联清理。
+
+三、四种模式
+--------------------------------------------------------------------------------
+Reset      （默认）仅清理测试产生的脏数据（remote_sensing_tasks 等），
+           保留基线数据。适合日常测试后还原。
+FullReset  重建数据库（dropdb + createdb）+ 重启 server，
+           回到与首次初始化完全一致的全新基线。
+Snapshot   导出当前数据库为快照文件（默认 ./snapshots/satellite_db_<时间戳>.sql）。
+Restore    从快照文件还原数据库 + 重启 server（最完整的还原方式）。
+
+四、使用方式
+--------------------------------------------------------------------------------
+cd backend\scripts
+
+# 1. 日常测试后回到干净基线（推荐）
+powershell -ExecutionPolicy Bypass -File setup-local.ps1
+
+# 2. 彻底重建（连数据库一起删除重建，基线自动重生）
+powershell -ExecutionPolicy Bypass -File setup-local.ps1 -Mode FullReset
+
+# 3. 测试前先存快照，测试后一键还原
+powershell -ExecutionPolicy Bypass -File setup-local.ps1 -Mode Snapshot -SnapshotPath .\snapshots\before_test.sql
+powershell -ExecutionPolicy Bypass -File setup-local.ps1 -Mode Restore -SnapshotPath .\snapshots\before_test.sql
+
+# 4. 可选参数
+#    -NoServer          只操作数据库，不启停 server
+#    -SkipHealth        跳过健康检查
+#    -PgBin <path>      PG 工具目录（默认 %USERPROFILE%\pg-16\pgsql\bin）
+#    -ServerBin <path>  server.exe 路径（默认 backend\bin\server.exe）
+#    -BackendDir <path> backend 工作目录（默认脚本上一级）
+
+五、实测验证结果（2026-08-21）
+--------------------------------------------------------------------------------
+Reset      通过：测试任务及其 10 条 stages 被清空，基线保留（3/855/15/59）。
+FullReset  通过：数据库重建后基线完全自动重生（3/855/15/59/0 任务）。
+Snapshot   通过：成功导出 clean_baseline.sql。
+Restore    通过：测试任务被清除，基线数据完整还原。
+
+六、注意事项
+--------------------------------------------------------------------------------
+1. 脚本要求 PostgreSQL 已启动（pg_ctl start），否则会提示先启动。
+2. 数据库已配置为 trust 免密，脚本无需处理密码。
+3. satellite_user 已被授予 CREATEDB 权限，脚本可独立完成库的删除与重建。
+4. 脚本文件需保持 UTF-8 with BOM 编码，否则 PowerShell 5.1 中文会乱码。
+================================================================================

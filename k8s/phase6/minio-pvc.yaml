@@ -1,0 +1,14 @@
+# 命名空间 PVC — 可随 k8s/phase6/ kustomization / CI apply
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: gitlab-runner
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
+  volumeName: minio-data-pv

@@ -1,0 +1,255 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
+
+	"satellite-cloud/backend/internal/config"
+	"satellite-cloud/backend/internal/k8snode"
+	"satellite-cloud/backend/internal/metrics"
+	"satellite-cloud/backend/internal/queue"
+	"satellite-cloud/backend/internal/remotesensing"
+	"satellite-cloud/backend/pkg/database"
+	"satellite-cloud/backend/pkg/logger"
+)
+
+func main() {
+	cfg := config.Load()
+	zapLogger := logger.New(cfg.Log.Level, cfg.Log.Output)
+
+	zapLogger.Info("rs-worker starting",
+		zap.String("redis_addr", cfg.Queue.RedisAddr),
+		zap.String("stream_rs", cfg.Queue.StreamRS),
+		zap.String("consumer_group", cfg.Queue.ConsumerGroup),
+		zap.Int("concurrency", cfg.Queue.RSWorkerConcurrency),
+	)
+
+	db, err := database.NewPostgres(cfg.Database)
+	if err != nil {
+		zapLogger.Fatal("Failed to connect to database", zap.Error(err))
+	}
+
+	rsSvc := remotesensing.NewRemoteSensingService(
+		db, zapLogger, cfg.RemoteSensing, cfg.ObjectDetection, cfg.Argo, cfg.Storage,
+		remotesensing.WorkerOptions(cfg.Queue),
+	)
+
+	consumerName := queue.DefaultConsumerName()
+	qClient, err := queue.NewClient(cfg.Queue.RedisAddr, cfg.Queue.StreamRS, cfg.Queue.ConsumerGroup, consumerName)
+	if err != nil {
+		zapLogger.Fatal("Failed to connect redis", zap.Error(err))
+	}
+	defer qClient.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	metrics.StartServer(ctx, zapLogger)
+	go metrics.RunQueueCollector(ctx, cfg.Queue, zapLogger)
+
+	if err := qClient.EnsureRSConsumerGroup(ctx); err != nil {
+		zapLogger.Fatal("Failed to ensure consumer group", zap.Error(err))
+	}
+	zapLogger.Info("Redis consumer group ready",
+		zap.String("stream", cfg.Queue.StreamRS),
+		zap.String("group", cfg.Queue.ConsumerGroup),
+		zap.String("consumer", consumerName),
+	)
+
+	rsSvc.BootstrapStaleRunningTasks(ctx)
+
+	localPlacement := k8snode.CurrentPlacement(ctx)
+	zapLogger.Info("rs-worker local placement",
+		zap.String("node", localPlacement.NodeName),
+		zap.String("executed_sat_id", localPlacement.ExecutedSatID),
+		zap.Bool("satellite_aware_queue", cfg.Queue.SatelliteAwareQueue),
+	)
+
+	concurrency := cfg.Queue.RSWorkerConcurrency
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var inFlight sync.Map // streamID -> struct{}，避免 reclaim 对正在跑的 job 反复「忙」刷屏
+
+	processJob := func(streamID string, job queue.RSJobPayload) {
+		if ok, _ := rsSvc.ShouldProcessRSJob(ctx, job, localPlacement.ExecutedSatID); !ok {
+			// 不 ACK、不 re-XADD：留 PEL，由本星 worker XPENDING+XCLAIM（避免 stream 风暴与 XAUTOCLAIM 抽奖）
+			_ = qClient.SkipRSJobForOtherConsumer(ctx, streamID, job)
+			return
+		}
+		if _, loaded := inFlight.LoadOrStore(streamID, struct{}{}); loaded {
+			return
+		}
+		// 非阻塞：避免 reclaim 循环卡在 sem 上，导致其它本星 pending 永远无法 XCLAIM
+		select {
+		case sem <- struct{}{}:
+		default:
+			inFlight.Delete(streamID)
+			zapLogger.Info("rs-worker 忙，job 留 PEL 稍后处理",
+				zap.Uint("task_id", job.TaskID),
+				zap.String("stream_id", streamID),
+			)
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				inFlight.Delete(streamID)
+				<-sem
+				wg.Done()
+			}()
+			zapLogger.Info("rs-worker 开始处理任务",
+				zap.Uint("task_id", job.TaskID),
+				zap.Uint("satellite_id", job.SatelliteID),
+				zap.String("node", os.Getenv("NODE_NAME")),
+				zap.String("stream_id", streamID),
+			)
+			rsSvc.RunPipelineFromJob(context.Background(), job)
+			if ackErr := qClient.AckRSJob(ctx, streamID); ackErr != nil {
+				zapLogger.Error("XAck failed", zap.String("stream_id", streamID), zap.Error(ackErr))
+			}
+		}()
+	}
+
+	go func() {
+		reclaimMinIdle := 2 * time.Minute
+		if cfg.Queue.SatelliteAwareQueue {
+			reclaimMinIdle = 30 * time.Second
+		}
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if cfg.Queue.SatelliteAwareQueue {
+					// 仅本星 XCLAIM：避免 50+ worker 全员 XAUTOCLAIM 把 idle 永久清零
+					pending, err := qClient.ListPendingRSJobs(ctx, 50)
+					if err != nil {
+						zapLogger.Warn("ListPendingRSJobs failed", zap.Error(err))
+						continue
+					}
+					for _, p := range pending {
+						ownedBySelf := p.Consumer == qClient.ConsumerName()
+						if !ownedBySelf && p.Idle < reclaimMinIdle {
+							continue
+						}
+						raw, err := qClient.ReadRSJobMessages(ctx, p.ID)
+						if err != nil || len(raw) == 0 {
+							continue
+						}
+						job, parseErr := queue.ParseRSJobMessage(raw[0].Values)
+						if parseErr != nil {
+							zapLogger.Error("invalid pending rs.jobs payload",
+								zap.String("stream_id", p.ID),
+								zap.Error(parseErr),
+							)
+							_ = qClient.AckRSJob(ctx, p.ID)
+							continue
+						}
+						if ok, _ := rsSvc.MatchRSJob(ctx, job, localPlacement.ExecutedSatID); !ok {
+							continue
+						}
+						minIdle := reclaimMinIdle
+						if ownedBySelf {
+							minIdle = 0
+						}
+						claimed, err := qClient.ClaimRSJobs(ctx, minIdle, p.ID)
+						if err != nil {
+							zapLogger.Warn("ClaimRSJobs failed",
+								zap.String("stream_id", p.ID),
+								zap.Error(err),
+							)
+							continue
+						}
+						for _, msg := range claimed {
+							zapLogger.Info("本星认领 pending Redis job",
+								zap.Uint("task_id", job.TaskID),
+								zap.String("stream_id", msg.ID),
+								zap.String("from_consumer", p.Consumer),
+							)
+							processJob(msg.ID, job)
+						}
+					}
+					continue
+				}
+				msgs, err := qClient.ReclaimStaleRSJobs(ctx, reclaimMinIdle, 10)
+				if err != nil {
+					zapLogger.Warn("ReclaimStaleRSJobs failed", zap.Error(err))
+					continue
+				}
+				for _, msg := range msgs {
+					job, parseErr := queue.ParseRSJobMessage(msg.Values)
+					if parseErr != nil {
+						zapLogger.Error("invalid reclaimed rs.jobs payload",
+							zap.String("stream_id", msg.ID),
+							zap.Error(parseErr),
+						)
+						_ = qClient.AckRSJob(ctx, msg.ID)
+						continue
+					}
+					zapLogger.Info("回收 orphan Redis job",
+						zap.Uint("task_id", job.TaskID),
+						zap.String("stream_id", msg.ID),
+					)
+					processJob(msg.ID, job)
+				}
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			streams, err := qClient.ReadRSJob(ctx, 5*time.Second)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				if errors.Is(err, redis.Nil) {
+					continue
+				}
+				zapLogger.Warn("XReadGroup failed", zap.Error(err))
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			for _, s := range streams {
+				for _, msg := range s.Messages {
+					job, parseErr := queue.ParseRSJobMessage(msg.Values)
+					if parseErr != nil {
+						zapLogger.Error("invalid rs.jobs payload",
+							zap.String("stream_id", msg.ID),
+							zap.Error(parseErr),
+						)
+						_ = qClient.AckRSJob(ctx, msg.ID)
+						continue
+					}
+					processJob(msg.ID, job)
+				}
+			}
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	zapLogger.Info("rs-worker shutting down...")
+	cancel()
+	wg.Wait()
+	zapLogger.Info("rs-worker exited")
+}

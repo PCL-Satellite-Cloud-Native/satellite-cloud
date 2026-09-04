@@ -1,0 +1,33 @@
+# 授权 gitlab-runner ServiceAccount 在 gitlab-runner namespace 管理 HPA 与 ServiceMonitor
+#
+# 【集群管理员一次性执行】在 k8s-master（root）：
+#   cd ~/code/satellite-cloud && git pull
+#   kubectl apply -f k8s/gitlab-runner-ci-rbac-phase4.yaml
+#
+# deploy-phase4-pilot 需本 Role 才能 apply k8s/phase4/（HPA + ServiceMonitor）。
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-runner-ci-phase4
+  namespace: gitlab-runner
+rules:
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitlab-runner-ci-phase4
+  namespace: gitlab-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gitlab-runner-ci-phase4
+subjects:
+  - kind: ServiceAccount
+    name: gitlab-runner
+    namespace: gitlab-runner

@@ -1,0 +1,60 @@
+# ====================================================================================
+# SatelliteConstellation 星座场景配置
+# 清单示例：Scenario5 全星座（36 面 × 22 颗 = 792 颗）
+# 对应 migration seed 000003_seed_starlink_36x22 的声明式等价物。
+#
+# 未来 CRD: apiVersion: cloud.satellite.io/v1, kind: SatelliteConstellation
+# 阶段 1：由 apply-config 读取并幂等同步到 PostgreSQL。
+# 同步命令（在 backend 目录执行）：
+#   go run ./cmd/apply-config -config-dir config/declarative        # 正式同步
+#   go run ./cmd/apply-config -config-dir config/declarative -dry-run  # 只预览不落库
+# ====================================================================================
+
+# --- 组/版本：对应未来 CRD 的 apiVersion（声明式清单的 schema 版本号） ---
+apiVersion: cloud.satellite.io/v1
+# --- 资源类型：声明这份清单描述的是一个"卫星星座" ---
+kind: SatelliteConstellation
+metadata:
+  # 清单唯一标识（对应未来 CR 的 metadata.name，仅用于区分清单，不写入数据库）
+  name: scenario5-full-36x22
+  # K8s 风格标签：标记资源归属项目与组件类型
+  labels:
+    app.kubernetes.io/part-of: satellite-cloud     # 所属项目
+    app.kubernetes.io/component: constellation     # 资源组件类型
+spec:
+  # ------------------------------------------------------------------
+  # 场景元信息（对应 scenarios 表一行；同步时按 name 幂等 upsert）
+  # ------------------------------------------------------------------
+  scenario:
+    # 场景名称 = scenarios.name，是同步的"唯一匹配键"：
+    # 数据库中存在同名场景则更新字段，不存在则新建一行
+    name: Scenario5_full_36x22
+    # 历元（场景的时间基准，RFC3339 格式）
+    epoch: "2025-01-01T00:00:00Z"
+    # 仿真时间窗开始时间（RFC3339 格式）
+    startTime: "2025-01-01T00:00:00Z"
+    # 仿真时间窗结束时间（RFC3339 格式）
+    endTime: "2025-01-31T00:00:00Z"
+    # 轨道高度（km）：卫星轨道半长轴 = 地球赤道半径 6378.137 + 高度
+    altKm: 550
+    # 轨道倾角（度）
+    incDeg: 53
+    # 星座面数：36 面，RAAN = (面序号-1) × 360/36 = 每面递增 10°
+    nPlanes: 36
+    # 每面卫星数：22 颗，真近点角 = (槽位-1) × 360/22，偶数面偏移半颗
+    nSatsPerPlane: 22
+    # 传感器/载荷配置（JSON 对象，写入 scenarios.sensor_config jsonb 列）
+    sensorConfig:
+      type: panchromatic      # 载荷类型：全色
+      resolutionM: 0.5        # 地面分辨率（米）
+      swathKm: 10             # 幅宽（km）
+  # ------------------------------------------------------------------
+  # 卫星声明方式（satellites 段）
+  #   mode=generated：由构型参数确定性生成 Walker 星座（与 seed 000003 规律一致）
+  #   mode=inline：在 list 中逐颗显式列出（适合少量卫星）
+  # ------------------------------------------------------------------
+  satellites:
+    mode: generated           # 卫星生成模式：按场景构型参数自动推导
+  # 注：本场景的网络拓扑数据源已迁移为独立的 NetworkTopology 清单
+  # （见同目录 topology-scenario5.yaml），不再在星座清单内声明。
+  # 若需沿用一体化声明方式，仍可在此处配置 spec.topology（向后兼容）。

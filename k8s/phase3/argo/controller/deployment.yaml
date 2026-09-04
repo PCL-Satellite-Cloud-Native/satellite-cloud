@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-controller
+  namespace: argo
+  labels:
+    app: workflow-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workflow-controller
+  template:
+    metadata:
+      labels:
+        app: workflow-controller
+    spec:
+      serviceAccountName: argo
+      containers:
+        - name: workflow-controller
+          image: 192.168.10.238/library/argo-workflow-controller:3.5.12-amd64-r1
+          imagePullPolicy: Always
+          command:
+            - workflow-controller
+          args:
+            - --configmap
+            - workflow-controller-configmap
+            - --executor-image
+            - 192.168.10.238/library/argoexec:3.5.12-amd64-r1
+            - --managed-namespace
+            - gitlab-runner
+          env:
+            - name: LEADER_ELECTION_DISABLE
+              value: "true"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

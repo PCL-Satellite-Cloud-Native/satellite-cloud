@@ -1,0 +1,28 @@
+# 授权 gitlab-runner ServiceAccount 在 istio-system 中创建/更新 Gateway 和 VirtualService
+# 供 GitLab CI deploy 阶段 apply istio-gateway.yaml 和 istio-virtualservice.yaml 使用
+#
+# 【必须】部署前由集群管理员执行一次：
+#   kubectl apply -f k8s/istio-rbac-gitlab-runner.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-runner-istio
+  namespace: istio-system
+rules:
+  - apiGroups: ["networking.istio.io"]
+    resources: ["gateways", "virtualservices"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitlab-runner-istio
+  namespace: istio-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gitlab-runner-istio
+subjects:
+  - kind: ServiceAccount
+    name: gitlab-runner
+    namespace: gitlab-runner

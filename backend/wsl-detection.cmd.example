@@ -1,0 +1,10 @@
+@echo off
+REM 复制为 wsl-detection.cmd，并修改 WSL 发行版名与 Object-Detection 路径。
+REM
+REM 前置条件（WSL 内，只需一次）：
+REM   cd /mnt/d/Code/pcl_satellite_project/Object-Detection
+REM   bash scripts/fetch_font.sh
+REM   go build -o yolov8s .
+REM
+REM 说明：yolov8s 必须在 Linux/WSL 内编译，Windows 的 go build 不能用于此包装器。
+wsl -d Ubuntu --cd /mnt/d/Code/pcl_satellite_project/Object-Detection -- env LD_LIBRARY_PATH=./third_party ./yolov8s %*

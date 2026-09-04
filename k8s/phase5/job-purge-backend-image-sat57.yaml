@@ -1,0 +1,68 @@
+# P0-2：在指定节点清除损坏的 satellite/backend 镜像层
+# 用法见下方注释（sat57 镜像清理 Job）。
+#
+# sat10-m1 示例（sat57）：
+#   kubectl -n gitlab-runner delete job purge-backend-image-sat57 --ignore-not-found
+#   kubectl apply -f k8s/phase5/job-purge-backend-image-sat57.yaml
+#   kubectl -n gitlab-runner wait --for=condition=complete --timeout=300s job/purge-backend-image-sat57
+#   kubectl -n gitlab-runner logs job/purge-backend-image-sat57
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: purge-backend-image-sat57
+  namespace: gitlab-runner
+  labels:
+    app: purge-backend-image
+    satellite.io/purpose: p0-2-image-repair
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: purge-backend-image
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      nodeName: sat57
+      hostPID: true
+      hostNetwork: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: purge
+          # 任意含 nsenter 的镜像；alpine 足够（BusyBox nsenter）
+          image: 192.168.10.238/library/alpine:3.19-amd64-r1
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              apk add --no-cache util-linux >/dev/null
+              echo "== nsenter host PID 1 =="
+              nsenter --target=1 --mount --uts --ipc --net --pid -- /bin/sh -c '
+                set -e
+                echo "node=$(hostname)"
+                command -v crictl >/dev/null || { echo "crictl not found on host"; exit 1; }
+                echo "-- before --"
+                crictl images | grep -E "IMAGE|satellite/backend" || true
+                echo "-- remove satellite/backend --"
+                crictl images 2>/dev/null | awk "/satellite\\/backend/ {print \$3}" | sort -u | while read -r id; do
+                  [ -n "$id" ] || continue
+                  echo "rmi id=$id"
+                  crictl rmi "$id" 2>/dev/null || true
+                done
+                crictl images 2>/dev/null | awk "/satellite\\/backend/ {print \$1\":\"\$2}" | grep -v "<none>" | sort -u | while read -r ref; do
+                  echo "rmi ref=$ref"
+                  crictl rmi "$ref" 2>/dev/null || true
+                done
+                crictl rmi --prune 2>/dev/null || true
+                echo "-- after --"
+                crictl images | grep -E "IMAGE|satellite/backend" || echo "(no satellite/backend left)"
+                echo "purge done"
+              '

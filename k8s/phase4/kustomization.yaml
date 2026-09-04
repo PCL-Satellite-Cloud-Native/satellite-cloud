@@ -1,0 +1,16 @@
+# Phase 4：Prometheus 采集 Service + ServiceMonitor + HPA
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: gitlab-runner
+
+resources:
+  - metrics-services.yaml
+  - servicemonitor.yaml
+  - hpa-rs-worker.yaml
+  - hpa-od-worker.yaml
+
+labels:
+  - includeSelectors: false
+    pairs:
+      satellite.io/phase: phase4-pilot

@@ -29,9 +29,20 @@ build-backend:
   stage: build
   image: "$CI_BUILD_IMAGE"
   variables:
-    # Runner 已挂载宿主机 docker.sock，避免再启 dind
+    # 5 节点集群 runner 无 docker.sock，必须走 dind service
+    # DOCKER_TLS_CERTDIR 置空让 dind 监听 2375（须放 job 级 variables，Runner config 的 container_env_vars 不注入 service）
     DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
   script:
+    - |
+      for i in $(seq 1 60); do
+        if docker info >/dev/null 2>&1; then
+          echo "docker daemon ready after ${i} checks"
+          break
+        fi
+        echo "waiting for docker daemon ... (${i})"
+        sleep 2
+      done
     - docker version
     - |
       if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASSWORD" ]; then
@@ -113,9 +124,20 @@ build-frontend:
   stage: build
   image: "$CI_BUILD_IMAGE"
   variables:
-    # Runner 已挂载宿主机 docker.sock，避免再启 dind
+    # 5 节点集群 runner 无 docker.sock，必须走 dind service
+    # DOCKER_TLS_CERTDIR 置空让 dind 监听 2375（须放 job 级 variables，Runner config 的 container_env_vars 不注入 service）
     DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
   script:
+    - |
+      for i in $(seq 1 60); do
+        if docker info >/dev/null 2>&1; then
+          echo "docker daemon ready after ${i} checks"
+          break
+        fi
+        echo "waiting for docker daemon ... (${i})"
+        sleep 2
+      done
     - docker version
     - |
       if [ -z "$HARBOR_USER" ] || [ -z "$HARBOR_PASSWORD" ]; then

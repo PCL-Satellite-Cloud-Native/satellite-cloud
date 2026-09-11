@@ -1,0 +1,42 @@
+# CRD 声明式清单目录（backend 容器内 /app/config/declarative）
+#
+# 用途：CRDManager 页面（/crd）通过 GET /api/crd/manifests 读取该目录下的
+#       *.yaml / *.yml 清单；在线编辑/保存会回写到该目录（需可写）。
+#
+# 说明：
+# 1. 后端镜像（backend/Dockerfile）的 runtime stage 只 COPY 了二进制，
+#    不包含 config/ 目录，因此清单目录必须由外部提供（本 PVC）。
+# 2. 5 节点集群：NFS 位于 k8s-worker02(192.168.10.232) /export/crd-config；
+#    其他环境请按实际 NFS 地址调整 server/path。
+# 3. 目录结构：/export/crd-config/declarative/*.yaml（播种自
+#    backend/config/declarative/）。
+# 4. 权限：目录与文件需 0777（容器以非 root 用户 appuser 运行，需要写权限）。
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: crd-config-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  mountOptions:
+    - nolock
+  nfs:
+    server: 192.168.10.232
+    path: /export/crd-config
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: crd-config
+  namespace: gitlab-runner
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 2Gi
+  volumeName: crd-config-pv
+  storageClassName: ""

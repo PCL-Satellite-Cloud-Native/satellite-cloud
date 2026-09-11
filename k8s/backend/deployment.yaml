@@ -42,6 +42,9 @@ spec:
               value: "8080"
             - name: SATELLITE_SERVER_MODE
               value: "production"
+            # CRD 声明式清单目录（容器内挂载点，由 PVC crd-config 提供）
+            - name: SATELLITE_CRD_CONFIG_DIR
+              value: "/app/config/declarative"
             - name: SATELLITE_DATABASE_HOST
               valueFrom:
                 secretKeyRef:
@@ -193,6 +196,8 @@ spec:
             - name: remote-sensing-data
               mountPath: /opt/object-detection/yolov8m-obb.onnx
               subPath: models/yolov8m-obb.onnx
+            - name: crd-config
+              mountPath: /app/config
           livenessProbe:
             httpGet:
               path: /health
@@ -216,6 +221,9 @@ spec:
         - name: remote-sensing-scratch-output
           emptyDir:
             sizeLimit: "40Gi"
+        - name: crd-config
+          persistentVolumeClaim:
+            claimName: crd-config
 
 ---
 apiVersion: v1

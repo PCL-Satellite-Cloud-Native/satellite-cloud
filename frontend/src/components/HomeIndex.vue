@@ -18,7 +18,7 @@
     <main class="home-main">
       <section class="hero">
         <p class="hero-eyebrow">Satellite Cloud Native Simulation</p>
-        <h1 class="hero-title">卫星云原生软件仿真平台</h1>
+        <h1 class="hero-title">卫星云原生软件仿真平台-5NODE</h1>
         <p class="hero-subtitle">
           星座仿真、网络拓扑、性能监控与遥感业务一体化环境，支撑多星协同与云原生调度验证
         </p>

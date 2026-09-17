@@ -117,7 +117,7 @@ build-backend:
   tags:
     - k8s-3node-runner
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "feat/phase6-minio" || $CI_COMMIT_BRANCH == "cluster-120" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "feat/phase6-minio" || $CI_COMMIT_BRANCH == "cluster-120" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 # 构建并推送前端镜像
 build-frontend:

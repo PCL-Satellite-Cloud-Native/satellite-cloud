@@ -115,7 +115,7 @@ build-backend:
         docker push "$HARBOR_URL/$HARBOR_PROJECT/backend:latest"
       fi
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   rules:
     - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "feat/phase6-minio" || $CI_COMMIT_BRANCH == "cluster-120" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
@@ -164,7 +164,7 @@ build-frontend:
         docker push "$HARBOR_URL/$HARBOR_PROJECT/frontend:latest"
       fi
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   rules:
     - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-120" || $CI_COMMIT_BRANCH == "cluster-5node"'
 
@@ -197,7 +197,7 @@ deploy:
     - kubectl apply -f k8s/istio-gateway.yaml
     - kubectl apply -f k8s/istio-virtualservice.yaml
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs:
     - build-backend
     - build-frontend
@@ -226,7 +226,7 @@ deploy-phase1-pilot:
     - kubectl -n gitlab-runner logs deployment/rs-worker --tail=20
     - echo "backend Redis 入队 env 已固化于 k8s/backend/deployment.yaml，由 deploy job apply"
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs:
     - deploy
   rules:
@@ -249,7 +249,7 @@ deploy-phase2-pilot:
     - kubectl -n gitlab-runner logs deployment/od-worker --tail=20
     - echo "验收：提交 GF2+检测 task，rs-worker 无 yolov8s 日志，od-worker 有"
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs:
     - deploy
   rules:
@@ -277,7 +277,7 @@ deploy-phase3-pilot:
     - kubectl -n gitlab-runner get workflowtemplate rs-pan-rpc-parallel
     - echo "启用 Argo：kubectl -n gitlab-runner set env deployment/rs-worker SATELLITE_USE_ARGO_PAN_RPC=true"
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs:
     - deploy-phase2-pilot
   rules:
@@ -310,7 +310,7 @@ deploy-phase4-pilot:
     - sleep 10
     - sh scripts/phase4_verify_metrics.sh
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs:
     - deploy-phase2-pilot
   rules:
@@ -358,7 +358,7 @@ deploy-phase5-plus-pilot:
       fi
     - echo "完成。验收：在 master 执行 port-forward + submit_multi_satellite_tasks.sh --run-id p5-6b-..."
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs:
     - build-backend
   rules:
@@ -487,7 +487,7 @@ deploy-phase6-pilot:
     - echo "── 2) 验证（master）bash scripts/phase6_preflight.sh"
     - echo "完成。API 仍默认 nfs；见 docs/PHASE6_RUNBOOK.md §3 启用 minio 下载"
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs: []
   rules:
     - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "feat/phase6-minio" || $CI_COMMIT_BRANCH == "cluster-5node"'
@@ -502,7 +502,7 @@ sync-artifacts-to-minio:
     - echo "在 k8s-master 执行：bash scripts/sync_artifacts_nfs_to_minio.sh"
     - echo "或 GitLab Runner 需挂载仓库且含 bash；推荐 master 手工跑"
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs: []
   rules:
     - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "feat/phase6-minio" || $CI_COMMIT_BRANCH == "cluster-5node"'
@@ -511,7 +511,7 @@ sync-topology-csv-to-nfs:
   stage: topology-sync
   image: "$CI_ALPINE_IMAGE"
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs:
     - deploy
   script:
@@ -537,7 +537,7 @@ import-topology:
   stage: topology-sync
   image: "$CI_KUBECTL_IMAGE"
   tags:
-    - k8s-3node-runner
+    - k3s-cluster5-runner
   needs:
     - sync-topology-csv-to-nfs
   script:

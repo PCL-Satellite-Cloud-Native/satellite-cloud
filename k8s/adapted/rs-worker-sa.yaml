@@ -1,0 +1,6 @@
+# rs-worker / od-worker 使用的 ServiceAccount（worker-node-reader.yaml 只定义了 ClusterRole/Binding）
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rs-worker
+  namespace: gitlab-runner

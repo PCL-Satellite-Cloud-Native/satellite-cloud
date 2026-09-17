@@ -1,0 +1,61 @@
+# 适配新集群（192.168.12.x）：NFS server = 192.168.12.108 (k3s-node08)
+# 原 192.168.10.112 / 192.168.10.232 已改为 192.168.12.108:/export/...
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: remote-sensing-data-pv
+spec:
+  capacity:
+    storage: 500Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  mountOptions:
+    - nolock
+  nfs:
+    server: 192.168.12.108
+    path: /export/remote-sensing-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: remote-sensing-data
+  namespace: gitlab-runner
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 500Gi
+  volumeName: remote-sensing-data-pv
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: crd-config-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  mountOptions:
+    - nolock
+  nfs:
+    server: 192.168.12.108
+    path: /export/crd-config
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: crd-config
+  namespace: gitlab-runner
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 2Gi
+  volumeName: crd-config-pv
+  storageClassName: ""

@@ -35,12 +35,14 @@ build-backend:
     # 5 节点集群 runner 无 docker.sock，必须走 dind service
     DOCKER_HOST: "tcp://docker:2375"
     DOCKER_TLS_CERTDIR: ""
-  # 关键：在 job 内显式声明 dind service，并通过 variables 把 DOCKER_TLS_CERTDIR="" 注入 service 容器。
+  # 关键：在 job 内显式声明 dind service，并强制其以明文 2375 监听。
   # K8s executor 的 config.toml [runners.kubernetes.container_env_vars] 不会注入 service 容器，
-  # 若只在 config 里配，dind 会默认启用 TLS 监听 2376，build 容器连 tcp://docker:2375 即 connection refused。
+  # 且 job 级 variables 也不会注入 service，故必须用 command 覆盖 dind 启动参数（否则默认 TLS 监听 2376，
+  # build 容器连 tcp://docker:2375 报 connection refused，见 pipeline #213/#214）。
   services:
     - name: "$DIND_IMG"
       alias: docker
+      command: ["--host=tcp://0.0.0.0:2375", "--tls=false", "--tlsverify=false"]
       variables:
         DOCKER_TLS_CERTDIR: ""
   script:
@@ -137,12 +139,14 @@ build-frontend:
     # 5 节点集群 runner 无 docker.sock，必须走 dind service
     DOCKER_HOST: "tcp://docker:2375"
     DOCKER_TLS_CERTDIR: ""
-  # 关键：在 job 内显式声明 dind service，并通过 variables 把 DOCKER_TLS_CERTDIR="" 注入 service 容器。
+  # 关键：在 job 内显式声明 dind service，并强制其以明文 2375 监听。
   # K8s executor 的 config.toml [runners.kubernetes.container_env_vars] 不会注入 service 容器，
-  # 若只在 config 里配，dind 会默认启用 TLS 监听 2376，build 容器连 tcp://docker:2375 即 connection refused。
+  # 且 job 级 variables 也不会注入 service，故必须用 command 覆盖 dind 启动参数（否则默认 TLS 监听 2376，
+  # build 容器连 tcp://docker:2375 报 connection refused，见 pipeline #213/#214）。
   services:
     - name: "$DIND_IMG"
       alias: docker
+      command: ["--host=tcp://0.0.0.0:2375", "--tls=false", "--tlsverify=false"]
       variables:
         DOCKER_TLS_CERTDIR: ""
   script:

@@ -166,7 +166,7 @@ build-frontend:
   tags:
     - k3s-cluster5-runner
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-120" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-120" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 # ── 5 节点 k3s 集群部署（核心链路：backend / frontend / rs-worker DaemonSet + istio 入口）──
 # 注：postgres / redis / minio / NFS 等基底设施在集群搭建时一次性部署（见 k3s改造方案），
@@ -202,7 +202,7 @@ deploy:
     - build-backend
     - build-frontend
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 # Phase 1 阶段 2：Redis + rs-worker Pilot（不修改 satellite-backend 流水线模式）
 # 默认不自动执行：在 GitLab Pipeline 页面手动点击 deploy-phase1-pilot

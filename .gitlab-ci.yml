@@ -15,6 +15,9 @@ variables:
   CI_BUILD_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/ci-build:docker25-git-amd64-r3"
   CI_KUBECTL_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/bitnami-kubectl:latest-amd64-r1"
   CI_ALPINE_IMAGE: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/alpine:3.19-amd64-r1"
+  # dind（Docker-in-Docker）服务镜像：build job 通过 services 显式声明，并注入 DOCKER_TLS_CERTDIR=""
+  # 让其监听明文 2375（见 build-* 的 services 块）；K8s executor 的 config.toml container_env_vars 不会注入 service 容器
+  DIND_IMG: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT/docker:25.0-dind"
   BASE_IMAGE_REGISTRY: "$HARBOR_URL/$HARBOR_PUBLIC_PROJECT"
   # 内网 GitLab 私有仓库地址（HTTPS），示例：
   # https://gitlab.example.local/your-group/Satellite-Remote-Sensing.git
@@ -30,9 +33,16 @@ build-backend:
   image: "$CI_BUILD_IMAGE"
   variables:
     # 5 节点集群 runner 无 docker.sock，必须走 dind service
-    # DOCKER_TLS_CERTDIR 置空让 dind 监听 2375（须放 job 级 variables，Runner config 的 container_env_vars 不注入 service）
     DOCKER_HOST: "tcp://docker:2375"
     DOCKER_TLS_CERTDIR: ""
+  # 关键：在 job 内显式声明 dind service，并通过 variables 把 DOCKER_TLS_CERTDIR="" 注入 service 容器。
+  # K8s executor 的 config.toml [runners.kubernetes.container_env_vars] 不会注入 service 容器，
+  # 若只在 config 里配，dind 会默认启用 TLS 监听 2376，build 容器连 tcp://docker:2375 即 connection refused。
+  services:
+    - name: "$DIND_IMG"
+      alias: docker
+      variables:
+        DOCKER_TLS_CERTDIR: ""
   script:
     - |
       for i in $(seq 1 60); do
@@ -125,9 +135,16 @@ build-frontend:
   image: "$CI_BUILD_IMAGE"
   variables:
     # 5 节点集群 runner 无 docker.sock，必须走 dind service
-    # DOCKER_TLS_CERTDIR 置空让 dind 监听 2375（须放 job 级 variables，Runner config 的 container_env_vars 不注入 service）
     DOCKER_HOST: "tcp://docker:2375"
     DOCKER_TLS_CERTDIR: ""
+  # 关键：在 job 内显式声明 dind service，并通过 variables 把 DOCKER_TLS_CERTDIR="" 注入 service 容器。
+  # K8s executor 的 config.toml [runners.kubernetes.container_env_vars] 不会注入 service 容器，
+  # 若只在 config 里配，dind 会默认启用 TLS 监听 2376，build 容器连 tcp://docker:2375 即 connection refused。
+  services:
+    - name: "$DIND_IMG"
+      alias: docker
+      variables:
+        DOCKER_TLS_CERTDIR: ""
   script:
     - |
       for i in $(seq 1 60); do

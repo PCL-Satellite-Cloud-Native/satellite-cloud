@@ -91,9 +91,9 @@ check_interval = 3
     poll_interval = 3
     poll_timeout = 600
     service_account = "gitlab-runner"
-    [[runners.kubernetes.services]]
-      name = "$DIND_IMG"
-      alias = "docker"
+    # CI job Pod 不要注入 istio-proxy sidecar（gitlab-runner 命名空间若开了 istio 自动注入，
+    # 会导致 job Pod 带 istio-proxy 且启动探针失败；且 sidecar 会拦截 build 容器对 docker:2375 / kubectl 对 API 的流量）
+    pod_annotations = { "sidecar.istio.io/inject" = "false" }
     cpu_limit = "2000m"
     memory_limit = "4Gi"
     service_cpu_limit = "1000m"

@@ -222,3 +222,41 @@ spec:
         - name: crd-config
           persistentVolumeClaim:
             claimName: crd-config
+---
+# 重要：原 backend/deployment.yaml 末尾的 Service 段在生成 adapted 文件时被遗漏，
+# 导致 gitlab-runner 命名空间里 satellite-backend Service 缺失，istio VirtualService
+# 把 /api 路由到不存在的 Service -> 前端所有 /api 调用返回 503（见 2026-09-20 排错）。
+# 这里补回 satellite-backend（以及 satellite-api，与 backend/service.yaml 对齐）。
+apiVersion: v1
+kind: Service
+metadata:
+  name: satellite-backend
+  namespace: gitlab-runner
+  labels:
+    app: satellite-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: satellite-backend
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: satellite-api
+  namespace: gitlab-runner
+  labels:
+    app: satellite-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: satellite-backend
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http

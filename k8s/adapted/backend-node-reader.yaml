@@ -1,0 +1,25 @@
+# satellite-backend 读取集群节点状态（主页面 5 节点星座着色）所需 RBAC。
+# backend Deployment 未显式指定 serviceAccountName，默认使用 gitlab-runner 命名空间的 default SA。
+# 部署后端后一次性 apply：
+#   kubectl apply -f k8s/adapted/backend-node-reader.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: satellite-backend-node-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: satellite-backend-node-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: satellite-backend-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: gitlab-runner

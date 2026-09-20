@@ -1,7 +1,7 @@
 <template>
   <div class="cesium-container">
     <div v-if="loading" class="loading-overlay">
-      <div class="loading-message">正在计算覆盖轨道与加载数据...</div>
+      <div class="loading-message">正在加载集群节点状态...</div>
     </div>
     <div v-if="error" class="error-overlay">
       <div class="error-message">{{ error }}</div>
@@ -9,27 +9,27 @@
     <div ref="viewerContainer" class="viewer"></div>
 
     <aside class="hud-panel">
-      <div class="hud-title">数字孪生 · 星座仿真</div>
+      <div class="hud-title">集群节点星座 · {{ clusterNodes.length }} 节点</div>
+
       <div class="hud-row">
-        <span class="hud-label">场景</span>
-        <span class="hud-value">{{ scenarioName || '—' }}</span>
+        <span class="hud-label">节点总数</span>
+        <span class="hud-value">{{ clusterNodes.length }}</span>
       </div>
       <div class="hud-row">
-        <span class="hud-label">仿真时段</span>
-        <span class="hud-value mono">{{ scenarioTimeRange }}</span>
+        <span class="hud-label">正常</span>
+        <span class="hud-value highlight-green">{{ readyCount }}</span>
       </div>
       <div class="hud-row">
-        <span class="hud-label">卫星</span>
-        <span class="hud-value">{{ satelliteCount }} 颗{{ pilotModeLabel }}</span>
+        <span class="hud-label">异常</span>
+        <span class="hud-value highlight-red">{{ errorCount }}</span>
       </div>
-      <div class="hud-row">
-        <span class="hud-label">运行中高亮</span>
-        <span class="hud-value highlight-green">{{ runningHighlightCount }} 颗</span>
-      </div>
-      <div class="hud-row">
-        <span class="hud-label">底图</span>
-        <span class="hud-value">{{ imageryLabel }}</span>
-      </div>
+
+      <div class="hud-divider"></div>
+
+      <div class="hud-subtitle">图例（卫星 = 集群节点）</div>
+      <div class="legend-row"><i class="dot" style="background:#ffffff"></i>正常 · 白色</div>
+      <div class="legend-row"><i class="dot" style="background:#ffd54a"></i>选中 · 黄色</div>
+      <div class="legend-row"><i class="dot" style="background:#ff4d4f"></i>节点异常/无法连通 · 红色</div>
 
       <div class="hud-divider"></div>
 
@@ -44,8 +44,6 @@
         </button>
         <button type="button" class="hud-btn" @click="resetClockToStart">↺ 重置</button>
       </div>
-
-      <div class="hud-divider"></div>
 
       <div class="hud-row">
         <span class="hud-label">仿真倍速</span>
@@ -68,23 +66,31 @@
       <div class="hud-actions">
         <button type="button" class="hud-btn" @click="flyToPreset('global')">全球视角</button>
         <button type="button" class="hud-btn" @click="flyToPreset('china')">中国区域</button>
-        <button type="button" class="hud-btn" :disabled="!lastHighlightedSatId" @click="flyToPreset('follow')">跟踪选中</button>
       </div>
 
       <div class="hud-actions">
         <router-link class="hud-link" to="/simulation/topology">卫星网络拓扑 →</router-link>
-        <router-link class="hud-link" to="/remote-sensing">遥感任务 →</router-link>
       </div>
 
       <div v-if="selectedSatInfo" class="hud-selected">
-        <div class="hud-subtitle">选中卫星</div>
-        <div class="hud-row"><span class="hud-label">名称</span><span class="hud-value">{{ selectedSatInfo.label }}</span></div>
-        <div class="hud-row"><span class="hud-label">sat_id</span><span class="hud-value mono">{{ selectedSatInfo.id }}</span></div>
-        <div class="hud-row"><span class="hud-label">高度</span><span class="hud-value">{{ selectedSatInfo.altKm }} km</span></div>
-        <router-link class="hud-link hud-link-btn" :to="topologyLink">查看路由子网 →</router-link>
+        <div class="hud-subtitle">选中卫星 / 节点</div>
+        <div class="hud-row"><span class="hud-label">卫星</span><span class="hud-value">{{ selectedSatInfo.satId }}</span></div>
+        <div class="hud-row"><span class="hud-label">节点</span><span class="hud-value">{{ selectedSatInfo.nodeName }}</span></div>
+        <div class="hud-row">
+          <span class="hud-label">状态</span>
+          <span class="hud-value" :class="selectedSatInfo.ready ? 'highlight-green' : 'highlight-red'">
+            {{ selectedSatInfo.ready ? '正常 Ready' : (selectedSatInfo.status || '异常') }}
+          </span>
+        </div>
+        <div class="hud-row" v-if="selectedSatInfo.roles && selectedSatInfo.roles.length">
+          <span class="hud-label">角色</span><span class="hud-value">{{ selectedSatInfo.roles.join(', ') }}</span>
+        </div>
+        <div class="hud-row" v-if="selectedSatInfo.internalIP">
+          <span class="hud-label">IP</span><span class="hud-value mono">{{ selectedSatInfo.internalIP }}</span>
+        </div>
       </div>
 
-      <div class="hud-hint">点击卫星高亮（金色锥）；绿色 = 正在执行任务（含覆盖锥）</div>
+      <div class="hud-hint">点击卫星选中（黄色高亮）；白色=节点正常，红色=节点异常/无法连通；颜色每 10 秒随节点状态刷新。</div>
     </aside>
   </div>
   <BackHomeButton />
@@ -93,31 +99,37 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import BackHomeButton from './BackHomeButton.vue'
-import { getScenarioWithSatellites, getScenarios } from '../api/satellite.js'
-import { listRemoteSensingTasks } from '../api/remoteSensing.js'
-import { displaySatName } from '../utils/satNaming.js'
+import { getClusterNodes } from '../api/cluster.js'
+import {
+  CLUSTER_NODE_ORDER,
+  CLUSTER_SHELL,
+  clusterSatId,
+  clusterSatDisplayName,
+  statusColor,
+  orderClusterNodes,
+} from '../utils/clusterConstellation.js'
 
 window.CESIUM_BASE_URL = '/cesium'
 import * as Cesium from 'cesium'
 
-const props = defineProps({
-  scenarioId: {
-    type: [Number, String],
-    default: null
-  }
-})
-
 const viewerContainer = ref(null)
 const loading = ref(false)
 const error = ref(null)
-const highlightedSatIds = ref(new Set())
-const runningHighlightIds = ref(new Set())
-const runningHighlightCount = ref(0)
-const scenarioName = ref('')
-const scenarioTimeRange = ref('—')
 const satelliteCount = ref(0)
 const clockMultiplier = ref(10)
 const imagerySource = ref('builtin')
+
+const clusterNodes = ref([])
+const selectedNodeName = ref(null)
+const selectedSatInfo = ref(null)
+
+const nodeByName = computed(() => {
+  const m = {}
+  for (const n of clusterNodes.value) m[n.name] = n
+  return m
+})
+const readyCount = computed(() => clusterNodes.value.filter((n) => n.ready).length)
+const errorCount = computed(() => clusterNodes.value.length - readyCount.value)
 
 const MAP_MODE_KEY = 'satViewer.mapMode'
 const MAP_TILES_URL = (import.meta.env.VITE_MAP_TILES_URL || '').trim()
@@ -133,12 +145,10 @@ function loadMapViewMode() {
 const mapViewMode = ref(loadMapViewMode())
 const simTimeLabel = ref('—')
 const clockPlaying = ref(true)
-const selectedSatInfo = ref(null)
-const lastHighlightedSatId = ref(null)
 
 let viewer = null
 let handler = null
-let runningTasksTimer = null
+let nodeRefreshTimer = null
 let removeClockTickListener = null
 const entityBySatId = new Map()
 
@@ -152,59 +162,6 @@ const IMAGERY_LABELS = {
 }
 
 const imageryLabel = computed(() => IMAGERY_LABELS[imagerySource.value] || IMAGERY_LABELS.builtin)
-
-const topologyLink = computed(() => {
-  const satId = selectedSatInfo.value?.id || lastHighlightedSatId.value
-  if (satId) {
-    return { path: '/simulation/topology', query: { satId } }
-  }
-  return { path: '/simulation/topology' }
-})
-
-const pilotModeLabel = computed(() => {
-  return satelliteCount.value === 15 ? ' (Pilot)' : ''
-})
-
-function syncFootprintCone(entity, altitudeMeters, mode) {
-  const coneId = entity.id + '_cone'
-  let coneEntity = viewer.entities.getById(coneId)
-
-  if (!mode) {
-    if (coneEntity) coneEntity.show = false
-    return
-  }
-
-  const isGold = mode === 'gold'
-  const fill = isGold ? Cesium.Color.GOLD : Cesium.Color.LIME
-  const halfAngle = Cesium.Math.toRadians(30)
-  const bottomRadius = altitudeMeters * Math.tan(halfAngle)
-
-  if (!coneEntity) {
-    coneEntity = viewer.entities.add({
-      id: coneId,
-      parent: entity,
-      position: new Cesium.CallbackProperty((time) => {
-        const pos = entity.position.getValue(time)
-        if (!pos) return null
-        const cart = Cesium.Cartographic.fromCartesian(pos)
-        return Cesium.Cartesian3.fromRadians(cart.longitude, cart.latitude, altitudeMeters / 2)
-      }, false),
-      cylinder: {
-        length: altitudeMeters,
-        topRadius: 0,
-        bottomRadius: bottomRadius,
-        material: fill.withAlpha(0.15),
-        outline: true,
-        outlineColor: fill.withAlpha(0.45),
-        numberOfVerticalLines: 4,
-      }
-    })
-  } else {
-    coneEntity.show = true
-    coneEntity.cylinder.material = fill.withAlpha(0.15)
-    coneEntity.cylinder.outlineColor = fill.withAlpha(0.45)
-  }
-}
 
 function formatSimTime(julianDate) {
   if (!julianDate) return '—'
@@ -250,7 +207,6 @@ async function assetExists(url) {
   try {
     let resp = await fetch(url, { method: 'HEAD' })
     if (resp.ok) return true
-    // 部分 Nginx/网关对 HEAD 支持不完整，回退 GET
     resp = await fetch(url, { method: 'GET', cache: 'no-store' })
     return resp.ok
   } catch {
@@ -420,126 +376,6 @@ function flyToPreset(preset) {
     }
     return
   }
-  if (preset === 'follow' && lastHighlightedSatId.value) {
-    const entity = viewer.entities.getById(lastHighlightedSatId.value)
-    if (entity) {
-      viewer.trackedEntity = entity
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(104.0, 35.0, 12000000),
-        duration: 1.2,
-      })
-    }
-  }
-}
-
-function updateEntityStyle(entity, isHighlighted, altitudeMeters) {
-  const isRunning = runningHighlightIds.value.has(entity.id)
-  const active = isHighlighted || isRunning
-  const pointColor = isRunning
-    ? Cesium.Color.LIME
-    : (isHighlighted ? Cesium.Color.GOLD : Cesium.Color.WHITE.withAlpha(0.85))
-  const pointSize = active ? 14 : 6
-
-  entity.point.color = pointColor
-  entity.point.pixelSize = pointSize
-  entity.point.outline = active
-  entity.point.outlineColor = Cesium.Color.BLACK
-
-  const pathWidth = active ? 4 : 1.5
-  let pathMaterial
-  if (isRunning) {
-    pathMaterial = new Cesium.PolylineGlowMaterialProperty({
-      glowPower: 0.25,
-      color: Cesium.Color.LIME
-    })
-  } else if (isHighlighted) {
-    pathMaterial = new Cesium.PolylineGlowMaterialProperty({
-      glowPower: 0.2,
-      color: Cesium.Color.GOLD
-    })
-  } else {
-    pathMaterial = Cesium.Color.WHITE.withAlpha(0.45)
-  }
-
-  entity.path.width = pathWidth
-  entity.path.material = pathMaterial
-  entity.label.show = active
-
-  let coneMode = null
-  if (isHighlighted) {
-    coneMode = 'gold'
-  } else if (isRunning) {
-    coneMode = 'lime'
-  }
-  syncFootprintCone(entity, altitudeMeters, coneMode)
-}
-
-function setupClickHandler(satellitesMap) {
-  handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
-
-  handler.setInputAction((movement) => {
-    const pickedObject = viewer.scene.pick(movement.position)
-
-    if (Cesium.defined(pickedObject) && pickedObject.id) {
-      const entity = pickedObject.id
-      const satData = satellitesMap.get(entity.id) || satellitesMap.get(entity.id.replace('_cone', ''))
-
-      if (satData) {
-        const realId = satData.sat_id || satData.stk_name
-        const entityToUpdate = viewer.entities.getById(realId)
-
-        if (entityToUpdate) {
-          toggleSatelliteHighlight(realId, entityToUpdate, satData.alt_km * 1000, satData)
-        }
-      }
-    }
-  }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
-}
-
-function toggleSatelliteHighlight(satId, entity, altitudeMeters, satData) {
-  if (highlightedSatIds.value.has(satId)) {
-    highlightedSatIds.value.delete(satId)
-    selectedSatInfo.value = null
-    lastHighlightedSatId.value = null
-    if (viewer.trackedEntity === entity) {
-      viewer.trackedEntity = undefined
-    }
-    updateEntityStyle(entity, false, altitudeMeters)
-  } else {
-    highlightedSatIds.value.clear()
-    for (const [id, ent] of entityBySatId.entries()) {
-      const alt = ent._satData ? ent._satData.alt_km * 1000 : 550000
-      updateEntityStyle(ent, false, alt)
-    }
-    highlightedSatIds.value.add(satId)
-    lastHighlightedSatId.value = satId
-    selectedSatInfo.value = {
-      id: satId,
-      label: displaySatName(satData),
-      altKm: satData?.alt_km ?? '—',
-    }
-    updateEntityStyle(entity, true, altitudeMeters)
-  }
-}
-
-async function refreshRunningHighlights() {
-  try {
-    const tasks = await listRemoteSensingTasks({ status: 'running' })
-    const next = new Set()
-    for (const t of tasks ?? []) {
-      if (t.executed_sat_id) next.add(t.executed_sat_id)
-    }
-    runningHighlightIds.value = next
-    runningHighlightCount.value = next.size
-    for (const [satId, entity] of entityBySatId.entries()) {
-      const sat = entity._satData
-      const alt = sat ? sat.alt_km * 1000 : 550000
-      const manual = highlightedSatIds.value.has(satId)
-      updateEntityStyle(entity, manual, alt)
-    }
-  } catch (e) {
-    console.warn('刷新运行中任务高亮失败', e)
-  }
 }
 
 function createCircularOrbitPositions(start, periodSeconds, altitudeMeters, inclinationDeg, raanDeg, initialTrueAnomalyDeg, samples = 360) {
@@ -564,50 +400,92 @@ function createCircularOrbitPositions(start, periodSeconds, altitudeMeters, incl
   return property
 }
 
-function parseTime(timeStr) {
-  if (!timeStr) return Cesium.JulianDate.now()
-  const date = new Date(timeStr)
-  return !isNaN(date.getTime()) ? Cesium.JulianDate.fromDate(date) : Cesium.JulianDate.now()
+// ---------------------------------------------------------
+// 集群节点星座：5 颗卫星 = 5 个集群节点，同一壳层相邻
+// ---------------------------------------------------------
+
+function updateEntityStyle(entity, altitudeMeters) {
+  const data = entity._satData
+  const node = data?.nodeName ? nodeByName.value[data.nodeName] : null
+  const ready = node ? node.ready : true
+  const selected = selectedNodeName.value === data?.nodeName
+  const hex = statusColor({ ready, selected })
+  const base = Cesium.Color.fromCssColorString(hex)
+
+  entity.point.color = selected ? base : base.withAlpha(0.92)
+  entity.point.pixelSize = selected ? 16 : 9
+  entity.point.outline = true
+  entity.point.outlineColor = Cesium.Color.BLACK
+
+  entity.path.width = selected ? 4 : 1.5
+  entity.path.material = base.withAlpha(selected ? 0.7 : 0.4)
+
+  entity.label.show = selected
 }
 
-function formatJulianRange(start, end) {
-  const fmt = (jd) => {
-    const d = Cesium.JulianDate.toDate(jd)
-    return d.toISOString().replace('T', ' ').slice(0, 19)
+function refreshAllEntityStyles() {
+  for (const [, entity] of entityBySatId.entries()) {
+    const alt = entity._satData?.altitudeMeters ?? 550000
+    updateEntityStyle(entity, alt)
   }
-  return `${fmt(start)} ~ ${fmt(end)}`
 }
 
-function normalizeScenarioList(responseData) {
-  if (Array.isArray(responseData)) {
-    return responseData
-  }
-  if (responseData && Array.isArray(responseData.results)) {
-    return responseData.results
-  }
-  return []
+function setupClickHandler() {
+  handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
+  handler.setInputAction((movement) => {
+    const pickedObject = viewer.scene.pick(movement.position)
+    if (Cesium.defined(pickedObject) && pickedObject.id) {
+      const entity = pickedObject.id
+      const data = entity._satData
+      if (data?.nodeName) selectNode(data.nodeName)
+    }
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 }
 
-async function resolveScenarioWithSatellites(preferredScenarioId) {
-  const hasPreferredId = preferredScenarioId !== null && preferredScenarioId !== undefined && preferredScenarioId !== ''
-
-  if (hasPreferredId) {
-    try {
-      return await getScenarioWithSatellites(preferredScenarioId)
-    } catch (err) {
-      if (!String(err?.message || '').includes('Not Found')) {
-        throw err
-      }
+function selectNode(nodeName) {
+  if (selectedNodeName.value === nodeName) {
+    selectedNodeName.value = null
+    selectedSatInfo.value = null
+    if (viewer.trackedEntity) viewer.trackedEntity = undefined
+  } else {
+    selectedNodeName.value = nodeName
+    const node = nodeByName.value[nodeName]
+    const idx = CLUSTER_NODE_ORDER.indexOf(nodeName)
+    selectedSatInfo.value = {
+      satId: clusterSatId(idx < 0 ? 0 : idx),
+      nodeName,
+      ready: node?.ready ?? true,
+      status: node?.status || (node?.ready ? 'Ready' : 'Unknown'),
+      roles: node?.roles || [],
+      internalIP: node?.internalIP || '',
     }
   }
+  refreshAllEntityStyles()
+}
 
-  const scenariosResponse = await getScenarios()
-  const scenarios = normalizeScenarioList(scenariosResponse)
-  if (!scenarios.length) {
-    throw new Error('未找到场景数据，请先在后端导入场景数据（可运行 backend/inser_data.py）')
+function applyNodeStatusToSelection() {
+  if (!selectedNodeName.value) return
+  const node = nodeByName.value[selectedNodeName.value]
+  if (!node) return
+  selectedSatInfo.value = {
+    ...selectedSatInfo.value,
+    ready: node.ready,
+    status: node.status || (node.ready ? 'Ready' : 'Unknown'),
   }
-  const preferred = scenarios.find(s => s.name === 'Scenario5_full_36x22') || scenarios[0]
-  return getScenarioWithSatellites(preferred.id)
+}
+
+async function refreshNodeStatus() {
+  try {
+    const data = await getClusterNodes()
+    const ns = Array.isArray(data.nodes) ? data.nodes : []
+    const map = {}
+    for (const n of ns) map[n.name] = n
+    clusterNodes.value = clusterNodes.value.map((n) => map[n.name] || n)
+    refreshAllEntityStyles()
+    applyNodeStatusToSelection()
+  } catch (e) {
+    console.warn('刷新集群节点状态失败', e)
+  }
 }
 
 async function initializeViewer() {
@@ -615,16 +493,15 @@ async function initializeViewer() {
     loading.value = true
     error.value = null
 
-    const { scenario, satellites } = await resolveScenarioWithSatellites(props.scenarioId)
-    if (!satellites.length) {
-      throw new Error(`场景 ${scenario.id} 下没有卫星数据，请先导入卫星数据`)
+    const data = await getClusterNodes()
+    const ordered = orderClusterNodes(data.nodes)
+
+    if (!ordered.length) {
+      throw new Error('未获取到集群节点，请确认后端 /api/cluster/nodes 可用（后端需以集群内 ServiceAccount 运行并具备 nodes 读取权限）')
     }
 
-    scenarioName.value = scenario.name || `场景 #${scenario.id}`
-    satelliteCount.value = satellites.length
-
-    const satellitesMap = new Map()
-    satellites.forEach(s => satellitesMap.set(s.sat_id || s.stk_name, s))
+    clusterNodes.value = ordered
+    satelliteCount.value = ordered.length
 
     if (!viewer) {
       viewer = new Cesium.Viewer(viewerContainer.value, {
@@ -644,19 +521,15 @@ async function initializeViewer() {
       })
 
       await setupOfflineImagery(viewer)
-
       applyMapViewMode(mapViewMode.value, false)
-
-      setupClickHandler(satellitesMap)
+      setupClickHandler()
     }
 
-    const startTime = parseTime(scenario.start_time || scenario.epoch)
-    const endTime = parseTime(scenario.end_time)
-    scenarioTimeRange.value = formatJulianRange(startTime, endTime)
-
-    viewer.clock.startTime = startTime
-    viewer.clock.stopTime = endTime
-    viewer.clock.currentTime = startTime
+    const start = Cesium.JulianDate.now()
+    const end = Cesium.JulianDate.addHours(start, 6, new Cesium.JulianDate())
+    viewer.clock.startTime = start
+    viewer.clock.stopTime = end
+    viewer.clock.currentTime = start
     viewer.clock.multiplier = clockMultiplier.value
     syncClockPlayback(true)
 
@@ -664,60 +537,61 @@ async function initializeViewer() {
       setupClockHud(viewer)
     }
 
-    highlightedSatIds.value = new Set()
     entityBySatId.clear()
     viewer.entities.removeAll()
 
-    satellites.forEach((satellite) => {
-      const satId = satellite.sat_id || satellite.stk_name
-      const periodSeconds = 5400
-      const altitudeMeters = satellite.alt_km * 1000
+    const total = ordered.length
+    ordered.forEach((node, index) => {
+      const satId = clusterSatId(index)
+      const altitudeMeters = CLUSTER_SHELL.altitudeKm * 1000
+      const ta = (index * 360) / total // 同一壳层，真近点角等间隔 → 相邻卫星
 
       const positionProp = createCircularOrbitPositions(
-        startTime, periodSeconds, altitudeMeters,
-        satellite.inc_deg, satellite.raan_deg, satellite.ta_deg, 720
+        start, CLUSTER_SHELL.periodSeconds, altitudeMeters,
+        CLUSTER_SHELL.inclinationDeg, CLUSTER_SHELL.raanDeg, ta, 720
       )
 
-      const label = displaySatName(satellite)
+      const label = clusterSatDisplayName(node.name)
 
       const entity = viewer.entities.add({
         id: satId,
         name: label,
         position: positionProp,
         point: {
-          pixelSize: 6,
-          color: Cesium.Color.WHITE.withAlpha(0.85),
-          outline: false,
+          pixelSize: 9,
+          color: Cesium.Color.WHITE.withAlpha(0.92),
+          outline: true,
+          outlineColor: Cesium.Color.BLACK,
         },
         path: {
           show: true,
           resolution: 60,
-          material: Cesium.Color.WHITE.withAlpha(0.45),
+          material: Cesium.Color.WHITE.withAlpha(0.4),
           width: 1.5,
           leadTime: 0,
-          trailTime: periodSeconds
+          trailTime: CLUSTER_SHELL.periodSeconds,
         },
         label: {
           show: false,
           text: label,
           font: '14px sans-serif',
-          fillColor: Cesium.Color.LIME,
+          fillColor: Cesium.Color.WHITE,
           style: Cesium.LabelStyle.FILL,
           pixelOffset: new Cesium.Cartesian2(0, -20),
-          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 10000000)
-        }
+          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 10000000),
+        },
       })
-      entity._satData = satellite
+      entity._satData = { nodeName: node.name, satId, altitudeMeters, index }
       entityBySatId.set(satId, entity)
-      updateEntityStyle(entity, false, altitudeMeters)
+      updateEntityStyle(entity, altitudeMeters)
     })
 
-    await refreshRunningHighlights()
-    runningTasksTimer = setInterval(refreshRunningHighlights, 5000)
-
+    refreshAllEntityStyles()
     flyToPreset('global')
-
     loading.value = false
+
+    if (nodeRefreshTimer) clearInterval(nodeRefreshTimer)
+    nodeRefreshTimer = setInterval(refreshNodeStatus, 10000)
   } catch (err) {
     console.error(err)
     error.value = '加载失败: ' + err.message
@@ -734,9 +608,9 @@ onBeforeUnmount(() => {
     removeClockTickListener()
     removeClockTickListener = null
   }
-  if (runningTasksTimer) {
-    clearInterval(runningTasksTimer)
-    runningTasksTimer = null
+  if (nodeRefreshTimer) {
+    clearInterval(nodeRefreshTimer)
+    nodeRefreshTimer = null
   }
   if (handler) {
     handler.destroy()
@@ -773,7 +647,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 16px;
   left: 16px;
-  width: 280px;
+  width: 290px;
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   padding: 14px;
@@ -831,11 +705,26 @@ onBeforeUnmount(() => {
 .hud-value { word-break: break-all; }
 .hud-value.mono, .mono { font-family: ui-monospace, monospace; }
 .highlight-green { color: #4ade80; font-weight: 700; }
+.highlight-red { color: #ff4d4f; font-weight: 700; }
 
 .hud-divider {
   height: 1px;
   margin: 10px 0;
   background: rgba(255, 255, 255, 0.12);
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.9;
+}
+.legend-row .dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .hud-select {
@@ -900,15 +789,6 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 .hud-link:hover { text-decoration: underline; }
-
-.hud-link-btn {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 5px 8px;
-  border-radius: 8px;
-  background: rgba(125, 211, 252, 0.12);
-  border: 1px solid rgba(125, 211, 252, 0.35);
-}
 
 .hud-selected {
   margin-top: 8px;

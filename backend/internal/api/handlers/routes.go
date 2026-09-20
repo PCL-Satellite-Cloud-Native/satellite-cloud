@@ -33,6 +33,10 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, re
 	router.GET("/topology/router-links", topologyHandler.TopologyRouterLinksHandler)
 	router.GET("/topology/pilot-map", topologyHandler.TopologyPilotMapHandler)
 
+	// 集群节点状态（主页面「星座仿真系统 / 卫星网络拓扑」按节点健康着色）
+	clusterHandler := NewClusterHandler(logger)
+	router.GET("/cluster/nodes", clusterHandler.ListNodes)
+
 	if remoteSvc != nil {
 		remoteHandler := NewRemoteSensingHandler(remoteSvc, logger)
 		remote := router.Group("/remote-sensing")

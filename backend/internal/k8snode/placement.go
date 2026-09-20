@@ -38,6 +38,12 @@ func kubeClient() (kubernetes.Interface, error) {
 	return k8sClient, clientErr
 }
 
+// KubeClient 返回（并缓存）集群客户端；非集群环境（如本地开发）返回错误。
+// 供 cluster 处理器查询节点状态使用。
+func KubeClient() (kubernetes.Interface, error) {
+	return kubeClient()
+}
+
 // CurrentPlacement 读取 NODE_NAME 环境变量并查询节点 satellite.io/id 标签。
 func CurrentPlacement(ctx context.Context) Placement {
 	nodeName := os.Getenv("NODE_NAME")

@@ -2,11 +2,28 @@
   <div class="wrap" :class="{ 'right-collapsed': rightPanelCollapsed }">
     <div class="left">
       <div class="card">
+        <div class="h">拓扑范围</div>
+        <div class="seg">
+          <button type="button" :class="{ active: topologyScope === 'cluster' }" @click="setTopologyScope('cluster')">集群节点 (5)</button>
+          <button type="button" :class="{ active: topologyScope === 'full' }" @click="setTopologyScope('full')">全量星座</button>
+        </div>
+      </div>
+
+      <div class="card" v-if="topologyScope === 'cluster'">
+        <div class="h">集群节点状态</div>
+        <div class="small">正常 <b class="hl-green">{{ clusterReadyCount }}</b> · 异常 <b class="hl-red">{{ clusterErrorCount }}</b></div>
+        <div class="legend-row"><i class="dot" style="background:#ffffff"></i>正常 · 白色</div>
+        <div class="legend-row"><i class="dot" style="background:#ffd54a"></i>选中 · 黄色</div>
+        <div class="legend-row"><i class="dot" style="background:#ff4d4f"></i>节点异常/无法连通 · 红色</div>
+        <div class="small" style="margin-top:6px;">5 颗卫星对应 5 个集群节点，同一壳层相邻；红色 = 节点 NotReady/无法连通。</div>
+      </div>
+
+      <div class="card">
         <div class="h">T0 初始拓扑</div>
 
         <div class="small" v-if="loading">正在加载 CSV… {{ loadProgress }}</div>
         <div class="small" v-else-if="ready">
-          已加载: {{ sats.length }} 颗卫星（Pilot 15 节点）<br />
+          已加载: {{ sats.length }} 颗卫星{{ topologyScope === 'cluster' ? '（集群 5 节点）' : '（Pilot 15 节点）' }}<br />
           T0时刻: <span class="mono">{{ t0Label }}</span>
         </div>
         <div class="small" v-else>数据未加载</div>
@@ -42,6 +59,7 @@
           <div class="kv"><b>卫星</b><span class="mono">{{ selected.displayName || satNameFromSatId(selected.id) }}</span></div>
           <div class="kv"><b>sat_id</b><span class="mono">{{ selected.id }}</span></div>
           <div class="kv" v-if="selected.hostNode"><b>部署节点</b><span class="mono">{{ selected.hostNode }}</span></div>
+          <div class="kv" v-if="selected.hostNode && topologyScope === 'cluster'"><b>节点状态</b><span :class="selectedNodeReady ? 'hl-green' : 'hl-red'">{{ selectedNodeReady ? '正常' : '异常' }}</span></div>
           <div class="kv"><b>轨道 (Orbit)</b><span>{{ selected.orbit }}</span></div>
           <div class="kv"><b>槽位 (Slot)</b><span>{{ selected.slot }}</span></div>
           <template v-if="selectedReachableDelays.length">
@@ -179,6 +197,13 @@ import { TubeGeometry, LineCurve3 } from "three";
 // 引入 v-network-graph
 import { VNetworkGraph, VEdgeLabel, defineConfigs } from 'v-network-graph'
 import 'v-network-graph/lib/style.css'
+import { getClusterNodes } from '../api/cluster.js'
+import {
+  clusterSatId,
+  clusterSatDisplayName,
+  statusColor,
+  orderClusterNodes,
+} from '../utils/clusterConstellation.js'
 
 const route = useRoute();
 
@@ -482,6 +507,11 @@ function onRouterNodePointerout() {
 }
 
 watch(selectedRouter, () => {
+  if (topologyScope.value === 'cluster') {
+    centerRouterId.value = selectedRouter.value
+    refreshAllMeshStyles()
+    return
+  }
   loadRouterData()
 })
 
@@ -526,7 +556,98 @@ const ready = ref(false);
 const loadProgress = ref("");
 const t0Label = ref("");
 const sats = ref<SatT0[]>([]);
-const selected = ref<Selected | null>(null);
+const selected = ref<Selected | null>(null)
+
+// ---------------------------------------------------------
+// 集群节点拓扑：5 颗卫星 = 5 个集群节点（同一壳层相邻）
+// ---------------------------------------------------------
+const TOPOLOGY_SCOPE_KEY = 'satTopology.scope'
+const topologyScope = ref<'cluster' | 'full'>(
+  (localStorage.getItem(TOPOLOGY_SCOPE_KEY) as 'cluster' | 'full') || 'cluster'
+)
+interface ClusterNodeInfo {
+  name: string
+  ready: boolean
+  status?: string
+  roles?: string[]
+  internal_ip?: string
+}
+const clusterNodes = ref<ClusterNodeInfo[]>([])
+const clusterNodeByName = computed<Record<string, ClusterNodeInfo>>(() => {
+  const m: Record<string, ClusterNodeInfo> = {}
+  for (const n of clusterNodes.value) m[n.name] = n
+  return m
+})
+const clusterReadyCount = computed(() => clusterNodes.value.filter((n) => n.ready).length)
+const clusterErrorCount = computed(() => clusterNodes.value.length - clusterReadyCount.value)
+const selectedNodeReady = computed(() => {
+  if (!selected.value?.hostNode) return true
+  const n = clusterNodeByName.value[selected.value.hostNode]
+  return n ? n.ready : true
+})
+let clusterRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+function setTopologyScope(scope: 'cluster' | 'full') {
+  if (topologyScope.value === scope) return
+  topologyScope.value = scope
+  try {
+    localStorage.setItem(TOPOLOGY_SCOPE_KEY, scope)
+  } catch {}
+  void reloadTopologyForScope()
+}
+
+function clearTopologyTimers() {
+  if (activeTasksTimer) {
+    clearInterval(activeTasksTimer)
+    activeTasksTimer = null
+  }
+  if (clusterRefreshTimer) {
+    clearInterval(clusterRefreshTimer)
+    clusterRefreshTimer = null
+  }
+}
+
+async function reloadTopologyForScope() {
+  clearTopologyTimers()
+  if (topologyScope.value === 'cluster') {
+    await loadClusterTopology()
+    clusterRefreshTimer = setInterval(refreshClusterStatus, 10000)
+  } else {
+    loadRouterData()
+    void loadRouterDirectLinks()
+    void loadActiveTasks()
+    activeTasksTimer = setInterval(() => {
+      void loadActiveTasks()
+    }, 5000)
+    await loadT0()
+    await loadDelayMatrix()
+    if (routerDirectLinks.value.length === 0) {
+      await loadRouterDirectLinks()
+    }
+    rebuildLinks()
+    fitConstellationView()
+    await applyRouteSatelliteHighlight()
+    refreshAllMeshStyles()
+  }
+}
+
+async function refreshClusterStatus() {
+  try {
+    const data = await getClusterNodes()
+    const ns = (data.nodes as ClusterNodeInfo[]) || []
+    const map: Record<string, ClusterNodeInfo> = {}
+    for (const n of ns) map[n.name] = n
+    clusterNodes.value = clusterNodes.value.map((n) => map[n.name] || n)
+    for (const id of Object.keys(routerNodes)) {
+      const nid = routerNodes[id].sat_id
+      const node = map[nid]
+      if (node) routerNodes[id].color = statusColor({ ready: node.ready, selected: false })
+    }
+    refreshAllMeshStyles()
+  } catch (e) {
+    console.warn('刷新集群节点状态失败', e)
+  }
+};
 
 const orbitLegendOrbits = computed(() => {
   const orbits = new Set<number>();
@@ -778,6 +899,19 @@ function addNodeLabel(mesh: THREE.Mesh, text: string) {
   nodeLabels.push(obj);
 }
 function refreshAllMeshStyles() {
+  if (topologyScope.value === 'cluster') {
+    for (const sat of sats.value) {
+      const mat = sat.mesh.material as THREE.MeshStandardMaterial
+      const node = sat.hostNode ? clusterNodeByName.value[sat.hostNode] : null
+      const ready = node ? node.ready : true
+      const isSelected = selected.value?.id === sat.id
+      const hex = statusColor({ ready, selected: isSelected })
+      mat.color.setStyle(hex)
+      mat.emissive.setHex(isSelected ? 0x553300 : 0x000000)
+      sat.mesh.scale.setScalar(isSelected ? 1.3 : 1)
+    }
+    return
+  }
   for (const sat of sats.value) {
     const mat = sat.mesh.material as THREE.MeshStandardMaterial;
     if (selected.value?.id === sat.id) {
@@ -1093,6 +1227,122 @@ async function loadT0() {
     selectedRouter.value = sats.value[0].id;
   }
 }
+async function loadClusterTopology() {
+  loading.value = true
+  ready.value = false
+  clearOrbitLinks()
+  clearDelayModeLinks()
+  clearDelayHighlight()
+  clearAllSats()
+  selected.value = null
+  t0Label.value = ''
+  selectedRouter.value = 'sat-1-1'
+  centerRouterId.value = ''
+  try {
+    const data = await getClusterNodes()
+    const ordered = orderClusterNodes(data.nodes as ClusterNodeInfo[])
+    clusterNodes.value = ordered
+    if (ordered.length === 0) {
+      throw new Error('未获取到集群节点，请确认后端 /api/cluster/nodes 可用')
+    }
+
+    const total = ordered.length
+    const radiusUnits = 9
+    const incRad = (53 * Math.PI) / 180
+    ordered.forEach((node, index) => {
+      const a = (index * 2 * Math.PI) / total
+      const R = radiusUnits * 1000
+      const x0 = R * Math.cos(a)
+      const z0 = R * Math.sin(a)
+      // 绕 X 轴倾斜 inclination，模拟同一壳层轨道面
+      const y = -z0 * Math.sin(incRad)
+      const z = z0 * Math.cos(incRad)
+      const x = x0
+      const mesh = markRaw(makeNodeMesh())
+      mesh.name = 'Sat'
+      mesh.userData = { id: clusterSatId(index) }
+      mesh.position.set(x, y, z)
+      const id = clusterSatId(index)
+      sats.value.push({
+        id,
+        displayName: clusterSatDisplayName(node.name),
+        hostNode: node.name,
+        orbit: 1,
+        slot: index + 1,
+        utc: '集群节点',
+        r: [x, y, z],
+        lla_Lat: 0,
+        lla_Lon: 0,
+        lla_Alt: 550,
+        coe_SemiMajorAxis: 0,
+        coe_Eccentricity: 0,
+        coe_Inclination: 53,
+        coe_RAAN: 30,
+        coe_ArgPerigee: 0,
+        coe_TrueAnomaly: (index * 360) / total,
+        mesh,
+      })
+      scene?.add(mesh)
+    })
+
+    // 2D 环：5 节点环形布局 + 相邻（含闭合）边
+    const nodes: Record<string, any> = {}
+    const edges: Record<string, any> = {}
+    const layouts: Record<string, { x: number; y: number }> = {}
+    const R2 = 150
+    ordered.forEach((node, index) => {
+      const id = clusterSatId(index)
+      const ang = (index * 2 * Math.PI) / total
+      layouts[id] = { x: R2 * Math.cos(ang), y: R2 * Math.sin(ang) }
+      nodes[id] = {
+        name: clusterSatDisplayName(node.name),
+        sat_id: id,
+        orbit: 1,
+        is_center: false,
+        color: statusColor({ ready: node.ready, selected: false }),
+      }
+    })
+    for (let i = 0; i < total; i++) {
+      const a = clusterSatId(i)
+      const b = clusterSatId((i + 1) % total)
+      edges[`e${i}`] = { source: a, target: b, label: '' }
+    }
+    for (const k of Object.keys(routerNodes)) delete routerNodes[k]
+    for (const [k, v] of Object.entries(nodes)) routerNodes[k] = v
+    for (const k of Object.keys(routerEdges)) delete routerEdges[k]
+    for (const [k, v] of Object.entries(edges)) routerEdges[k] = v
+    routerLayouts.nodes = layouts
+    routerNodeCount.value = total
+    routerStatus.value = 'ready'
+    centerRouterId.value = ''
+
+    // 3D 环边（相邻 + 闭合）
+    const ringLinks: RouterDirectLink[] = []
+    for (let i = 0; i < total; i++) {
+      ringLinks.push({
+        src_sat_id: clusterSatId(i),
+        dst_sat_id: clusterSatId((i + 1) % total),
+        cross_orbit: false,
+      })
+    }
+    routerDirectLinks.value = ringLinks
+
+    t0Label.value = '集群节点拓扑（5 节点）'
+    loading.value = false
+    ready.value = true
+    refreshAllMeshStyles()
+    fitConstellationView()
+    if (!sats.value.some((s) => s.id === selectedRouter.value)) {
+      selectedRouter.value = sats.value[0].id
+    }
+    rebuildLinks()
+  } catch (err) {
+    console.error(err)
+    loading.value = false
+    ready.value = false
+  }
+}
+
 async function loadDelayMatrix() {
   try {
     const res = await fetch("/api/topology/delay");
@@ -1148,13 +1398,6 @@ onMounted(async () => {
     rightPanelCollapsed.value = localStorage.getItem(RIGHT_PANEL_KEY) === '1'
   } catch { /* ignore */ }
 
-  loadRouterData();
-  void loadRouterDirectLinks();
-  void loadActiveTasks();
-  activeTasksTimer = setInterval(() => {
-    void loadActiveTasks();
-  }, 5000);
-
   if (!host.value) return;
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x050817); 
@@ -1185,15 +1428,7 @@ onMounted(async () => {
   scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ size: 0.05, color: 0xffffff })));
 
   try {
-    await loadT0();
-    await loadDelayMatrix();
-    if (routerDirectLinks.value.length === 0) {
-      await loadRouterDirectLinks();
-    }
-    rebuildLinks();
-    fitConstellationView();
-    await applyRouteSatelliteHighlight();
-    refreshAllMeshStyles();
+    await reloadTopologyForScope()
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     resizeObs = new ResizeObserver(() => {
       if (!host.value || !renderer || !camera) return;
@@ -1213,6 +1448,10 @@ onBeforeUnmount(() => {
   if (activeTasksTimer) {
     clearInterval(activeTasksTimer);
     activeTasksTimer = null;
+  }
+  if (clusterRefreshTimer) {
+    clearInterval(clusterRefreshTimer);
+    clusterRefreshTimer = null;
   }
   if (raf) cancelAnimationFrame(raf);
   if (renderer) renderer.domElement.removeEventListener("pointerdown", onPointerDown);
@@ -1502,5 +1741,25 @@ onBeforeUnmount(() => {
 .router-meta {
   margin-top: 2px;
   opacity: 0.85;
+}
+
+.hl-green { color: #4ade80; font-weight: 700; }
+.hl-red { color: #ff4d4f; font-weight: 700; }
+.legend-row { display: flex; align-items: center; gap: 8px; line-height: 1.9; font-size: 12px; }
+.seg { display: flex; gap: 6px; }
+.seg button {
+  flex: 1;
+  padding: 7px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8eeff;
+  cursor: pointer;
+  font-size: 12px;
+}
+.seg button.active {
+  background: rgba(59, 130, 246, 0.28);
+  border-color: #3b82f6;
+  color: #fff;
 }
 </style>

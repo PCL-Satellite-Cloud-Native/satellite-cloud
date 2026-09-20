@@ -241,7 +241,7 @@ deploy-phase1-pilot:
   needs:
     - deploy
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 # Phase 2：od-worker Pilot — 与 deploy-phase1-pilot 相同模式，push main 后自动执行（后续可改 when: manual）
 deploy-phase2-pilot:
@@ -264,7 +264,7 @@ deploy-phase2-pilot:
   needs:
     - deploy
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 # Phase 3：Argo WorkflowTemplate + rs-worker Argo 集成（manifest 默认 USE_ARGO_PAN_RPC=true）
 # 默认不自动执行：在 GitLab Pipeline 页面手动点击 deploy-phase3-pilot
@@ -292,7 +292,7 @@ deploy-phase3-pilot:
   needs:
     - deploy-phase2-pilot
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 # Phase 4：Prometheus 指标 + ServiceMonitor + HPA（手动 Pilot）
 deploy-phase4-pilot:
@@ -325,7 +325,7 @@ deploy-phase4-pilot:
   needs:
     - deploy-phase2-pilot
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 # Phase 5+：P5-05 WorkflowTemplate + P5-06b rs-worker DaemonSet（手动 Pilot）
 # master 无需代码仓库：push main → Pipeline 点本 job 即可
@@ -373,7 +373,7 @@ deploy-phase5-plus-pilot:
   needs:
     - build-backend
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 # ── cluster-120 专用（60→120 节点；tag k8s-120-runner；main 不触发）──
 
@@ -501,7 +501,7 @@ deploy-phase6-pilot:
     - k3s-cluster5-runner
   needs: []
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "feat/phase6-minio" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "feat/phase6-minio" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 sync-artifacts-to-minio:
   stage: deploy
@@ -516,7 +516,7 @@ sync-artifacts-to-minio:
     - k3s-cluster5-runner
   needs: []
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "feat/phase6-minio" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "feat/phase6-minio" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 sync-topology-csv-to-nfs:
   stage: topology-sync
@@ -542,7 +542,7 @@ sync-topology-csv-to-nfs:
       echo "同步 router/ 到 $RSYNC_BASE/router/"
       rsync -av --delete frontend/public/data/router/ "$RSYNC_BASE/router/"
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'
 
 import-topology:
   stage: topology-sync
@@ -561,4 +561,4 @@ import-topology:
     - echo "导入 Job 日志："
     - kubectl -n gitlab-runner logs job/import-topology --tail=100
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "cluster-5node" || $CI_COMMIT_BRANCH == "k3s-cluster5"'

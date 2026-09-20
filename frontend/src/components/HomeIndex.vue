@@ -92,6 +92,14 @@ const navItems = ref([
     route: '/simulation/topology',
   },
   {
+    title: 'SRv6 路由平台',
+    desc: 'SRv6 策略编排与路由控制',
+    icon: '🔀',
+    theme: 'srv6',
+    // 未配置 VITE_SRV6_URL 时使用默认内网地址
+    externalLink: import.meta.env.VITE_SRV6_URL || 'http://192.168.12.251:8083',
+  },
+  {
     title: '性能监控中台',
     desc: '集群与业务指标观测',
     icon: '📊',
@@ -370,6 +378,7 @@ const handleNavigate = (item) => {
 .module-card--monitor .module-icon { background: rgba(250, 173, 20, 0.25); }
 .module-card--comm .module-icon { background: rgba(114, 46, 209, 0.25); }
 .module-card--rs .module-icon { background: rgba(19, 194, 194, 0.25); }
+.module-card--srv6 .module-icon { background: rgba(250, 84, 28, 0.25); }
 .module-card--batch .module-icon { background: rgba(245, 34, 45, 0.22); }
 .module-card--crd .module-icon { background: rgba(114, 46, 209, 0.35); }
 

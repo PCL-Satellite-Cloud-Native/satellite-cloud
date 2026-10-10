@@ -49,6 +49,12 @@ const routes = [
     name: 'CRDManager',
     component: () => import('../view/CRDManager.vue')
   },
+  {
+    // 容器编排移植效果（任务3 算法集成）
+    path: '/container',
+    name: 'Container',
+    component: () => import('../view/Container.vue')
+  },
   // 404 路由：匹配所有未定义的路径，重定向回主页
   {
     path: '/:pathMatch(.*)*',

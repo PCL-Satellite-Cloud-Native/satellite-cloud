@@ -73,6 +73,10 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, logger *zap.Logger, re
 	storageBackendHandler := NewStorageBackendHandler(db, logger)
 	router.GET("/storage-backends", storageBackendHandler.List)
 
+	// 容器编排算法移植效果（扩缩 / 部署调度 / 迁移 三类算法的第四层验收指标）
+	containerHandler := NewContainerHandler(logger)
+	router.GET("/container/metrics", containerHandler.Metrics)
+
 	// CRD 清单同步（SatelliteConstellation / Satellite / NetworkTopology /
 	// JobQueue / StorageBackend / RemoteSensingTask / ObjectDetectionTask）
 	crdHandler := NewCRDHandler(db, logger, crdConfigDir)

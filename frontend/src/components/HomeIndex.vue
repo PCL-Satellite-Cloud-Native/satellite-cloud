@@ -127,6 +127,13 @@ const navItems = ref([
     theme: 'batch',
     route: '/engine/batch',
   },
+  {
+    title: '容器',
+    desc: '容器编排算法移植效果展示',
+    icon: '📦',
+    theme: 'container',
+    route: '/container',
+  },
 ]);
 
 const handleNavigate = (item) => {
@@ -372,6 +379,7 @@ const handleNavigate = (item) => {
 .module-card--rs .module-icon { background: rgba(19, 194, 194, 0.25); }
 .module-card--batch .module-icon { background: rgba(245, 34, 45, 0.22); }
 .module-card--crd .module-icon { background: rgba(114, 46, 209, 0.35); }
+.module-card--container .module-icon { background: rgba(54, 162, 255, 0.32); }
 
 .module-body {
   flex: 1;

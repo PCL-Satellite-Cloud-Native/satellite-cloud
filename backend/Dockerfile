@@ -83,6 +83,10 @@ COPY --from=detection-builder /detection/assets/fonts /opt/object-detection/asse
 COPY --from=detection-builder /detection/config.env /opt/object-detection/config.env
 RUN chmod +x /opt/object-detection/yolov8s
 
+# 容器编排算法源码（任务3 移植效果集成）：算法包 + 指标采集脚本
+COPY container-algo-src /opt/container-algo
+COPY scripts/container_metrics.py /app/scripts/container_metrics.py
+
 # 创建并安装遥感虚拟环境依赖
 RUN python3 -m venv /opt/remote-sensing/.venv && \
     /opt/remote-sensing/.venv/bin/pip install --no-cache-dir --upgrade pip && \
@@ -93,10 +97,16 @@ RUN python3 -m venv /opt/remote-sensing/.venv && \
     /opt/remote-sensing/.venv/bin/pip install --no-cache-dir --no-build-isolation --no-binary=GDAL "GDAL==$(gdal-config --version)" && \
     /opt/remote-sensing/.venv/bin/python -c "from osgeo import gdal, gdal_array; import numpy as np; print(gdal.__version__)"
 
+# 容器编排算法运行时依赖（CPU 版 torch，避免 CUDA 体积膨胀）
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir \
+      --extra-index-url https://download.pytorch.org/whl/cpu \
+      torch numpy pandas pyarrow scikit-learn gymnasium
+
 # 创建运行用户
 RUN groupadd -g 1000 appuser && \
     useradd -m -u 1000 -g appuser appuser && \
-    chown -R appuser:appuser /app /opt/remote-sensing /opt/object-detection
+    chown -R appuser:appuser /app /opt/remote-sensing /opt/object-detection /opt/container-algo
 
 USER appuser
 

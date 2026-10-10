@@ -26,6 +26,10 @@ variables:
   # 内网 GitLab Object-Detection 仓库（与遥感类似，HTTPS）
   OBJECT_DETECTION_REPO_URL: "https://192.168.10.238:8444/root/object-detection.git"
   OBJECT_DETECTION_REPO_REF: "main"
+  # 容器编排算法（任务3 移植效果）仓库：含 container_scaling / Deployment_test / Migration_test 三个子目录
+  # 需先在内网 GitLab 创建该仓库并推送算法源码，再配置此变量；留空则镜像仅含基线指标、不报错
+  CONTAINER_ALGO_REPO_URL: ""
+  CONTAINER_ALGO_REPO_REF: "main"
 
 # 构建并推送后端镜像
 build-backend:
@@ -98,6 +102,27 @@ build-backend:
     - git ls-remote "$AUTH_OBJECT_DETECTION_REPO_URL" > /dev/null
     - rm -rf backend/object-detection-src
     - git clone --depth 1 --branch "$OBJECT_DETECTION_REPO_REF" "$AUTH_OBJECT_DETECTION_REPO_URL" backend/object-detection-src
+    - |
+      if [ -n "$CONTAINER_ALGO_REPO_URL" ]; then
+        case "$CONTAINER_ALGO_REPO_URL" in
+          https://*)
+            AUTH_CONTAINER_ALGO_REPO_URL="$(echo "$CONTAINER_ALGO_REPO_URL" | sed "s#^https://#https://gitlab-ci-token:${CI_JOB_TOKEN}@#")"
+            ;;
+          http://*)
+            AUTH_CONTAINER_ALGO_REPO_URL="$(echo "$CONTAINER_ALGO_REPO_URL" | sed "s#^http://#http://gitlab-ci-token:${CI_JOB_TOKEN}@#")"
+            ;;
+          *)
+            echo "CONTAINER_ALGO_REPO_URL 必须是 HTTP(S) 地址"
+            exit 1
+            ;;
+        esac
+        git ls-remote "$AUTH_CONTAINER_ALGO_REPO_URL" > /dev/null
+        rm -rf backend/container-algo-src
+        git clone --depth 1 --branch "${CONTAINER_ALGO_REPO_REF:-main}" "$AUTH_CONTAINER_ALGO_REPO_URL" backend/container-algo-src
+      else
+        echo "CONTAINER_ALGO_REPO_URL 未配置：跳过克隆，镜像将使用移植效果基线指标（非实时算法）"
+        mkdir -p backend/container-algo-src
+      fi
     - docker login "$HARBOR_URL" -u "$HARBOR_USER" -p "$HARBOR_PASSWORD"
     - cd backend
     - |

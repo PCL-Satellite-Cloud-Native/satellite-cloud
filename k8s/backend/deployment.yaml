@@ -169,13 +169,20 @@ spec:
               value: "14400"
             - name: SATELLITE_OBJECT_DETECTION_OUTPUT_SUBDIR
               value: "output_detection"
+            # 容器编排算法移植效果指标采集（任务3 集成）
+            - name: CONTAINER_METRICS_SCRIPT
+              value: "/app/scripts/container_metrics.py"
+            - name: TASK3_DIR
+              value: "/opt/container-algo"
+            - name: CONTAINER_METRICS_TIMEOUT
+              value: "180"
           resources:
             requests:
-              memory: "1Gi"
-              cpu: "300m"
+              memory: "2Gi"
+              cpu: "500m"
               ephemeral-storage: "10Gi"
             limits:
-              memory: "4Gi"
+              memory: "8Gi"
               cpu: "2000m"
               ephemeral-storage: "48Gi"
           volumeMounts:

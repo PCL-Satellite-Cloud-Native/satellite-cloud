@@ -100,7 +100,7 @@ satellite-cloud 后端，并在仿真平台主界面「容器」模块中展示�
     │        src/api/container.js     (新) 接口封装
     ├─ 后端：internal/api/handlers/container.go (新) ContainerHandler
     │        internal/api/handlers/routes.go   注册 GET /api/container/metrics
-    │        scripts/container_metrics.py       (新) 算法集成脚本
+    │        backend/scripts/container_metrics.py       (新) 算法集成脚本
     └─ 部署：backend/Dockerfile  装 torch CPU + COPY 算法源码/脚本
              k8s/backend/deployment.yaml  增环境变量 + 上调内存
              .gitlab-ci.yml  增 container-algo 克隆步骤
